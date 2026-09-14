@@ -11,6 +11,10 @@ const PLUGIN = path.join(__dirname, "..", "plugins", "mangaTools", "build");
 // ── Stubs ──────────────────────────────────────────────────────────
 const globalListeners = {};
 const patched = {};
+const patchedBefore = {};
+/** How many times the plugin asked for the gallery map — used to prove a
+ *  successful bulk update triggers a refresh (and that a no-op one does not). */
+let galleryQueryCount = 0;
 const capturedQueries = [];
 let settingsEnabled = ""; // the stored enabledLanguages setting, mutated by tests
 let capturedConfigWrite = null; // last configurePlugin write, captured by the stub
@@ -60,6 +64,7 @@ const fakeClient = {
         },
       });
     }
+    galleryQueryCount += 1;
     return Promise.resolve({
       data: {
         findGalleries: {
@@ -70,6 +75,7 @@ const fakeClient = {
             { id: "3", custom_fields: { language: "klingon" } }, // unknown value
             { id: "4", custom_fields: { other: "x" } }, // no language, must be ignored
             { id: "5", custom_fields: { language: "ZH-HANS" } }, // non-canonical case
+            { id: "6", custom_fields: { language: "zh-Hans" } }, // same as 1, for bulk aggregation
           ],
         },
       },
@@ -221,6 +227,9 @@ const PluginApi = {
     },
   },
   patch: {
+    before: (target, fn) => {
+      patchedBefore[target] = fn;
+    },
     instead: (target, fn) => {
       patched[target] = fn;
     },
@@ -230,6 +239,7 @@ const PluginApi = {
 global.window = { location: { pathname: "/galleries" }, setInterval: () => 0 };
 global.document = {
   visibilityState: "visible",
+  body: documentRoot,
   createElement: makeEl,
   querySelector: (sel) => documentRoot.querySelector(sel),
 };
@@ -391,7 +401,11 @@ console.log(`✓ language table complete (${Object.keys(NS.LANGUAGES).length} la
   "PluginSettings",
   "RatingSystem",
 ].forEach((t) => assert.ok(patched[t], `missing patch: ${t}`));
-console.log("✓ all 6 patches registered");
+// GalleryList is observed, not replaced — it is where the selection is read from.
+assert.ok(patchedBefore["GalleryList"], "missing patch: GalleryList");
+assert.strictEqual(patched["GalleryList"], undefined,
+  "GalleryList must be observed with before(), never replaced");
+console.log("✓ all 6 patches registered (+ GalleryList observed)");
 
 // ── 7. Query shape ─────────────────────────────────────────────────
 // Another bug this project hit: OR is singular in the schema
@@ -709,200 +723,6 @@ assert.strictEqual(editField({ language: "ja" }), null, "with no studio field it
 editForm.insertBefore(studioRow, firstChild);
 console.log("✓ edit page (target between studio and performers / widths copied / pull back / no anchor)");
 
-// ── 9c. Bulk edit dialog: the language row rides along with Apply ──
-// Stand in for EditGalleriesDialog's form: BulkUpdateFormGroup renders each row
-// as a Bootstrap `.row` carrying data-field, so that is the anchor.
-const bulkForm = makeEl("form");
-documentRoot.appendChild(bulkForm);
-
-const bulkStudioRow = makeEl("div");
-bulkStudioRow.className = "row";
-bulkStudioRow.dataset.field = "studio";
-const bulkStudioLabel = makeEl("label");
-bulkStudioLabel.className = "col-form-label col-3";
-const bulkStudioControl = makeEl("div");
-bulkStudioControl.className = "col-9";
-bulkStudioRow.appendChild(bulkStudioLabel);
-bulkStudioRow.appendChild(bulkStudioControl);
-bulkForm.appendChild(bulkStudioRow);
-
-const bulkPerformerRow = makeEl("div");
-bulkPerformerRow.className = "row";
-bulkPerformerRow.dataset.field = "performers";
-bulkForm.appendChild(bulkPerformerRow);
-
-// The row is mounted by the RatingSystem patch; render the fragment it returns
-// and follow the portal it makes.
-const bulkRow = () => {
-  const frag = call("RatingSystem", { value: 0 });
-  const rowEl = frag.props.children[1];
-  return rowEl.type(rowEl.props);
-};
-
-let b9c = bulkRow();
-assert.strictEqual(b9c.__portal, true, "the bulk row should render through a portal");
-
-const bulkHost = bulkForm.children[1];
-assert.strictEqual(bulkHost.className, "manga-tools-field-host");
-assert.strictEqual(bulkHost.previousElementSibling, bulkStudioRow,
-  "the row should go right after the studio row");
-assert.strictEqual(bulkHost.nextElementSibling, bulkPerformerRow,
-  "and right before the performers row — i.e. between studio and performers");
-assert.strictEqual(b9c.host, bulkHost);
-
-// Structure and classes are copied from the native row, so it lines up with it
-const bulkNode = b9c.node;
-assert.strictEqual(bulkNode.type, "div");
-assert.strictEqual(bulkNode.props.className, "row");
-assert.strictEqual(bulkNode.props["data-field"], "manga_tools_language");
-assert.strictEqual(bulkNode.props.children[0].props.className, "col-form-label col-3",
-  "the label classes should be copied from the native row");
-assert.strictEqual(bulkNode.props.children[0].props.children, "语言");
-const bulkSelect = find(bulkNode, (n) => n.props && n.props.inputId === "manga_tools_language");
-assert.ok(bulkSelect, "the row should hold the language dropdown");
-
-// Untouched: it must not claim to change anything, exactly like the native rows
-// whose placeholder reads "<existing value>".
-assert.strictEqual(bulkSelect.props.placeholder, "<existing value>",
-  "an untouched row should offer the same <existing value> placeholder as the native fields");
-assert.strictEqual(bulkSelect.props.value, null);
-
-const clearButton = find(bulkNode, (n) => n.props && n.props["aria-pressed"] !== undefined);
-assert.strictEqual(clearButton.props["aria-pressed"], false);
-
-// The link is installed lazily, the first time the row renders, and must not
-// disturb the chain Stash already had.
-assert.ok(installedLink, "the bulk row should install the link hook");
-const ourLink = installedLink.__chain[0];
-assert.strictEqual(installedLink.__chain[1].__original, true,
-  "the existing link chain must be passed through untouched");
-
-/** Runs an operation through the plugin's link and reports what came out */
-const runLink = (variables, rootField) => {
-  let forwarded = null;
-  let completed = null;
-  const forward = (op) => {
-    forwarded = op;
-    return {
-      map(fn) {
-        completed = fn({ data: {} });
-        return this;
-      },
-    };
-  };
-  ourLink.request(
-    {
-      query: {
-        kind: "Document",
-        definitions: [
-          {
-            kind: "OperationDefinition",
-            selectionSet: {
-              selections: [{ name: { value: rootField ?? "bulkGalleryUpdate" } }],
-            },
-          },
-        ],
-      },
-      variables,
-    },
-    forward
-  );
-  return { forwarded, completed };
-};
-
-const bulkVars = () => ({ input: { ids: ["1", "2"], photographer: "x" } });
-
-// Untouched: the operation must go through completely unmodified.
-let r9c = runLink(bulkVars());
-assert.strictEqual(r9c.forwarded.variables.input.custom_fields, undefined,
-  "an untouched row must not add custom_fields");
-assert.strictEqual(r9c.completed, null, "nothing to clear when nothing was injected");
-
-// Picking a language: merged as a partial update, leaving the rest alone.
-let picked = find(bulkRow().node, (n) => n.props && n.props.inputId === "manga_tools_language");
-picked.props.onChange({ value: "zh-Hant", label: "繁体中文", flag: "tw" });
-assert.strictEqual(find(bulkRow().node, (n) => n.props && n.props.inputId === "manga_tools_language")
-  .props.value.value, "zh-Hant", "the row should echo the picked language");
-
-r9c = runLink(bulkVars());
-assert.deepStrictEqual(r9c.forwarded.variables.input.custom_fields,
-  { partial: { language: "zh-Hant" } },
-  "the picked language should ride along with the dialog's own update");
-assert.deepStrictEqual(r9c.forwarded.variables.input.ids, ["1", "2"],
-  "the rest of the input must be left alone");
-assert.strictEqual(r9c.forwarded.variables.input.photographer, "x");
-assert.strictEqual(r9c.completed !== null, true, "a successful update should clear the pending value");
-
-// ...and once cleared, a second Apply must not repeat it.
-r9c = runLink(bulkVars());
-assert.strictEqual(r9c.forwarded.variables.input.custom_fields, undefined,
-  "the value should only ever be sent once");
-
-// Other entities' bulk updates must never be touched, even with a value pending.
-assert.strictEqual(installedLink.__chain[1].__original, true, "precondition: the chain is still hooked");
-let rePick = find(bulkRow().node, (n) => n.props && n.props.inputId === "manga_tools_language");
-rePick.props.onChange({ value: "ja", label: "日语", flag: "jp" });
-r9c = runLink(bulkVars(), "bulkSceneUpdate");
-assert.strictEqual(r9c.forwarded.variables.input.custom_fields, undefined,
-  "a scene bulk update must not be given a language");
-
-// ...and the value survives that, so it is still applied to the right operation.
-r9c = runLink(bulkVars());
-assert.deepStrictEqual(r9c.forwarded.variables.input.custom_fields, { partial: { language: "ja" } });
-
-// Clearing the field: CustomFieldsInput.remove deletes just that key.
-const clearBtn = find(bulkRow().node, (n) => n.props && n.props["aria-pressed"] !== undefined);
-clearBtn.props.onClick();
-const cleared = find(bulkRow().node, (n) => n.props && n.props.inputId === "manga_tools_language");
-assert.strictEqual(cleared.props.isDisabled, true, "the dropdown should be disabled while clearing");
-assert.strictEqual(cleared.props.placeholder, "<Clear the language>");
-
-r9c = runLink(bulkVars());
-assert.deepStrictEqual(r9c.forwarded.variables.input.custom_fields,
-  { remove: ["language"] },
-  "clearing should use CustomFieldsInput.remove, not a null value");
-
-// The button toggles back off, so it is never a one-way door. (The value was
-// consumed by the successful update above, so the button starts off.)
-const clearButtonOf = () =>
-  find(bulkRow().node, (n) => n.props && n.props["aria-pressed"] !== undefined);
-assert.strictEqual(clearButtonOf().props["aria-pressed"], false,
-  "precondition: the successful update consumed the value");
-
-clearButtonOf().props.onClick();
-assert.strictEqual(clearButtonOf().props["aria-pressed"], true, "clicking should turn clearing on");
-
-clearButtonOf().props.onClick();
-assert.strictEqual(clearButtonOf().props["aria-pressed"], false, "clicking again should turn it off");
-assert.strictEqual(find(bulkRow().node, (n) => n.props && n.props.inputId === "manga_tools_language")
-  .props.value, null, "toggling off should go back to untouched");
-r9c = runLink(bulkVars());
-assert.strictEqual(r9c.forwarded.variables.input.custom_fields, undefined);
-
-// The route is checked by the injection itself, not only by the row being
-// mounted: a value left pending must not be written once the route has moved on.
-const pickAgain = () =>
-  find(bulkRow().node, (n) => n.props && n.props.inputId === "manga_tools_language");
-
-pickAgain().props.onChange({ value: "ko", label: "韩语", flag: "kr" });
-r9c = runLink(bulkVars());
-assert.deepStrictEqual(r9c.forwarded.variables.input.custom_fields, { partial: { language: "ko" } },
-  "precondition: it does apply while on a gallery page");
-
-pickAgain().props.onChange({ value: "ko", label: "韩语", flag: "kr" });
-globalListeners["stash:location"]({ detail: { data: { location: { pathname: "/scenes/5" } } } });
-r9c = runLink(bulkVars());
-assert.strictEqual(r9c.forwarded.variables.input.custom_fields, undefined,
-  "a pending value must never be written once the route has left the galleries");
-
-// Off a gallery page there is no row at all
-const onScene = call("RatingSystem", { value: 0 });
-assert.strictEqual(onScene.props.children[1].type(onScene.props.children[1].props), null,
-  "no bulk language row on a scene page");
-globalListeners["stash:location"]({ detail: { data: { location: { pathname: "/galleries" } } } });
-assert.notStrictEqual(bulkRow(), null, "restored on a gallery page");
-console.log("✓ bulk edit (row placement / untouched / partial set / remove / scene isolation / one-shot / route)");
-
 
 // ── 10. Basic CSS checks (catch typos and missing rules after hand edits) ──
 const css = fs.readFileSync(path.join(PLUGIN, "mangaTools.css"), "utf8");
@@ -1062,5 +882,211 @@ setTimeout(() => {
     "an option with no flag must not render a flag");
   console.log("✓ edit write / clear / option flags and names");
 
-  console.log("\nAll smoke tests passed");
+  // ── 14. Bulk edit dialog: the language row rides along with Apply ──
+  // This runs here rather than with the other synchronous sections because the
+  // row's prefill comes from the plugin's gallery store, which only has data once
+  // the refresh promise has settled.
+  //
+  // Stand in for EditGalleriesDialog's form: BulkUpdateFormGroup renders each row
+  // as a Bootstrap `.row` carrying data-field, so that is the anchor.
+  const bulkForm = makeEl("form");
+  documentRoot.appendChild(bulkForm);
+
+  const bulkStudioRow = makeEl("div");
+  bulkStudioRow.className = "row";
+  bulkStudioRow.dataset.field = "studio";
+  const bulkStudioLabel = makeEl("label");
+  bulkStudioLabel.className = "col-form-label col-3";
+  const bulkStudioControl = makeEl("div");
+  bulkStudioControl.className = "col-9";
+  bulkStudioRow.appendChild(bulkStudioLabel);
+  bulkStudioRow.appendChild(bulkStudioControl);
+  bulkForm.appendChild(bulkStudioRow);
+
+  const bulkPerformerRow = makeEl("div");
+  bulkPerformerRow.className = "row";
+  bulkPerformerRow.dataset.field = "performers";
+  bulkForm.appendChild(bulkPerformerRow);
+
+  // The selection is read from GalleryList, which the plugin observes rather
+  // than replaces.
+  const selectGalleries = (ids) =>
+    patchedBefore["GalleryList"]({ selectedIds: new Set(ids) }, undefined);
+
+  // The row is mounted by the RatingSystem patch; render the fragment it returns
+  // and follow the portal it makes.
+  const bulkRow = () => {
+    const frag = call("RatingSystem", { value: 0 });
+    const rowEl = frag.props.children[1];
+    return rowEl.type(rowEl.props);
+  };
+  const bulkSelectOf = () =>
+    find(bulkRow().node, (n) => n.props && n.props.inputId === "manga_tools_language");
+
+  let b14 = bulkRow();
+  assert.strictEqual(b14.__portal, true, "the bulk row should render through a portal");
+
+  const bulkHost = bulkForm.children[1];
+  assert.strictEqual(bulkHost.className, "manga-tools-field-host");
+  assert.strictEqual(bulkHost.previousElementSibling, bulkStudioRow,
+    "the row should go right after the studio row");
+  assert.strictEqual(bulkHost.nextElementSibling, bulkPerformerRow,
+    "and right before the performers row — i.e. between studio and performers");
+  assert.strictEqual(b14.host, bulkHost);
+
+  // Structure and classes are copied from the native row, so it lines up with it
+  const bulkNode = b14.node;
+  assert.strictEqual(bulkNode.props.className, "row");
+  assert.strictEqual(bulkNode.props["data-field"], "manga_tools_language");
+  assert.strictEqual(bulkNode.props.children[0].props.className, "col-form-label col-3",
+    "the label classes should be copied from the native row");
+  assert.strictEqual(bulkNode.props.children[0].props.children, "语言");
+
+  // Like the studio field: one value per gallery, cleared with the selector's own
+  // x. No extra button, and no way to blank the field across a selection.
+  assert.strictEqual(bulkSelectOf().props.isClearable, true);
+  assert.strictEqual(
+    find(bulkNode, (n) => n.props && n.props["aria-pressed"] !== undefined), null,
+    "there should be no separate clear button");
+  assert.strictEqual(bulkSelectOf().props.menuPortalTarget, global.document.body,
+    "the menu has to escape the modal");
+
+  // ── Prefill from the selection, the way the studio field does ──
+  // Gallery 1 and 6 are zh-Hans, 2 is zh-Hant, 4 has no language field at all.
+  selectGalleries(["1", "6"]);
+  assert.strictEqual(bulkSelectOf().props.value.value, "zh-Hans",
+    "the whole selection agreeing should prefill that language");
+  assert.strictEqual(bulkSelectOf().props.value.label, "简体中文", "in the UI language");
+
+  selectGalleries(["1", "2"]);
+  assert.strictEqual(bulkSelectOf().props.value, null, "a mixed selection must not prefill");
+  assert.strictEqual(bulkSelectOf().props.placeholder, "Select language…");
+
+  selectGalleries(["1", "4"]);
+  assert.strictEqual(bulkSelectOf().props.value, null,
+    "a gallery with no language counts as differing, not as a match");
+
+  selectGalleries([]);
+  assert.strictEqual(bulkSelectOf().props.value, null, "nothing selected, nothing to prefill");
+
+  // ── Apply: the picked language rides along with the dialog's own update ──
+  /** Runs an operation through the plugin's link and reports what came out */
+  const runLink = (variables, rootField) => {
+    let forwarded = null;
+    let completed = null;
+    const forward = (op) => {
+      forwarded = op;
+      return {
+        map(fn) {
+          completed = fn({ data: {} });
+          return this;
+        },
+      };
+    };
+    installedLink.__chain[0].request(
+      {
+        query: {
+          kind: "Document",
+          definitions: [
+            {
+              kind: "OperationDefinition",
+              selectionSet: {
+                selections: [{ name: { value: rootField ?? "bulkGalleryUpdate" } }],
+              },
+            },
+          ],
+        },
+        variables,
+      },
+      forward
+    );
+    return { forwarded, completed };
+  };
+
+  const bulkVars = () => ({ input: { ids: ["1", "2"], photographer: "x" } });
+
+  // The link is installed the first time the row renders, and must not disturb
+  // the chain Stash already had.
+  assert.ok(installedLink, "the bulk row should install the link hook");
+  assert.strictEqual(installedLink.__chain[1].__original, true,
+    "the existing link chain must be passed through untouched");
+
+  // Untouched: the operation must go out exactly as Stash built it.
+  let r14 = runLink(bulkVars());
+  assert.strictEqual(r14.forwarded.variables.input.custom_fields, undefined,
+    "an untouched row must not add custom_fields");
+  assert.strictEqual(r14.completed, null, "nothing to clear when nothing was injected");
+
+  const queriesBefore = galleryQueryCount;
+  bulkSelectOf().props.onChange({ value: "zh-Hant", label: "繁体中文", flag: "tw" });
+  assert.strictEqual(bulkSelectOf().props.value.value, "zh-Hant", "the row should echo the pick");
+
+  r14 = runLink(bulkVars());
+  assert.deepStrictEqual(r14.forwarded.variables.input.custom_fields,
+    { partial: { language: "zh-Hant" } },
+    "the picked language should ride along with the dialog's own update");
+  assert.deepStrictEqual(r14.forwarded.variables.input.ids, ["1", "2"],
+    "the rest of the input must be left alone");
+  assert.strictEqual(r14.forwarded.variables.input.photographer, "x");
+  assert.strictEqual(r14.completed !== null, true,
+    "a successful update should clear the pending value");
+
+  // ...and once cleared, a second Apply must not repeat it.
+  r14 = runLink(bulkVars());
+  assert.strictEqual(r14.forwarded.variables.input.custom_fields, undefined,
+    "the value should only ever be sent once");
+
+  // Other entities' bulk updates must never be touched, even with a value pending.
+  bulkSelectOf().props.onChange({ value: "ja", label: "日语", flag: "jp" });
+  r14 = runLink(bulkVars(), "bulkSceneUpdate");
+  assert.strictEqual(r14.forwarded.variables.input.custom_fields, undefined,
+    "a scene bulk update must not be given a language");
+
+  // ...and the value survives that, so it is still applied to the right operation.
+  r14 = runLink(bulkVars());
+  assert.deepStrictEqual(r14.forwarded.variables.input.custom_fields,
+    { partial: { language: "ja" } });
+
+  // Clearing the x means "leave the language alone", exactly as clearing the
+  // studio field means "leave the studio alone" — neither sends a value.
+  bulkSelectOf().props.onChange(null);
+  r14 = runLink(bulkVars());
+  assert.strictEqual(r14.forwarded.variables.input.custom_fields, undefined,
+    "clearing must not write anything");
+  assert.strictEqual(r14.completed, null);
+
+  // The route is checked by the injection itself, not only by the row being
+  // mounted: a value left pending must not be written once the route has moved on.
+  bulkSelectOf().props.onChange({ value: "ko", label: "韩语", flag: "kr" });
+  r14 = runLink(bulkVars());
+  assert.deepStrictEqual(r14.forwarded.variables.input.custom_fields,
+    { partial: { language: "ko" } },
+    "precondition: it does apply while on a gallery page");
+
+  bulkSelectOf().props.onChange({ value: "ko", label: "韩语", flag: "kr" });
+  globalListeners["stash:location"]({ detail: { data: { location: { pathname: "/scenes/5" } } } });
+  r14 = runLink(bulkVars());
+  assert.strictEqual(r14.forwarded.variables.input.custom_fields, undefined,
+    "a pending value must never be written once the route has left the galleries");
+
+  // Off a gallery page there is no row at all
+  const onScene14 = call("RatingSystem", { value: 0 });
+  assert.strictEqual(onScene14.props.children[1].type(onScene14.props.children[1].props), null,
+    "no bulk language row on a scene page");
+  globalListeners["stash:location"]({ detail: { data: { location: { pathname: "/galleries" } } } });
+  assert.notStrictEqual(bulkRow(), null, "restored on a gallery page");
+  console.log("✓ bulk edit (placement / prefill / partial set / clear / scene isolation / one-shot / route)");
+
+  // The badges read the plugin's own store, so a successful write refetches it —
+  // otherwise the covers keep the old flag until the next poll. That refetch is
+  // deliberately deferred until any fetch already in flight has settled (a fetch
+  // started before the write would otherwise land afterwards and undo it), so the
+  // count can only be checked once the microtask queue has drained.
+  setTimeout(() => {
+    assert.strictEqual(galleryQueryCount, queriesBefore + 1,
+      "a successful bulk update should refetch the gallery map, so the badges update");
+    console.log("✓ bulk edit refetch (deferred past the in-flight fetch)");
+
+    console.log("\nAll smoke tests passed");
+  }, 0);
 }, 10);

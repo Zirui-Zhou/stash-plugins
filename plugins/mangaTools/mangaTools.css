@@ -154,36 +154,6 @@
   min-width: 14rem;
 }
 
-/* ──────────────────────── Bulk edit dialog row ──────────────────────── */
-
-/*
- * The bulk dialog's language row: the dropdown plus the "clear the language"
- * button. BulkUpdateFormGroup puts its control in a plain column, so this is
- * just an inline pair.
- */
-.manga-tools-bulk-control {
-  align-items: center;
-  display: flex;
-  gap: 0.5rem;
-}
-
-.manga-tools-bulk-control .manga-tools-select {
-  flex: 1 1 auto;
-  /* The dialog is narrower than the edit page, so 14rem is too greedy here. */
-  min-width: 10rem;
-}
-
-/*
- * The button only reflects the pending state, so it must not look like a
- * primary action. `aria-pressed` carries the state for assistive tech; this
- * rule is the visual half.
- */
-.manga-tools-bulk-clear[aria-pressed="true"] {
-  background-color: #dc3545;
-  border-color: #dc3545;
-  color: #fff;
-}
-
 /* ─────────────────────── Settings-page multiselect ─────────────────────── */
 
 /*

@@ -8,7 +8,7 @@ name: Manga Tools
 description: Adapts Stash galleries to manga/comic management.
 # Shown as the link button beside the plugin in Settings → Plugins.
 url: https://github.com/Zirui-Zhou/stash-plugins/tree/main/plugins/mangaTools
-version: 0.1.2
+version: 0.1.3
 ui:
   javascript:
     - languages.js

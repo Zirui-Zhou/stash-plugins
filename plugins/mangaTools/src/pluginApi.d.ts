@@ -153,6 +153,13 @@ interface IPluginApi {
   };
 
   patch: {
+    /**
+     * Observes a registered component's arguments. The callback receives the
+     * arguments and must return the arguments to pass on — returning them
+     * unchanged renders nothing differently, which is how the plugin reads
+     * GalleryList's selection without affecting it.
+     */
+    before(target: string, fn: MangaToolsPatchFn): void;
     instead(target: string, fn: MangaToolsPatchFn): void;
   };
 }

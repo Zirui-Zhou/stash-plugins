@@ -424,6 +424,30 @@
     }
   }
 
+  /**
+   * Refetches the gallery map, waiting for any fetch that is already in flight.
+   *
+   * Used after a bulk write. Both halves matter:
+   *   - calling refresh() directly would usually be **skipped**, because refresh()
+   *     shares one in-flight request — so the badges would keep the old flag until
+   *     the next poll or navigation.
+   *   - simply clearing inFlight and starting a new fetch would let the older
+   *     response land afterwards and put the previous language back, since that
+   *     request was built before the write.
+   */
+  function refreshAfterWrite(): void {
+    var pending = inFlight;
+    if (pending) {
+      // inFlight is cleared by this promise's own final handler, which runs
+      // before this callback, so refresh() starts a genuinely new request.
+      pending.then(function () {
+        refresh();
+      });
+    } else {
+      refresh();
+    }
+  }
+
   // ─────────────────────── UI locale and flags ───────────────────────
 
   /**
@@ -755,7 +779,7 @@
   // ─────────────────────────── Bulk edit dialog ───────────────────────────
 
   /** What the bulk row is about to do to the selected galleries */
-  type BulkLanguagePending = { kind: "set"; value: string } | { kind: "remove" };
+  type BulkLanguagePending = { kind: "set"; value: string } | { kind: "cleared" };
 
   /**
    * The language the bulk dialog is about to apply, or null when the user has not
@@ -769,8 +793,68 @@
    *
    * It is dropped once the mutation succeeds and when the dialog closes, so a
    * cancelled dialog leaves nothing behind.
+   *
+   * There is deliberately no "remove" state: the field mirrors Stash's own studio
+   * selector, where clearing the box means "do not change this", not "empty it".
    */
   var bulkPending: BulkLanguagePending | null = null;
+
+  /** Ids currently selected in the gallery list, captured from GalleryList */
+  var selectedGalleryIds: string[] = [];
+
+  /**
+   * Records which galleries are selected.
+   *
+   * The bulk dialog does not hand its selection to anything a plugin can patch,
+   * so it is read from GalleryList instead — the one patchable component that
+   * receives `selectedIds`, and the parent of all three display modes, so grid,
+   * list and wall are all covered by this single hook.
+   *
+   * Deliberately does **not** emit(): this runs during GalleryList's render, and
+   * notifying subscribers there would set state on a component while a different
+   * one is rendering. Nothing needs it either — the selection cannot change while
+   * the modal is open.
+   */
+  function captureSelection(selectedIds: unknown): void {
+    var next: string[] = [];
+    if (
+      selectedIds &&
+      typeof (selectedIds as { forEach?: unknown }).forEach === "function"
+    ) {
+      (selectedIds as Set<string>).forEach(function (id) {
+        next.push(String(id));
+      });
+    }
+
+    var unchanged =
+      next.length === selectedGalleryIds.length &&
+      next.every(function (id, i) {
+        return id === selectedGalleryIds[i];
+      });
+
+    if (!unchanged) selectedGalleryIds = next;
+  }
+
+  /**
+   * The language every selected gallery shares, or null when they differ (or when
+   * none of them carries one).
+   *
+   * Mirrors getAggregateStudioId in Stash's utils/bulkUpdate.ts — comparing the
+   * whole selection and falling back to "nothing in common" is what makes the
+   * studio field show a value only when every selected item agrees. The languages
+   * come from the plugin's own store rather than from the dialog, because the
+   * dialog is the one thing that cannot be read.
+   */
+  function selectedLanguageAggregate(): string | null {
+    if (!selectedGalleryIds.length) return null;
+
+    var first = store.get(selectedGalleryIds[0]) || "";
+    for (var i = 1; i < selectedGalleryIds.length; i++) {
+      if ((store.get(selectedGalleryIds[i]) || "") !== first) return null;
+    }
+
+    return first || null;
+  }
 
   /** Set once, so the link chain is never wrapped twice */
   var bulkLinkInstalled = false;
@@ -804,14 +888,15 @@
   /**
    * Merges the pending language into a bulk gallery update, in place.
    *
-   * CustomFieldsInput is what makes this possible without clobbering anything
-   * else: `partial` updates just the named keys, and `remove` deletes them, so
-   * the rest of every gallery's custom fields is untouched.
+   * CustomFieldsInput is what makes this safe: `partial` updates just the named
+   * keys, so the rest of every gallery's custom fields is left alone. Nothing is
+   * merged when the user has not actually picked a language — a bulk edit of
+   * photographers must go out exactly as Stash built it.
    *
    * @returns true when the operation was modified
    */
   function applyPendingLanguage(operation: MangaToolsApolloOperation): boolean {
-    if (!bulkPending) return false;
+    if (!bulkPending || bulkPending.kind !== "set") return false;
 
     // The route is checked here as well as by the row's mount, so "a language is
     // only ever written on a gallery page" is a stated constraint rather than a
@@ -825,10 +910,7 @@
       : undefined;
     if (!input || !Array.isArray(input.ids)) return false;
 
-    var fields =
-      bulkPending.kind === "set"
-        ? { partial: { [FIELD_NAME]: bulkPending.value } }
-        : { remove: [FIELD_NAME] };
+    var fields = { partial: { [FIELD_NAME]: bulkPending.value } };
 
     operation.variables = Object.assign({}, operation.variables, {
       input: Object.assign({}, input, {
@@ -899,7 +981,13 @@
           // can simply be retried with the row still filled in.
           return forward(operation).map(function (result) {
             bulkPending = null;
+
+            // The badges read the plugin's own store, which this update has just
+            // invalidated. Without this the covers keep the old flag until the
+            // next poll or navigation.
+            refreshAfterWrite();
             emit();
+
             return result;
           });
         }),
@@ -962,10 +1050,18 @@
     );
 
     var pending = bulkPending;
-    var current =
+
+    // Show exactly what is about to happen: what the user picked, otherwise the
+    // selection's shared language. A mixed selection shows the placeholder — the
+    // same way the studio field behaves.
+    var shown =
       pending && pending.kind === "set"
-        ? NS.describe(pending.value, intl.locale)
-        : null;
+        ? pending.value
+        : pending
+          ? ""
+          : selectedLanguageAggregate() || "";
+
+    var current = shown ? NS.describe(shown, intl.locale) : null;
 
     // A code that is not in the enabled list still has to be shown while it is
     // sitting in the row, or the selection would look like it was ignored.
@@ -986,20 +1082,6 @@
       ? { value: current.code, label: current.name, flag: current.flag }
       : null;
 
-    var removing = !!(pending && pending.kind === "remove");
-    var clearLabel = intl.formatMessage({
-      id: "mangaTools.bulk_clear_language",
-      defaultMessage: "Clear the language",
-    });
-    var placeholder = removing
-      ? "<" + clearLabel + ">"
-      : "<" +
-        intl.formatMessage({
-          id: "existing_value",
-          defaultMessage: "existing value",
-        }) +
-        ">";
-
     var cls = readNativeFieldClasses(BULK_ANCHOR) || {
       group: "row",
       label: "col-form-label col-3",
@@ -1012,44 +1094,26 @@
           {fieldLabel(intl)}
         </label>
         <div className={cls.control}>
-          <div className="manga-tools-bulk-control">
-            <Select
-              className="manga-tools-select"
-              classNamePrefix="react-select"
-              inputId="manga_tools_language"
-              isClearable
-              isSearchable={false}
-              isDisabled={removing}
-              placeholder={placeholder}
-              value={selected}
-              options={options}
-              formatOptionLabel={formatLanguageOption}
-              components={{ IndicatorSeparator: () => null }}
-              // Clearing the dropdown means "leave it alone", which is why the
-              // clear action is visually separate from the button beside it.
-              onChange={function (opt: MangaToolsOption | null) {
-                bulkPending = opt ? { kind: "set", value: opt.value } : null;
-                emit();
-              }}
-            />
-            <button
-              type="button"
-              className={
-                "btn btn-secondary btn-sm manga-tools-bulk-clear" +
-                (removing ? " active" : "")
-              }
-              title={clearLabel}
-              aria-pressed={removing}
-              onClick={function () {
-                // Toggles back to "leave it alone", so the button is always an
-                // escape hatch rather than a one-way door.
-                bulkPending = removing ? null : { kind: "remove" };
-                emit();
-              }}
-            >
-              <span className="fas fa-ban" />
-            </button>
-          </div>
+          <Select
+            className="manga-tools-select"
+            classNamePrefix="react-select"
+            inputId="manga_tools_language"
+            isClearable
+            isSearchable={false}
+            // The dialog is a scrolling modal, so the menu has to escape it.
+            menuPortalTarget={document.body}
+            placeholder="Select language…"
+            value={selected}
+            options={options}
+            formatOptionLabel={formatLanguageOption}
+            components={{ IndicatorSeparator: () => null }}
+            // Clearing means "leave the language alone", exactly as clearing the
+            // studio field means "leave the studio alone" — neither sends a value.
+            onChange={function (opt: MangaToolsOption | null) {
+              bulkPending = opt ? { kind: "set", value: opt.value } : { kind: "cleared" };
+              emit();
+            }}
+          />
         </div>
       </div>
     );
@@ -1351,7 +1415,19 @@
     return <Original {...props} />;
   });
 
-  // 6. Bulk edit: mounts the language row into the bulk edit dialog. The dialog
+  // 6. Bulk edit: records which galleries are selected. `before` only observes —
+  //    the props are handed straight back, so GalleryList renders exactly as it
+  //    would without the plugin. This is the only way to see the selection: the
+  //    dialog that uses it is not patchable.
+  PluginApi.patch.before("GalleryList", function () {
+    var args = argsToArray(arguments);
+    var props = args[0] as { selectedIds?: unknown };
+    noteFired("GalleryList");
+    captureSelection(props ? props.selectedIds : null);
+    return args;
+  });
+
+  // 7. Bulk edit: mounts the language row into the bulk edit dialog. The dialog
   //    itself is not a PatchComponent, so RatingSystem — the only patchable
   //    component it renders — is used purely as a mount point; the row is
   //    positioned by the DOM anchor and its value reaches the mutation through

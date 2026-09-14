@@ -23,7 +23,7 @@ Adds a "language" property to galleries.
 | Gallery list / card | A **regional flag** in the bottom-right of the cover (Japan, China, Taiwan…). Fades out on hover like the studio icon, clearing the cover |
 | Gallery edit page | A "language" dropdown **between "studio" and "performers"**, listing "flag + localised name" — no typing codes by hand |
 | Gallery detail page | An extra `<h6>` row **below "photographer", above "details"**, showing "flag + localised name" with the same label and font as the rows around it |
-| Gallery bulk edit | A "language" row **between "studio" and "performers"**, applied by the dialog's own **Apply** — Cancel discards it like every other field |
+| Gallery bulk edit | A "language" row **between "studio" and "performers"**, prefilled with the selection's shared language like the studio field, and applied by the dialog's own **Apply** — Cancel discards it like every other field |
 
 **Both of those positions rely on DOM plus a React portal, not a plain React
 patch.** Stash leaves no insertion point at either one:
@@ -96,24 +96,42 @@ instead:
   `client.setLink(from([ours, previous]))` — Apollo's own API for changing the
   chain after the client exists. The existing chain is passed through untouched,
   so nothing else about the client changes.
-- that link rewrites `input.custom_fields` on `bulkGalleryUpdate` **only**:
-  `{ partial: { language: "ja" } }` to set, `{ remove: ["language"] }` to clear.
-  It is matched on the schema's root field name, not on an operation name, and
-  scene/image bulk updates are deliberately left alone.
+- that link rewrites `input.custom_fields` on `bulkGalleryUpdate` **only**, as
+  `{ partial: { language: "ja" } }`. It is matched on the schema's root field
+  name, not on an operation name, and scene/image bulk updates are deliberately
+  left alone. A bulk edit that has nothing to do with language goes out byte for
+  byte as Stash built it.
 - it is installed **lazily**, the first time the row mounts, so a user who never
   opens the dialog never has their client touched at all.
 - the value is cleared once the update **succeeds**, so a failed Apply can simply
   be retried with the row still filled in, and a cancelled dialog leaves nothing
   behind.
+- a successful update also **refetches the gallery map**, so the flag badges on
+  the cards update instead of waiting up to a minute for the next poll. That
+  refetch waits for any fetch already in flight: one started before the write
+  carries pre-write data and would otherwise land afterwards and undo it.
 
-`partial` / `remove` are what make this safe rather than a blind overwrite:
-`CustomFieldsInput` updates just the named keys, so nothing else in a gallery's
-custom fields is disturbed.
+`partial` is what makes this safe rather than a blind overwrite: `CustomFieldsInput`
+updates just the named keys, so nothing else in a gallery's custom fields is
+disturbed.
 
-The dropdown's placeholder reads `<existing value>`, matching the native bulk
-fields, and clearing the dropdown means "leave it alone". The button beside it is
-a separate, explicit **clear the language** — that is the only way to remove the
-field in bulk, and it stays on until clicked again.
+The row behaves like Stash's own studio field, because it is the same shape of
+data — one value per gallery:
+
+- **the box is prefilled with the selection's shared language** when every
+  selected gallery agrees, and shows the placeholder when they differ or none of
+  them carries one. That mirrors `getAggregateStudioId` in Stash's
+  `utils/bulkUpdate.ts`; the languages come from the plugin's own gallery store,
+  since the dialog is the one thing that cannot be read.
+- **clearing the box means "leave the language alone"**, exactly as clearing the
+  studio field means "leave the studio alone" — neither sends a value. There is
+  deliberately no way to blank the field across a selection, and so no extra
+  button beside the dropdown.
+
+The selection itself is read by *observing* `GalleryList` (`patch.before`, which
+hands the props straight back). That is the only patchable component that receives
+`selectedIds`, and it is the parent of all three display modes, so grid, list and
+wall are all covered by one hook.
 
 ### Settings
 
@@ -228,9 +246,12 @@ Against a real Stash:
    should offer only those two, while a gallery already set to Vietnamese still
    shows its flag and detail row
 9. **Check the bulk edit**: select several galleries → **Edit** → a "language"
-   row should appear between studio and performers. Pick a language, press
-   **Apply**, and all of them should show the new flag. Do it again and press
-   **Cancel** instead — nothing should change.
+   row should appear between studio and performers.
+   - Select galleries that already share a language: the box should be prefilled
+     with it. Select a mixed set: it should show the placeholder instead.
+   - Pick a language, press **Apply**, and all of them should show the new flag
+     **without waiting for a refresh**.
+   - Do it again and press **Cancel** instead — nothing should change.
 
 ## Troubleshooting: the badge does not show up
 
