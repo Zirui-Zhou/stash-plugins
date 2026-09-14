@@ -5,7 +5,7 @@
 # array order — languages.js must come before mangaTools.js, since the latter
 # depends on the window.MangaTools object the former installs.
 name: Manga Tools
-description: Adapts Stash galleries to manga/comic management. Current feature - a language attribute with flag badge, edit-page dropdown and localised detail row.
+description: Adapts Stash galleries to manga/comic management.
 version: 0.1.1
 ui:
   javascript:
