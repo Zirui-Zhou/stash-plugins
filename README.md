@@ -7,7 +7,7 @@ through Stash's own plugin manager — no copying files by hand.
 
 | Plugin | What it does |
 |---|---|
-| [Manga Tools](plugins/mangaTools/README.md) | Adapts Stash galleries to manga/comic management: a language attribute with a flag badge on the cover, a dropdown on the edit page, and a localised row on the detail page |
+| [Manga Tools](plugins/mangaTools/README.md) | Adapts Stash galleries to manga/comic management: a language attribute with a flag badge on the cover, a dropdown on the edit page, a localised row on the detail page, and a language row in the bulk edit dialog |
 
 Each plugin's full documentation — every feature, its settings, and what to check
 if something stops working — is in its own README, linked above.

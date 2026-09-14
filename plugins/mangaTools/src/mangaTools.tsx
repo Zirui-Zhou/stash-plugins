@@ -51,6 +51,22 @@
 
   var FIELD_NAME = NS.FIELD_NAME;
   var PLUGIN_ID = "mangaTools";
+
+  /**
+   * Anchors for the two places a language field is inserted.
+   *
+   * Both are rows Stash itself tags with data-field, so the anchor survives
+   * markup changes:
+   *   - the gallery edit panel uses renderField, which tags the studio row
+   *     `studio_id`
+   *   - the bulk edit dialog uses BulkUpdateFormGroup, which tags it `studio`
+   *
+   * They are deliberately different strings, so the two lookups can never
+   * match each other's row.
+   */
+  var EDIT_ANCHOR = '.form-group[data-field="studio_id"]';
+  var BULK_ANCHOR = '[data-field="studio"]';
+
   var REFRESH_MS = 60000;
 
   /** The Gallery custom_fields map as it comes back from GraphQL */
@@ -514,8 +530,10 @@
    * Returns null when nothing can be read, and the caller falls back to a
    * conservative default.
    */
-  function readNativeFieldClasses(): NativeFieldClasses | null {
-    var anchor = document.querySelector('.form-group[data-field="studio_id"]');
+  function readNativeFieldClasses(
+    anchorSelector: string
+  ): NativeFieldClasses | null {
+    var anchor = document.querySelector(anchorSelector);
     if (!anchor) return null;
 
     var label = anchor.querySelector("label");
@@ -603,7 +621,7 @@
       : null;
 
     // Column widths come from the native field; this is the fallback.
-    var cls = readNativeFieldClasses() || {
+    var cls = readNativeFieldClasses(EDIT_ANCHOR) || {
       group: "form-group row",
       label: "form-label col-form-label col-sm-3",
       control: "col-sm-9",
@@ -734,6 +752,311 @@
     );
   }
 
+  // ─────────────────────────── Bulk edit dialog ───────────────────────────
+
+  /** What the bulk row is about to do to the selected galleries */
+  type BulkLanguagePending = { kind: "set"; value: string } | { kind: "remove" };
+
+  /**
+   * The language the bulk dialog is about to apply, or null when the user has not
+   * touched the row.
+   *
+   * This is state the dialog itself does not know about, and cannot be given:
+   * EditGalleriesDialog is a plain React.FC (not a PatchComponent) and keeps its
+   * pending edits in its own useState, so there is no way to add a field to them.
+   * The row therefore lives outside that state and its value is merged into the
+   * outgoing mutation instead — see installBulkLink.
+   *
+   * It is dropped once the mutation succeeds and when the dialog closes, so a
+   * cancelled dialog leaves nothing behind.
+   */
+  var bulkPending: BulkLanguagePending | null = null;
+
+  /** Set once, so the link chain is never wrapped twice */
+  var bulkLinkInstalled = false;
+
+  /**
+   * Is this operation Stash's gallery bulk update?
+   *
+   * Matched on the **root field name from the schema** (`bulkGalleryUpdate`,
+   * graphql/schema/schema.graphql) rather than on the operation name codegen
+   * happens to give it, and not on the shape of the variables either: the scene
+   * and image bulk updates also take an `ids` array, and writing a language onto
+   * scenes is not this plugin's business.
+   */
+  function isGalleryBulkUpdate(query: unknown): boolean {
+    var defs = query ? (query as { definitions?: unknown[] }).definitions : null;
+    if (!defs || !defs.length) return false;
+
+    var op = defs[0] as {
+      kind?: string;
+      selectionSet?: { selections?: Array<{ name?: { value?: string } }> };
+    };
+    if (!op || op.kind !== "OperationDefinition") return false;
+
+    var selections = op.selectionSet && op.selectionSet.selections;
+    if (!selections || !selections.length) return false;
+
+    var first = selections[0];
+    return !!(first && first.name && first.name.value === "bulkGalleryUpdate");
+  }
+
+  /**
+   * Merges the pending language into a bulk gallery update, in place.
+   *
+   * CustomFieldsInput is what makes this possible without clobbering anything
+   * else: `partial` updates just the named keys, and `remove` deletes them, so
+   * the rest of every gallery's custom fields is untouched.
+   *
+   * @returns true when the operation was modified
+   */
+  function applyPendingLanguage(operation: MangaToolsApolloOperation): boolean {
+    if (!bulkPending) return false;
+
+    // The route is checked here as well as by the row's mount, so "a language is
+    // only ever written on a gallery page" is a stated constraint rather than a
+    // consequence of where the row happens to render.
+    if (!isGalleryContext()) return false;
+
+    if (!isGalleryBulkUpdate(operation.query)) return false;
+
+    var input = operation.variables
+      ? (operation.variables.input as { ids?: unknown } | undefined)
+      : undefined;
+    if (!input || !Array.isArray(input.ids)) return false;
+
+    var fields =
+      bulkPending.kind === "set"
+        ? { partial: { [FIELD_NAME]: bulkPending.value } }
+        : { remove: [FIELD_NAME] };
+
+    operation.variables = Object.assign({}, operation.variables, {
+      input: Object.assign({}, input, {
+        custom_fields: Object.assign(
+          {},
+          (input as { custom_fields?: unknown }).custom_fields,
+          fields
+        ),
+      }),
+    });
+
+    return true;
+  }
+
+  /**
+   * Hooks Stash's Apollo link chain so the pending language rides along with the
+   * dialog's own Apply.
+   *
+   * Why a link rather than patching the dialog: the dialog builds its mutation
+   * from private state, so the last point this plugin and the dialog are both
+   * present is the outgoing GraphQL operation. `setLink` is Apollo's own API for
+   * changing the chain after the client exists, and the existing chain is passed
+   * through untouched, so nothing else about the client changes.
+   *
+   * Installed lazily, the first time the bulk row mounts, so a user who never
+   * opens the bulk dialog never has their client touched at all.
+   */
+  function installBulkLink(): void {
+    if (bulkLinkInstalled) return;
+
+    var Apollo = PluginApi.libraries.Apollo;
+    var client;
+    try {
+      client = PluginApi.utils.StashService.getClient();
+    } catch (e) {
+      console.error("[mangaTools] failed to get the Apollo client:", e);
+      return;
+    }
+
+    if (
+      !Apollo ||
+      !Apollo.ApolloLink ||
+      typeof client.setLink !== "function" ||
+      !client.link
+    ) {
+      console.error(
+        "[mangaTools] ApolloLink/setLink unavailable — languages cannot be set from the bulk edit dialog"
+      );
+      return;
+    }
+
+    // Replace the chain with ours in front of the existing one. setLink replaces
+    // the whole chain, so the current link must be passed through explicitly.
+    var previous = client.link;
+
+    client.setLink(
+      Apollo.ApolloLink.from([
+        new Apollo.ApolloLink(function (operation, forward) {
+          if (!applyPendingLanguage(operation)) {
+            return forward(operation);
+          }
+
+          console.info(
+            "[mangaTools] bulk update: sending the language with the dialog's own update"
+          );
+
+          // Cleared only once the update actually succeeded, so a failed Apply
+          // can simply be retried with the row still filled in.
+          return forward(operation).map(function (result) {
+            bulkPending = null;
+            emit();
+            return result;
+          });
+        }),
+        previous,
+      ])
+    );
+
+    bulkLinkInstalled = true;
+  }
+
+  /**
+   * The bulk edit dialog's language row, rendered through a portal into a mount
+   * point inserted between Stash's "studio" and "performers" rows.
+   *
+   * The value is deliberately **not** applied as it is picked: it is merged into
+   * the dialog's own bulk update when Apply is pressed, so Cancel discards it
+   * exactly like every other field in that dialog.
+   */
+  function BulkLanguageRow() {
+    useGlobalVersion();
+
+    var intl = PluginApi.libraries.Intl.useIntl();
+    var Select = resolveSelect();
+
+    var host = isGalleryContext() ? ensureBulkFieldHost() : null;
+    var bump = React.useState(0)[1];
+
+    // Same first-render problem as LanguageRow: the dialog mounts this component
+    // from its rating row, which renders **before** the studio row it has to
+    // anchor on has been committed to the DOM. The effect runs after the commit,
+    // and one extra render is all it takes.
+    React.useEffect(function () {
+      if (isGalleryContext()) {
+        installBulkLink();
+        if (ensureBulkFieldHost() !== host) {
+          bump(function (v) {
+            return v + 1;
+          });
+        }
+      }
+    });
+
+    // Losing the row means the dialog closed, so the pending value is no longer
+    // wanted. Checked against the DOM rather than unconditionally, so an
+    // unrelated re-render cannot throw the value away while the dialog is open.
+    React.useEffect(function () {
+      return function () {
+        if (!document.querySelector(BULK_ANCHOR)) {
+          bulkPending = null;
+        }
+      };
+    }, []);
+
+    if (!isGalleryContext() || !Select || !host) return null;
+
+    var options: MangaToolsOption[] = NS.languageOptions(intl.locale).filter(
+      function (o) {
+        return !NS.enabledLanguages || NS.enabledLanguages.has(o.value);
+      }
+    );
+
+    var pending = bulkPending;
+    var current =
+      pending && pending.kind === "set"
+        ? NS.describe(pending.value, intl.locale)
+        : null;
+
+    // A code that is not in the enabled list still has to be shown while it is
+    // sitting in the row, or the selection would look like it was ignored.
+    var currentCode = current ? current.code : "";
+    if (
+      current &&
+      !options.some(function (o) {
+        return o.value === currentCode;
+      })
+    ) {
+      options = [
+        { value: current.code, label: current.name, flag: current.flag },
+        ...options,
+      ];
+    }
+
+    var selected = current
+      ? { value: current.code, label: current.name, flag: current.flag }
+      : null;
+
+    var removing = !!(pending && pending.kind === "remove");
+    var clearLabel = intl.formatMessage({
+      id: "mangaTools.bulk_clear_language",
+      defaultMessage: "Clear the language",
+    });
+    var placeholder = removing
+      ? "<" + clearLabel + ">"
+      : "<" +
+        intl.formatMessage({
+          id: "existing_value",
+          defaultMessage: "existing value",
+        }) +
+        ">";
+
+    var cls = readNativeFieldClasses(BULK_ANCHOR) || {
+      group: "row",
+      label: "col-form-label col-3",
+      control: "col-9",
+    };
+
+    var field = (
+      <div className={cls.group} data-field="manga_tools_language">
+        <label className={cls.label} htmlFor="manga_tools_language">
+          {fieldLabel(intl)}
+        </label>
+        <div className={cls.control}>
+          <div className="manga-tools-bulk-control">
+            <Select
+              className="manga-tools-select"
+              classNamePrefix="react-select"
+              inputId="manga_tools_language"
+              isClearable
+              isSearchable={false}
+              isDisabled={removing}
+              placeholder={placeholder}
+              value={selected}
+              options={options}
+              formatOptionLabel={formatLanguageOption}
+              components={{ IndicatorSeparator: () => null }}
+              // Clearing the dropdown means "leave it alone", which is why the
+              // clear action is visually separate from the button beside it.
+              onChange={function (opt: MangaToolsOption | null) {
+                bulkPending = opt ? { kind: "set", value: opt.value } : null;
+                emit();
+              }}
+            />
+            <button
+              type="button"
+              className={
+                "btn btn-secondary btn-sm manga-tools-bulk-clear" +
+                (removing ? " active" : "")
+              }
+              title={clearLabel}
+              aria-pressed={removing}
+              onClick={function () {
+                // Toggles back to "leave it alone", so the button is always an
+                // escape hatch rather than a one-way door.
+                bulkPending = removing ? null : { kind: "remove" };
+                emit();
+              }}
+            >
+              <span className="fas fa-ban" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+
+    return PluginApi.ReactDOM.createPortal(field, host);
+  }
+
   // ───────────────────────────── Patch registration ─────────────────────────────
 
   // 1. The badge on the bottom of the gallery card cover.
@@ -855,30 +1178,39 @@
   var FIELD_HOST_CLASS = "manga-tools-field-host";
 
   /** As above, held at module scope so the same node is reused */
-  var fieldHost: HTMLElement | null = null;
+  var fieldHosts: { [key: string]: HTMLElement | null } = { edit: null, bulk: null };
 
   /**
-   * Finds (creating if needed) the mount point for the edit-page language field,
-   * positioned **right after the studio field's row**.
+   * Finds (creating if needed) the mount point for a language field row,
+   * positioned **right after the row named by `anchorSelector`**.
    *
-   * Why not patch StudioSelect instead: it renders inside a `<Col>`, so anything
-   * added there is nested inside that column and the label column no longer
-   * lines up with the native fields. What is needed is a sibling field row, so
-   * one has to be inserted into the DOM.
+   * Why not patch the component that renders that row: StudioSelect renders
+   * inside a `<Col>`, so anything added there is nested inside that column and
+   * the label column no longer lines up with the native fields. What is needed
+   * is a sibling field row, so one has to be inserted into the DOM.
    *
-   * Conveniently renderField leaves a data-field attribute on every row, which
-   * makes a far more stable anchor than walking the structure.
+   * Conveniently Stash leaves a data-field attribute on these rows (renderField
+   * on the edit panel, BulkUpdateFormGroup in the bulk dialog), which makes a far
+   * more stable anchor than walking the structure.
+   *
+   * `key` is per-anchor so the edit panel and the bulk dialog each keep their own
+   * mount point; they are never on screen at the same time.
    */
-  function ensureFieldHost(): HTMLElement | null {
-    var anchor = document.querySelector('.form-group[data-field="studio_id"]');
+  function ensureHostAfter(
+    anchorSelector: string,
+    key: string
+  ): HTMLElement | null {
+    var anchor = document.querySelector(anchorSelector);
     if (!anchor || !anchor.parentNode) {
-      fieldHost = null;
+      fieldHosts[key] = null;
       return null;
     }
 
-    if (!fieldHost) {
-      fieldHost = document.createElement("div");
-      fieldHost.className = FIELD_HOST_CLASS;
+    var host = fieldHosts[key];
+    if (!host) {
+      host = document.createElement("div");
+      host.className = FIELD_HOST_CLASS;
+      fieldHosts[key] = host;
     }
 
     // A React re-render may displace it; keep it directly after the studio row.
@@ -886,13 +1218,23 @@
     // the same property the idempotency check above uses, and a stray whitespace
     // text node between the two does not change the position either way.
     if (
-      fieldHost.parentNode !== anchor.parentNode ||
-      anchor.nextElementSibling !== fieldHost
+      host.parentNode !== anchor.parentNode ||
+      anchor.nextElementSibling !== host
     ) {
-      anchor.parentNode.insertBefore(fieldHost, anchor.nextElementSibling);
+      anchor.parentNode.insertBefore(host, anchor.nextElementSibling);
     }
 
-    return fieldHost;
+    return host;
+  }
+
+  /** The gallery edit panel's mount point (see LanguageRow) */
+  function ensureFieldHost(): HTMLElement | null {
+    return ensureHostAfter(EDIT_ANCHOR, "edit");
+  }
+
+  /** The bulk edit dialog's mount point (see BulkLanguageRow) */
+  function ensureBulkFieldHost(): HTMLElement | null {
+    return ensureHostAfter(BULK_ANCHOR, "bulk");
   }
 
   /**
@@ -1007,6 +1349,25 @@
     }
 
     return <Original {...props} />;
+  });
+
+  // 6. Bulk edit: mounts the language row into the bulk edit dialog. The dialog
+  //    itself is not a PatchComponent, so RatingSystem — the only patchable
+  //    component it renders — is used purely as a mount point; the row is
+  //    positioned by the DOM anchor and its value reaches the mutation through
+  //    installBulkLink, not through the dialog.
+  PluginApi.patch.instead("RatingSystem", function () {
+    var args = argsToArray(arguments);
+    var props = args[0] as object;
+    var Original = originalFrom(args);
+    noteFired("RatingSystem");
+
+    return (
+      <>
+        <Original {...props} />
+        <BulkLanguageRow />
+      </>
+    );
   });
 
   start();

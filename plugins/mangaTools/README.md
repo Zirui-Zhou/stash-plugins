@@ -23,6 +23,7 @@ Adds a "language" property to galleries.
 | Gallery list / card | A **regional flag** in the bottom-right of the cover (Japan, China, Taiwan…). Fades out on hover like the studio icon, clearing the cover |
 | Gallery edit page | A "language" dropdown **between "studio" and "performers"**, listing "flag + localised name" — no typing codes by hand |
 | Gallery detail page | An extra `<h6>` row **below "photographer", above "details"**, showing "flag + localised name" with the same label and font as the rows around it |
+| Gallery bulk edit | A "language" row **between "studio" and "performers"**, applied by the dialog's own **Apply** — Cancel discards it like every other field |
 
 **Both of those positions rely on DOM plus a React portal, not a plain React
 patch.** Stash leaves no insertion point at either one:
@@ -72,6 +73,48 @@ takes for performer nationality (store `US`, display `United States`).
 The semantic meaning is **the language of the comic itself**, not whether it is
 raw or translated.
 
+#### Bulk edit
+
+Setting one language across a whole selection is the reason this row exists, and
+it is the only part of the plugin that reaches outside the patch API — so it is
+worth knowing how it works.
+
+`EditGalleriesDialog` is **not** a `PatchComponent`, and it keeps the values it is
+about to apply in its own state:
+
+```jsx
+const [updateInput, setUpdateInput] = useState<BulkGalleryUpdateInput>(...)
+function getGalleryInput() { return { ...updateInput, ... } }   // Apply sends this
+```
+
+No hook lets a plugin add a field to that state. So the row is rendered *outside*
+it — DOM plus portal, anchored on the `data-field="studio"` row that
+`BulkUpdateFormGroup` emits — and its value is merged into the outgoing mutation
+instead:
+
+- the plugin installs one `ApolloLink` in front of Stash's chain with
+  `client.setLink(from([ours, previous]))` — Apollo's own API for changing the
+  chain after the client exists. The existing chain is passed through untouched,
+  so nothing else about the client changes.
+- that link rewrites `input.custom_fields` on `bulkGalleryUpdate` **only**:
+  `{ partial: { language: "ja" } }` to set, `{ remove: ["language"] }` to clear.
+  It is matched on the schema's root field name, not on an operation name, and
+  scene/image bulk updates are deliberately left alone.
+- it is installed **lazily**, the first time the row mounts, so a user who never
+  opens the dialog never has their client touched at all.
+- the value is cleared once the update **succeeds**, so a failed Apply can simply
+  be retried with the row still filled in, and a cancelled dialog leaves nothing
+  behind.
+
+`partial` / `remove` are what make this safe rather than a blind overwrite:
+`CustomFieldsInput` updates just the named keys, so nothing else in a gallery's
+custom fields is disturbed.
+
+The dropdown's placeholder reads `<existing value>`, matching the native bulk
+fields, and clearing the dropdown means "leave it alone". The button beside it is
+a separate, explicit **clear the language** — that is the only way to remove the
+field in bulk, and it stays on until clicked again.
+
 ### Settings
 
 Adds an "Enabled languages" multiselect under **Settings → Plugins → Manga
@@ -102,7 +145,7 @@ never filtered, while only the option *list* is filtered.
 ```
 mangaTools/
 ├── src/
-│   ├── mangaTools.tsx     Badge, dropdown, settings, patch registration
+│   ├── mangaTools.tsx     Badge, dropdown, bulk row, settings, patches
 │   ├── languages.ts       Language table (pure data, swappable on its own)
 │   └── pluginApi.d.ts     Types for window.PluginApi and window.MangaTools
 ├── mangaTools.yml         Plugin config (the file name is the plugin ID)
@@ -184,6 +227,10 @@ Against a real Stash:
    `日本語` and `English`, save, then open a gallery edit page — the dropdown
    should offer only those two, while a gallery already set to Vietnamese still
    shows its flag and detail row
+9. **Check the bulk edit**: select several galleries → **Edit** → a "language"
+   row should appear between studio and performers. Pick a language, press
+   **Apply**, and all of them should show the new flag. Do it again and press
+   **Cancel** instead — nothing should change.
 
 ## Troubleshooting: the badge does not show up
 
@@ -234,6 +281,11 @@ values through the plugin's dropdown never hits this, since that writes lowercas
 
 ## Known limitations
 
+- **The bulk edit row hooks the Apollo link chain** (see "Bulk edit" above) — the
+  only place the plugin goes beyond the patch API. It is the only way to put a
+  field into that dialog, since the dialog is not patchable and keeps its pending
+  values in private state. If a future Stash makes `EditGalleriesDialog` a
+  `PatchComponent`, this should be replaced with a normal patch.
 - **The filter UI is still plain text**, with no dropdown. Stash's
   `CustomFieldCriterionEditor` is not a patchable component, so the plugin cannot
   replace it without changing core code.

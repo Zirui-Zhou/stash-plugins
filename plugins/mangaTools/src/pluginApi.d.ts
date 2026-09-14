@@ -68,6 +68,43 @@ interface MangaToolsApolloClient {
     query: unknown;
     fetchPolicy?: string;
   }): Promise<{ data?: { [key: string]: unknown } }>;
+
+  /** The current link chain — read before replacing it (see setLink below) */
+  link?: unknown;
+  /** Apollo's own API for replacing the link chain after the client exists */
+  setLink?(link: unknown): void;
+}
+
+/** Minimal shape of an operation as it passes through an Apollo link */
+interface MangaToolsApolloOperation {
+  query: unknown;
+  variables: Record<string, unknown>;
+}
+
+/** What forwarding an operation returns; only `map` is used here */
+interface MangaToolsApolloObservable {
+  map(fn: (result: unknown) => unknown): MangaToolsApolloObservable;
+}
+
+/** What a link calls to pass the operation further down the chain */
+type MangaToolsApolloForward = (
+  operation: MangaToolsApolloOperation
+) => MangaToolsApolloObservable;
+
+/**
+ * ApolloLink's static side. Only the two entry points this plugin uses are
+ * declared: `new ApolloLink(fn)` builds a single link, and
+ * `ApolloLink.from([...])` composes a chain.
+ */
+interface MangaToolsApolloLinkClass {
+  new (
+    request: (
+      operation: MangaToolsApolloOperation,
+      forward: MangaToolsApolloForward
+    ) => MangaToolsApolloObservable
+  ): unknown;
+
+  from(links: unknown[]): unknown;
 }
 
 /** The mutation StashService.useConfigurePlugin() returns */
@@ -95,7 +132,10 @@ interface IPluginApi {
   GQL?: { gql?: MangaToolsGql };
 
   libraries: {
-    Apollo?: { gql?: MangaToolsGql };
+    Apollo?: {
+      gql?: MangaToolsGql;
+      ApolloLink?: MangaToolsApolloLinkClass;
+    };
     Intl: { useIntl(): MangaToolsIntl };
     /** react-select as a namespace import: the component is its default export */
     ReactSelect: { default?: unknown; Select?: unknown };
