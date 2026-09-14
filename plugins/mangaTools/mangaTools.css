@@ -1,0 +1,155 @@
+/*
+ * Manga Tools — styles
+ *
+ * Only adds its own class names; it never overrides Stash's (the single
+ * exception is .thumbnail-section below).
+ *
+ * Flags use flag-icons' `.fi` / `.fi-<country>`. That stylesheet is loaded
+ * globally by Stash (index.scss imports `flag-icons/css/flag-icons.min.css`),
+ * so all this file has to do is size them — no assets to ship.
+ */
+
+/* ───────────────────────── Cover badge ───────────────────────── */
+
+/*
+ * The badge sits at the bottom of the cover, so it needs a positioning context.
+ *
+ * Stash does not position .thumbnail-section (position: relative is only set on
+ * the same-named class inside performer cards). In a gallery card the nearest
+ * positioned ancestor is actually Bootstrap's .card, which is why
+ * .studio-overlay's top/right happen to line up with the cover's top-right
+ * corner — that looks right, but it is a coincidence. A badge using `bottom`
+ * would land below the card title instead, so establish the context here.
+ *
+ * Scoped to gallery cards: with this in place .studio-overlay anchors to
+ * .thumbnail-section rather than .card. That box is exactly the same size as the
+ * cover, so its top-right corner does not move.
+ */
+.gallery-card .thumbnail-section {
+  position: relative;
+}
+
+.manga-tools-badge {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  z-index: 9;
+
+  line-height: 0;
+
+  /* Resting opacity matches Stash's .studio-overlay (see GridCard/styles.scss)
+     so the badge reads as part of the same family as the studio icon.
+     Raise this to 1 if it looks too faint. */
+  opacity: 0.75;
+  transition: opacity 0.5s;
+
+  /* Important: without this the badge covers the card's <a>, so that patch of
+     the cover is no longer clickable. */
+  pointer-events: none;
+}
+
+/*
+ * The flag itself. A drop-shadow rather than a background keeps it legible on
+ * light covers — the same approach Stash uses for flags on performer cards
+ * (the .fi rule in Performers/styles.scss).
+ */
+.manga-tools-badge .fi {
+  border-radius: 2px;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
+  height: 1.25rem;
+  width: 1.875rem;
+}
+
+/*
+ * Unrecognised values have no flag, so they fall back to a grey text chip.
+ * The line-height has to be reset explicitly, overriding the `line-height: 0`
+ * left behind by the .fi rule above.
+ */
+.manga-tools-badge.is-unknown {
+  background-color: #6b7280;
+  border-radius: 3px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03rem;
+  line-height: 1.5;
+  max-width: 5rem;
+  overflow: hidden;
+  padding: 0.05rem 0.4rem;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * Fade out while the whole card is hovered — exactly what Stash does to
+ * .rating-banner and .studio-overlay (same 0.5s transition).
+ *
+ * One difference: the studio icon is a link and can be hovered itself, which is
+ * why Stash also has `.studio-overlay:hover { opacity: 0.75 }` to bring it back.
+ * The badge is pointer-events: none, so it never receives hover, and it simply
+ * disappears once the card is hovered. That is the intent — hovering means the
+ * user wants to look at the cover.
+ */
+.gallery-card:hover .manga-tools-badge,
+.gallery-card:active .manga-tools-badge {
+  opacity: 0;
+  transition: opacity 0.5s;
+}
+
+/* ───────────────────── Flags in the dropdown / detail row ───────────────────── */
+
+/* A react-select option (the menu item and the selected value share one renderer) */
+.manga-tools-option {
+  align-items: center;
+  display: flex;
+  gap: 0.45rem;
+}
+
+.manga-tools-flag {
+  border-radius: 2px;
+  flex: 0 0 auto;
+  height: 0.9rem;
+  width: 1.35rem;
+}
+
+/*
+ * The detail-page row. It is deliberately rendered as an <h6>, matching the
+ * "studio code" and "photographer" rows above it; font and line-height come from
+ * Stash's own `.gallery-details h6`, so all this does is align the flag.
+ *
+ * There is deliberately **no margin** between the flag and the name: that gap
+ * comes from a single space in the JSX, making it exactly as wide as the space
+ * after the colon. A margin would be a magic number that stops matching as soon
+ * as Stash changes its font size or the user picks a different UI font.
+ *
+ * The host (.manga-tools-detail-host) is an empty div with no padding or
+ * border, so the h6's margins collapse through it and spacing matches the
+ * sibling h6 elements.
+ */
+.manga-tools-detail .manga-tools-flag {
+  vertical-align: -0.15rem;
+}
+
+/* ───────────────────────── Edit-page dropdown ───────────────────────── */
+
+/*
+ * The mount point has to be completely transparent to layout.
+ *
+ * It holds a Form.Group (Bootstrap's .form-group.row). That row's column widths
+ * rely on its own negative margins cancelling out the parent .col's padding. If
+ * the mount point were a plain block-level div it would add an extra layer, the
+ * negative margins would resolve against that instead, and the field would sit
+ * at a different offset than the native ones.
+ *
+ * `display: contents` removes the box from layout entirely and lets its children
+ * lay out against the parent (.col) — identical to not having the layer at all.
+ */
+.manga-tools-field-host {
+  display: contents;
+}
+
+.manga-tools-select {
+  min-width: 14rem;
+}

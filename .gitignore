@@ -1,0 +1,7 @@
+# Build output. CI regenerates it and publishes it to the gh-pages branch, so it
+# never belongs in the repository.
+dist/
+
+node_modules/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,53 @@
+name: Build package index
+
+# On every push to main: repackage all plugins, regenerate index.yml, and publish
+# the result to the gh-pages branch. GitHub Pages serves those files, and Stash's
+# "source URL" points at that address.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # also runnable by hand from the Actions tab
+
+permissions:
+  contents: write # required to push the gh-pages branch
+
+concurrency:
+  # Cancel an in-flight run when another push lands, so two runs never race to
+  # push gh-pages at the same time.
+  group: build-index
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history isn't needed. build.mjs only falls back to git for the
+          # short SHA when GITHUB_SHA is unset, so a shallow clone is fine.
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # The ubuntu runner ships zip, which is what build.mjs shells out to.
+      - name: Package plugins and generate index.yml
+        run: node tools/build.mjs
+
+      - name: Show build output
+        run: |
+          ls -la dist/
+          echo "--- index.yml ---"
+          cat dist/index.yml
+
+      - name: Publish to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: gh-pages
+          # Keep only the most recent publish, so the branch history stays clean.
+          force_orphan: true
+          # Not github.event.head_commit.message: it is empty on workflow_dispatch.
+          commit_message: "build: publish ${{ github.sha }}"

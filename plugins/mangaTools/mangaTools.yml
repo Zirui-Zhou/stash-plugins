@@ -1,0 +1,15 @@
+# Manga Tools — a toolbox that adapts Stash galleries to manga/comic management.
+#
+# The plugin ID comes from this file's name (mangaTools), not from a config
+# field. Paths under ui.javascript are relative to this file and are loaded in
+# array order — languages.js must come before mangaTools.js, since the latter
+# depends on the window.MangaTools object the former installs.
+name: Manga Tools
+description: Adapts Stash galleries to manga/comic management. Current feature - a language attribute with flag badge, edit-page dropdown and localised detail row.
+version: 0.1.0
+ui:
+  javascript:
+    - languages.js
+    - mangaTools.js
+  css:
+    - mangaTools.css
