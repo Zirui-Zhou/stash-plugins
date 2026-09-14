@@ -166,6 +166,26 @@
   width: 100%;
 }
 
+/*
+ * Two of Stash's rules assume a setting row is a label|control pair and push
+ * the last child to the right:
+ *
+ *   .setting-section .setting > div:last-child   { min-width: 100px; text-align: right }
+ *   .setting-group   .setting > div:last-child   { margin-left: auto }
+ *
+ * This setting is a full-width vertical stack instead, so both have to be
+ * undone. `text-align` is the one that shows: it inherits into the h3 and
+ * .sub-heading inside the block and right-aligns their text.
+ *
+ * The third class name gives this rule enough specificity to win; !important
+ * is not needed.
+ */
+.setting-section .setting.manga-tools-settings > div:last-child {
+  margin-left: 0;
+  min-width: 0;
+  text-align: left;
+}
+
 .manga-tools-settings-control {
   margin-top: 0.75rem;
 }

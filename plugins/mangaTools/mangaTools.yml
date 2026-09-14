@@ -6,7 +6,7 @@
 # depends on the window.MangaTools object the former installs.
 name: Manga Tools
 description: Adapts Stash galleries to manga/comic management. Current feature - a language attribute with flag badge, edit-page dropdown and localised detail row.
-version: 0.1.0
+version: 0.1.1
 ui:
   javascript:
     - languages.js

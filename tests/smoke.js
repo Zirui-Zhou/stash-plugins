@@ -702,7 +702,16 @@ assert.ok(
   /\.manga-tools-badge\s+\.fi\s*\{[^}]*height:/.test(css),
   "the badge flag sizing rule is missing"
 );
-console.log("✓ CSS checks (braces / hover / positioning / flag sizing)");
+// Stash's `.setting-section .setting > div:last-child { text-align: right }`
+// right-aligns the heading and description of this full-width settings block
+// unless it is explicitly undone.
+assert.ok(
+  /\.setting-section\s+\.setting\.manga-tools-settings\s*>\s*div:last-child\s*\{[^}]*text-align:\s*left/.test(
+    css
+  ),
+  "the settings block must reset Stash's text-align: right"
+);
+console.log("✓ CSS checks (braces / hover / positioning / flag sizing / settings alignment)");
 
 setTimeout(() => {
   // ── 11. Badges (after the refresh promise settles) ───────────────
