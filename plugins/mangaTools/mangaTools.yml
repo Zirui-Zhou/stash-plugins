@@ -8,7 +8,7 @@ name: Manga Tools
 description: Adapts Stash galleries to manga/comic management.
 # Shown as the link button beside the plugin in Settings → Plugins.
 url: https://github.com/Zirui-Zhou/stash-plugins/tree/main/plugins/mangaTools
-version: 0.1.3
+version: 0.1.4
 ui:
   javascript:
     - languages.js
@@ -18,11 +18,23 @@ ui:
 
 # Plugin settings, editable under Settings → Plugins. Stash renders one plain
 # input per entry below (STRING/NUMBER/BOOLEAN only); the plugin patches that UI
-# for itself to show a multiselect instead. The value is stored in
-# Configuration.plugins.mangaTools.enabledLanguages as a comma-separated list of
-# canonical language codes; empty means "no restriction" (show every language).
+# for itself to show a multiselect and switches instead. All three live in
+# Configuration.plugins.mangaTools:
+#   enabledLanguages  comma-separated canonical codes; empty = no restriction
+#   showFlags         draw flags, or names on their own
+#   showCoverBadge    draw the badge on gallery covers (independent of showFlags)
+# Everything is absent until the user changes something, and an absent value
+# reads as the default (no restriction / both switches on).
 settings:
   enabledLanguages:
     displayName: Enabled languages
     description: Only these languages appear in the edit-page dropdown. Display (badge and detail row) is unaffected. Leave empty to show every language.
     type: STRING
+  showFlags:
+    displayName: Show flags
+    description: Draw the flag beside the language name — on the cover badge, in the dropdowns and on the detail page. Turn this off to show the name on its own.
+    type: BOOLEAN
+  showCoverBadge:
+    displayName: Show the language on gallery covers
+    description: The badge in the bottom-right of a gallery's cover. With flags turned off it shows the language name instead of a flag.
+    type: BOOLEAN

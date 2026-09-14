@@ -385,6 +385,13 @@
         NS.enabledLanguages = NS.parseEnabledLanguages(
           pluginCfg ? pluginCfg.enabledLanguages : null
         );
+        // Absent reads as the default (on), so an install predating these
+        // settings keeps its behaviour until the user turns something off.
+        NS.showFlags = NS.parseFlag(pluginCfg ? pluginCfg.showFlags : null, true);
+        NS.showCoverBadge = NS.parseFlag(
+          pluginCfg ? pluginCfg.showCoverBadge : null,
+          true
+        );
         emit();
       })
       .catch(function (e) {
@@ -491,8 +498,10 @@
     var info = NS.describe(store.get(String(props.galleryId)), locale);
     if (!info) return null;
 
-    // Unknown values have no flag, so fall back to a grey text chip.
-    if (!info.known) {
+    // No flag to show — either the value is unrecognised, or flags are turned off
+    // — so fall back to the grey text chip. It is the same chip in both cases
+    // because the reason is the same: there is no flag for this badge.
+    if (!info.known || !NS.showFlags) {
       return <div className="manga-tools-badge is-unknown">{info.name}</div>;
     }
 
@@ -533,7 +542,7 @@
   function formatLanguageOption(option: MangaToolsOption) {
     return (
       <span className="manga-tools-option">
-        {option.flag ? (
+        {NS.showFlags && option.flag ? (
           <Flag flag={option.flag} className="manga-tools-flag" />
         ) : null}
         <span>{option.label}</span>
@@ -706,6 +715,43 @@
    * back through configurePlugin, which replaces the plugin's whole settings
    * map — with a single setting, that map is just { enabledLanguages }.
    */
+  /**
+   * One on/off setting, laid out exactly like Stash's own BooleanSetting
+   * (Settings/Inputs.tsx): a `.setting` row with the heading on the left and the
+   * switch pushed to the right by Stash's own CSS.
+   */
+  function BooleanSetting(props: {
+    id: string;
+    heading: string;
+    subHeading: string;
+    checked: boolean;
+    onChange: (next: boolean) => void;
+  }) {
+    var Bootstrap = PluginApi.libraries.Bootstrap;
+    if (!Bootstrap) {
+      console.error("[mangaTools] react-bootstrap not available, cannot render the settings switches");
+      return null;
+    }
+
+    return (
+      <div className="setting">
+        <div>
+          <h3>{props.heading}</h3>
+          <div className="sub-heading">{props.subHeading}</div>
+        </div>
+        <div>
+          <Bootstrap.Form.Switch
+            id={props.id}
+            checked={props.checked}
+            onChange={function () {
+              props.onChange(!props.checked);
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   function MangaToolsSettings(props: { pluginID: string }) {
     useGlobalVersion();
 
@@ -713,6 +759,31 @@
     var Select = resolveSelect();
 
     var savePlugin = PluginApi.utils.StashService.useConfigurePlugin()[0];
+
+    /**
+     * Writes every setting at once.
+     *
+     * Deliberately not just the one that changed: configurePlugin's input is the
+     * plugin's whole settings map, and writing the full map is correct whether
+     * that map is replaced or merged — which cannot be confirmed from the plugin
+     * side, since the resolver is not part of the published API.
+     */
+    function persist() {
+      savePlugin({
+        variables: {
+          plugin_id: props.pluginID,
+          input: {
+            enabledLanguages: NS.enabledLanguages
+              ? NS.serializeEnabledLanguages(NS.enabledLanguages)
+              : "",
+            showFlags: NS.showFlags,
+            showCoverBadge: NS.showCoverBadge,
+          },
+        },
+      }).catch(function (e) {
+        console.error("[mangaTools] failed to save plugin settings:", e);
+      });
+    }
 
     var options: MangaToolsOption[] = NS.languageOptions(intl.locale);
     var enabled = NS.enabledLanguages;
@@ -728,51 +799,71 @@
     if (!Select) return null;
 
     return (
-      <div className="setting manga-tools-settings">
-        <div className="manga-tools-settings-block">
-          <h3>Enabled languages</h3>
-          <div className="sub-heading">
-            Only these languages appear in the edit-page dropdown. Display (badge
-            and detail row) is unaffected. Leave empty to show every language.
-          </div>
-          <div className="manga-tools-settings-control">
-            <Select
-              className="manga-tools-settings-select"
-              classNamePrefix="react-select"
-              isMulti
-              isClearable
-              // Flip the menu above the control when there is not enough room
-              // below (the plugin is usually the last entry on the page).
-              menuPlacement="auto"
-              placeholder="All languages"
-              value={value}
-              options={options}
-              formatOptionLabel={formatLanguageOption}
-              components={{ IndicatorSeparator: () => null }}
-              onChange={function (selected: MangaToolsOption[] | null) {
-                var codes = (selected || []).map(function (o) {
-                  return o.value;
-                });
-                var str = NS.serializeEnabledLanguages(codes);
+      <>
+        <div className="setting manga-tools-settings">
+          <div className="manga-tools-settings-block">
+            <h3>Enabled languages</h3>
+            <div className="sub-heading">
+              Only these languages appear in the edit-page dropdown. Display
+              (badge and detail row) is unaffected. Leave empty to show every
+              language.
+            </div>
+            <div className="manga-tools-settings-control">
+              <Select
+                className="manga-tools-settings-select"
+                classNamePrefix="react-select"
+                isMulti
+                isClearable
+                // Flip the menu above the control when there is not enough room
+                // below (the plugin is usually the last entry on the page).
+                menuPlacement="auto"
+                placeholder="All languages"
+                value={value}
+                options={options}
+                formatOptionLabel={formatLanguageOption}
+                components={{ IndicatorSeparator: () => null }}
+                onChange={function (selected: MangaToolsOption[] | null) {
+                  var codes = (selected || []).map(function (o) {
+                    return o.value;
+                  });
 
-                // Reflect the change immediately (the dropdown and this UI both
-                // read NS.enabledLanguages), then persist it.
-                NS.enabledLanguages = NS.parseEnabledLanguages(str);
-                emit();
-
-                savePlugin({
-                  variables: {
-                    plugin_id: props.pluginID,
-                    input: { enabledLanguages: str },
-                  },
-                }).catch(function (e) {
-                  console.error("[mangaTools] failed to save plugin settings:", e);
-                });
-              }}
-            />
+                  // Reflect the change immediately (the dropdown and this UI
+                  // both read NS.enabledLanguages), then persist it.
+                  NS.enabledLanguages = NS.parseEnabledLanguages(
+                    NS.serializeEnabledLanguages(codes)
+                  );
+                  emit();
+                  persist();
+                }}
+              />
+            </div>
           </div>
         </div>
-      </div>
+
+        <BooleanSetting
+          id="mangaTools-showFlags"
+          heading="Show flags"
+          subHeading="Draw the flag beside the language name — on the cover badge, in the dropdowns and on the detail page. Turn this off to show the name on its own."
+          checked={NS.showFlags}
+          onChange={function (next) {
+            NS.showFlags = next;
+            emit();
+            persist();
+          }}
+        />
+
+        <BooleanSetting
+          id="mangaTools-showCoverBadge"
+          heading="Show the language on gallery covers"
+          subHeading="The badge in the bottom-right of a gallery's cover. With flags turned off it shows the language name instead of a flag."
+          checked={NS.showCoverBadge}
+          onChange={function (next) {
+            NS.showCoverBadge = next;
+            emit();
+            persist();
+          }}
+        />
+      </>
     );
   }
 
@@ -1137,7 +1228,9 @@
 
     var id = props.gallery && props.gallery.id;
     var value = id ? store.get(String(id)) : "";
-    if (!value) return <Original {...props} />;
+
+    // Nothing to add: the gallery has no language, or the badge is turned off.
+    if (!value || !NS.showCoverBadge) return <Original {...props} />;
 
     return (
       <>
@@ -1345,19 +1438,23 @@
     var host = ensureDetailHost();
     if (!host) return null;
 
-    // The space between the flag and the name is only rendered when there is a
-    // flag, otherwise an unknown value would come out as "Language:  klingon"
-    // with two spaces.
+    // A flag is drawn only when flags are on and the value is recognised.
+    //
+    // The space between the flag and the name is rendered only when there is a
+    // flag, otherwise an unknown value — or any value with flags turned off —
+    // would come out as "Language:  klingon" with two spaces.
     // The gap comes entirely from that space; the CSS adds no margin-right, so
     // the space before and after the flag match, and the row lines up with
     // "photographer: ..." above it.
+    var showFlag = NS.showFlags && !!info.flag;
+
     return PluginApi.ReactDOM.createPortal(
       <h6 className="manga-tools-detail">
         {fieldLabel(intl) + ": "}
-        {info.flag ? (
-          <Flag flag={info.flag} className="manga-tools-flag" />
+        {showFlag ? (
+          <Flag flag={info.flag as string} className="manga-tools-flag" />
         ) : null}
-        {info.flag ? " " : null}
+        {showFlag ? " " : null}
         {info.name}
       </h6>,
       host

@@ -9,7 +9,7 @@ upgrades never produce merge conflicts.
 | Feature | What it adds |
 |---|---|
 | **Language** | A language attribute on galleries, surfaced as a flag badge, an edit-page dropdown and a localised detail row |
-| **Settings** | An "Enabled languages" multiselect that limits which languages the edit-page dropdown offers — display is unaffected |
+| **Settings** | Which languages the dropdown offers, whether flags are drawn, and whether the cover badge is drawn |
 
 Each feature occupies its own section below, and each keeps to the same rule:
 anything it does not own is handed straight back to Stash untouched.
@@ -135,22 +135,48 @@ wall are all covered by one hook.
 
 ### Settings
 
-Adds an "Enabled languages" multiselect under **Settings → Plugins → Manga
-Tools**.
+Three settings under **Settings → Plugins → Manga Tools**:
 
-| Setting | Effect |
-|---|---|
-| **Enabled languages** | Limits which languages the edit-page dropdown offers; empty = every language |
+| Setting | Type | Effect |
+|---|---|---|
+| **Enabled languages** | multiselect | Limits which languages the edit-page dropdown offers; empty = every language |
+| **Show flags** | switch | Draw flags, or the language name on its own |
+| **Show the language on gallery covers** | switch | The badge in the bottom-right of a gallery's cover |
 
-An empty value shows an "All languages" placeholder rather than every tag; only a
-chosen subset renders tags.
+An empty language list shows an "All languages" placeholder rather than every
+tag; only a chosen subset renders tags.
 
-It is a *custom* multiselect rather than Stash's stock per-setting input. Stash
+**The two switches are deliberately independent**, so all four combinations are
+available:
+
+| Show flags | Cover badge | Cover | Dropdowns / detail row |
+|---|---|---|---|
+| on | on | flag | flag + name |
+| off | on | **name only**, in a chip | name only |
+| on | off | no badge | flag + name |
+| off | off | no badge | name only |
+
+A badge without a flag is a real choice, not a leftover: the flag mapping is
+lossy (see "Extending" — a language is not a country, so `zh-Hant` gets the
+Taiwan flag and `en` gets the UK one), and a name can be preferable to a
+misleading flag. The name chip is the same one an unrecognised value already
+renders.
+
+**Both switches default to on, and an absent value reads as the default** — so an
+install that predates them behaves exactly as it did until something is turned
+off. Nothing is written to the config until then.
+
+Every setting is saved as one map. `configurePlugin`'s input is the plugin's whole
+settings object, and writing all three at once is correct whether that object is
+replaced or merged — which the plugin cannot confirm, since the resolver is not
+part of the published API.
+
+It is a *custom* UI rather than Stash's stock per-setting inputs. Stash
 can only render STRING/NUMBER/BOOLEAN settings one plain input each, so "which
 languages are enabled" would otherwise be a comma-separated text box. The plugin
 patches `PluginSettings` to render a react-select multiselect (flag + localised
-name, the same renderer as the edit dropdown) while writing the same
-comma-separated value to `Configuration.plugins.mangaTools.enabledLanguages`.
+name, the same renderer as the edit dropdown) plus the two switches, which are
+laid out exactly like Stash's own `BooleanSetting`.
 
 **Only the edit dropdown is affected.** Display is untouched: a gallery whose
 language is disabled still shows its flag badge and detail row exactly as before —
@@ -245,7 +271,12 @@ Against a real Stash:
    `日本語` and `English`, save, then open a gallery edit page — the dropdown
    should offer only those two, while a gallery already set to Vietnamese still
    shows its flag and detail row
-9. **Check the bulk edit**: select several galleries → **Edit** → a "language"
+9. **Check the display switches**: under Settings → Plugins → Manga Tools, turn
+   **Show flags** off — the dropdowns and the detail row should show names only,
+   and the cover badges should become name chips rather than disappearing. Turn
+   it back on and turn **Show the language on gallery covers** off instead — now
+   the covers are bare and everything else is unchanged.
+10. **Check the bulk edit**: select several galleries → **Edit** → a "language"
    row should appear between studio and performers.
    - Select galleries that already share a language: the box should be prefilled
      with it. Select a mixed set: it should show the placeholder instead.

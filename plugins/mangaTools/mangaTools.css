@@ -61,7 +61,8 @@
 }
 
 /*
- * Unrecognised values have no flag, so they fall back to a grey text chip.
+ * The grey text chip, used whenever the badge has no flag to draw: an
+ * unrecognised value, or any value with the "Show flags" setting turned off.
  * The line-height has to be reset explicitly, overriding the `line-height: 0`
  * left behind by the .fi rule above.
  */

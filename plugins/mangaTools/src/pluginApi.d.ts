@@ -54,6 +54,12 @@ interface MangaToolsNamespace {
   enabledLanguages: Set<string> | null;
   parseEnabledLanguages(raw: unknown): Set<string> | null;
   serializeEnabledLanguages(codes: Iterable<string>): string;
+
+  /** Whether flags are drawn. Populated by mangaTools.tsx from the plugin settings. */
+  showFlags: boolean;
+  /** Whether the cover badge is drawn. Independent of showFlags. */
+  showCoverBadge: boolean;
+  parseFlag(raw: unknown, fallback: boolean): boolean;
 }
 
 /** What react-intl's useIntl() gives us — only the fields this plugin touches */
@@ -135,6 +141,10 @@ interface IPluginApi {
     Apollo?: {
       gql?: MangaToolsGql;
       ApolloLink?: MangaToolsApolloLinkClass;
+    };
+    /** react-bootstrap, used for the settings switches */
+    Bootstrap?: {
+      Form: { Switch: React.ComponentType<Record<string, unknown>> };
     };
     Intl: { useIntl(): MangaToolsIntl };
     /** react-select as a namespace import: the component is its default export */

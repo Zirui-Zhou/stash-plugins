@@ -191,7 +191,9 @@ const PluginApi = {
       })(),
     },
     Bootstrap: {
-      Form: { Label: () => null, Group: "FormGroup" },
+      // A marker rather than a component, so the tests can find the switches and
+      // read their props without rendering anything.
+      Form: { Label: () => null, Group: "FormGroup", Switch: "Switch" },
       FormGroup: "FormGroup",
       Row: "Row",
       Col: "Col",
@@ -450,7 +452,21 @@ assert.strictEqual(NS.serializeEnabledLanguages(["en", "ja"]), "ja,en",
   "serialise should order by NS.ORDER, not insertion order");
 assert.strictEqual(NS.serializeEnabledLanguages(new Set(["zh-Hans", "ja"])), "ja,zh-Hans");
 assert.strictEqual(NS.serializeEnabledLanguages([]), "", "an empty set serialises to the empty string");
-console.log("✓ settings parse/serialise");
+
+// The boolean settings. Absent means "not configured", so the default — on — is
+// used, and an install that predates the setting behaves exactly as before.
+assert.strictEqual(NS.parseFlag(null, true), true);
+assert.strictEqual(NS.parseFlag(undefined, true), true);
+assert.strictEqual(NS.parseFlag("", true), true);
+assert.strictEqual(NS.parseFlag(true, false), true);
+assert.strictEqual(NS.parseFlag(false, true), false);
+assert.strictEqual(NS.parseFlag("false", true), false, "a hand-edited string is understood");
+assert.strictEqual(NS.parseFlag("0", true), false);
+assert.strictEqual(NS.parseFlag(" TRUE ", false), true);
+assert.strictEqual(NS.parseFlag("nonsense", true), true, "an unreadable value falls back to the default");
+assert.strictEqual(NS.showFlags, true, "flags default to on");
+assert.strictEqual(NS.showCoverBadge, true, "the cover badge defaults to on");
+console.log("✓ settings parse/serialise (including the booleans)");
 
 // ── 7c. Settings UI: the multiselect writes the setting back ───────
 // The patched PluginSettings swaps the stock input for MangaToolsSettings only
@@ -483,22 +499,46 @@ assert.deepStrictEqual(
   "the current value should be the enabled set"
 );
 
+// The two switches, laid out like Stash's own BooleanSetting.
+const switches = [];
+find(settingsEl, (n) => {
+  if (n.type === "Switch") switches.push(n);
+  return false;
+});
+assert.strictEqual(switches.length, 2, "both switches should render");
+assert.strictEqual(switches[0].props.id, "mangaTools-showFlags");
+assert.strictEqual(switches[0].props.checked, true, "flags default to on");
+assert.strictEqual(switches[1].props.id, "mangaTools-showCoverBadge");
+assert.strictEqual(switches[1].props.checked, true, "the cover badge defaults to on");
+
 // Selecting a new set writes it back through configurePlugin and updates the
 // shared NS.enabledLanguages immediately.
 settingsSelect.props.onChange([{ value: "ja" }, { value: "zh-Hans" }]);
 assert.deepStrictEqual(capturedConfigWrite, {
   plugin_id: "mangaTools",
-  input: { enabledLanguages: "ja,zh-Hans" },
-});
+  input: {
+    enabledLanguages: "ja,zh-Hans",
+    showFlags: true,
+    showCoverBadge: true,
+  },
+}, "every setting is written together, so replace-vs-merge cannot matter");
 assert.deepStrictEqual([...NS.enabledLanguages], ["ja", "zh-Hans"],
   "the in-memory set should update immediately");
 
 // Clearing writes "" (which parses back to "no restriction").
 settingsSelect.props.onChange(null);
-assert.deepStrictEqual(capturedConfigWrite.input, { enabledLanguages: "" });
+assert.deepStrictEqual(capturedConfigWrite.input.enabledLanguages, "");
 assert.strictEqual(NS.enabledLanguages, null, "clearing should restore null (all languages)");
-NS.enabledLanguages = null;
-console.log("✓ settings UI (multiselect writes configurePlugin + updates shared state)");
+
+// Flipping a switch updates the shared state and persists the lot.
+switches[0].props.onChange();
+assert.strictEqual(NS.showFlags, false, "toggling should update the shared state");
+assert.deepStrictEqual(capturedConfigWrite, {
+  plugin_id: "mangaTools",
+  input: { enabledLanguages: "", showFlags: false, showCoverBadge: true },
+});
+NS.showFlags = true;
+console.log("✓ settings UI (multiselect + switches write configurePlugin, update shared state)");
 
 // ── 8. CustomFieldInput isolation ──────────────────────────────────
 assert.strictEqual(call("CustomFieldInput", { field: "language", value: "zh-Hans" }), null,
@@ -881,6 +921,50 @@ setTimeout(() => {
   assert.strictEqual(find(formattedUnknown, (n) => /fi fi-/.test(n.props.className || "")), null,
     "an option with no flag must not render a flag");
   console.log("✓ edit write / clear / option flags and names");
+
+  // ── 13b. The two display switches, and that they are independent ──
+  NS.showFlags = false;
+
+  const formattedFlat = sel.props.formatOptionLabel({ value: "ja", label: "日语", flag: "jp" });
+  assert.strictEqual(find(formattedFlat, (n) => /fi fi-/.test(n.props.className || "")), null,
+    "the dropdown must not draw a flag when flags are off");
+  assert.ok(hasText(formattedFlat, "日语"), "the name must still be there");
+
+  // The space in the detail row belongs to the flag, so it has to go with it.
+  const flatDetail = detail({ language: "zh-Hant" });
+  assert.strictEqual(find(flatDetail.portal.node, (n) => /fi fi-/.test(n.props.className || "")), null,
+    "the detail row must not draw a flag when flags are off");
+  assert.deepStrictEqual(
+    flatDetail.portal.node.props.children.filter((c) => typeof c === "string"),
+    ["语言: ", "繁体中文"],
+    "without a flag there must not be a double space"
+  );
+
+  // The badge survives flags being off: it falls back to the name chip. That
+  // combination is exactly why the two switches are independent — the flag
+  // mapping is lossy, so a name can be preferable without losing the badge.
+  assert.strictEqual(card("1").type, React.Fragment, "the badge should survive flags being off");
+  const flatBadge = badgeOf("1");
+  assert.strictEqual(flatBadge.props.className, "manga-tools-badge is-unknown",
+    "a recognised language falls back to the text chip");
+  assert.strictEqual(flatBadge.props.children, "简体中文", "showing the localised name");
+  assert.strictEqual(flagOf("1"), null, "and no flag element inside it");
+
+  NS.showFlags = true;
+  assert.strictEqual(flagOf("1").props.className, "fi fi-cn", "the flag comes back");
+
+  // The cover badge turns off on its own, whatever the flags setting says.
+  NS.showCoverBadge = false;
+  assert.strictEqual(card("1").type, original, "no badge at all when the cover badge is off");
+  assert.strictEqual(card("3").type, original, "and none for an unknown value either");
+
+  NS.showFlags = false;
+  assert.strictEqual(card("1").type, original, "nor with both switches off");
+
+  NS.showCoverBadge = true;
+  NS.showFlags = true;
+  assert.strictEqual(card("1").type, React.Fragment, "restored");
+  console.log("✓ display switches (flags off = names only / badge off / independent)");
 
   // ── 14. Bulk edit dialog: the language row rides along with Apply ──
   // This runs here rather than with the other synchronous sections because the

@@ -341,6 +341,49 @@
   };
 
   /**
+   * Whether flags are drawn at all — the cover badge, the dropdowns and the
+   * detail row.
+   *
+   * Like enabledLanguages this is populated by mangaTools.tsx from the plugin
+   * settings. Unlike it, it is a plain flag with a default, so an install that
+   * predates the setting behaves exactly as before until it is turned off.
+   */
+  NS.showFlags = true;
+
+  /**
+   * Whether the cover badge is drawn.
+   *
+   * Deliberately independent of showFlags: with flags off the badge falls back to
+   * the language name in a chip, which is what an unrecognised value already
+   * does. Someone who finds the flag mapping misleading (a language is not a
+   * country) can therefore keep the badge without the flag.
+   */
+  NS.showCoverBadge = true;
+
+  /**
+   * Reads a boolean setting.
+   *
+   * Absent — which is what an install predating the setting has — reads as the
+   * fallback, i.e. the plugin's default. A real boolean is taken as-is, and a
+   * string is understood too, so a value hand-edited in the config cannot
+   * silently read as true when false was meant.
+   *
+   * @param {*} raw
+   * @param {boolean} fallback used when the setting is absent or unreadable
+   * @returns {boolean}
+   */
+  NS.parseFlag = function (raw: unknown, fallback: boolean): boolean {
+    if (raw === null || raw === undefined || raw === "") return fallback;
+    if (typeof raw === "boolean") return raw;
+
+    var s = String(raw).trim().toLowerCase();
+    if (s === "false" || s === "0" || s === "no" || s === "off") return false;
+    if (s === "true" || s === "1" || s === "yes" || s === "on") return true;
+
+    return fallback;
+  };
+
+  /**
    * Name of the custom field this plugin reads and writes. Changing it here is
    * all that is needed to use a different field (e.g. splitting into
    * original_language / translated_language later). Both reads and writes treat
