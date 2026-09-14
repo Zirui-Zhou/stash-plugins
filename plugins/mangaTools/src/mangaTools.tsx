@@ -50,6 +50,7 @@
   var React = PluginApi.React;
 
   var FIELD_NAME = NS.FIELD_NAME;
+  var PLUGIN_ID = "mangaTools";
   var REFRESH_MS = 60000;
 
   /** The Gallery custom_fields map as it comes back from GraphQL */
@@ -300,6 +301,82 @@
     return inFlight;
   }
 
+  /**
+   * The plugin settings live in Stash's Configuration (Configuration.plugins,
+   * keyed by plugin ID) and are read/written through GraphQL. The one setting
+   * here, enabledLanguages, is a comma-separated list of canonical codes; an
+   * empty value means "no restriction". See parseEnabledLanguages in
+   * languages.ts.
+   *
+   * Only the `plugins` field is fetched — not the rest of Configuration, which
+   * is a large object. This is the same minimal-query approach as getQuery().
+   */
+  var SETTINGS_QUERY: unknown = null;
+
+  function getSettingsQuery(): unknown {
+    if (SETTINGS_QUERY) return SETTINGS_QUERY;
+
+    var Apollo = PluginApi.libraries.Apollo;
+    var gql = (Apollo && Apollo.gql) || (PluginApi.GQL && PluginApi.GQL.gql);
+    if (!gql) {
+      console.error("[mangaTools] gql not available, cannot read settings");
+      return null;
+    }
+
+    // plugins is the PluginConfigMap scalar, so it needs no sub-selection.
+    SETTINGS_QUERY = gql(
+      ["query MangaToolsSettings {", "  configuration {", "    plugins", "  }", "}"].join(
+        "\n"
+      )
+    );
+
+    return SETTINGS_QUERY;
+  }
+
+  /** What the settings query returns, as far as this plugin cares */
+  type SettingsPayload = {
+    configuration?: {
+      plugins?: { [pluginID: string]: { [key: string]: unknown } };
+    };
+  };
+
+  /**
+   * Refetches the plugin settings and updates NS.enabledLanguages.
+   *
+   * Runs on startup and on every navigation, so a change made on the settings
+   * page is picked up as soon as the user leaves it. (The settings UI also
+   * updates the value directly when it saves, but navigation re-reads it from
+   * the source of truth.)
+   */
+  function refreshSettings(): void {
+    var query = getSettingsQuery();
+    if (!query) return;
+
+    var client;
+    try {
+      client = PluginApi.utils.StashService.getClient();
+    } catch (e) {
+      console.error("[mangaTools] failed to get the Apollo client:", e);
+      return;
+    }
+
+    client
+      .query({ query: query, fetchPolicy: "network-only" })
+      .then(function (res) {
+        var data = (res && res.data) as SettingsPayload | undefined;
+        var plugins = data && data.configuration && data.configuration.plugins;
+        var pluginCfg = plugins && plugins[PLUGIN_ID];
+        NS.enabledLanguages = NS.parseEnabledLanguages(
+          pluginCfg ? pluginCfg.enabledLanguages : null
+        );
+        emit();
+      })
+      .catch(function (e) {
+        // Keep whatever was last read; a stale enabled set beats none.
+        console.error("[mangaTools] failed to fetch plugin settings:", e);
+      });
+  }
+
   /** Shape of the payload of Stash's "stash:location" event */
   type LocationEvent = {
     detail?: { data?: { location?: { pathname?: string } } };
@@ -310,6 +387,7 @@
     started = true;
 
     refresh();
+    refreshSettings();
 
     // Saving an edit does not change the route, so a slow poll acts as a
     // backstop. The query only pulls id + custom_fields, so it is small.
@@ -323,6 +401,7 @@
         var loc = ev && ev.detail && ev.detail.data && ev.detail.data.location;
         currentPath = (loc && loc.pathname) || window.location.pathname || "";
         refresh();
+        refreshSettings();
         // Tell subscribers to recompute isGalleryContext()
         emit();
       });
@@ -499,7 +578,14 @@
     if (!isGalleryContext() || !Select || !host) return null;
 
     var current = NS.describe(props.value, intl.locale);
-    var options: MangaToolsOption[] = NS.languageOptions(intl.locale);
+    var options: MangaToolsOption[] = NS.languageOptions(intl.locale).filter(
+      function (o) {
+        // NS.enabledLanguages is null for "no restriction", otherwise the
+        // dropdown is limited to exactly these codes. Display (badge / detail
+        // row) is not affected — it always uses the full table via describe().
+        return !NS.enabledLanguages || NS.enabledLanguages.has(o.value);
+      }
+    );
 
     // Keep an unrecognised current value in the list, otherwise picking
     // something else would make it unreachable.
@@ -561,6 +647,84 @@
     );
 
     return PluginApi.ReactDOM.createPortal(field, host);
+  }
+
+  // ─────────────────────────── Settings page ───────────────────────────
+
+  /**
+   * The plugin's settings UI, rendered in place of the stock per-setting input
+   * (see the PluginSettings patch below).
+   *
+   * The stock UI can only render STRING/NUMBER/BOOLEAN settings one input each,
+   * so "which languages are enabled" would otherwise be a comma-separated text
+   * box. This renders a multiselect of flag + localised name instead, writing
+   * the same comma-separated value.
+   *
+   * It reads NS.enabledLanguages (kept fresh by refreshSettings) and writes it
+   * back through configurePlugin, which replaces the plugin's whole settings
+   * map — with a single setting, that map is just { enabledLanguages }.
+   */
+  function MangaToolsSettings(props: { pluginID: string }) {
+    useGlobalVersion();
+
+    var intl = PluginApi.libraries.Intl.useIntl();
+    var Select = resolveSelect();
+
+    var savePlugin = PluginApi.utils.StashService.useConfigurePlugin()[0];
+
+    var options: MangaToolsOption[] = NS.languageOptions(intl.locale);
+    var enabled = NS.enabledLanguages;
+    var value = enabled
+      ? options.filter(function (o) {
+          return enabled !== null && enabled.has(o.value);
+        })
+      : options;
+
+    if (!Select) return null;
+
+    return (
+      <div className="setting manga-tools-settings">
+        <div>
+          <h3>Enabled languages</h3>
+          <div className="sub-heading">
+            Only these languages appear in the edit-page dropdown. Display (badge
+            and detail row) is unaffected. Leave empty to show every language.
+          </div>
+        </div>
+        <div>
+          <Select
+            className="manga-tools-settings-select"
+            classNamePrefix="react-select"
+            isMulti
+            isClearable
+            value={value}
+            options={options}
+            formatOptionLabel={formatLanguageOption}
+            components={{ IndicatorSeparator: () => null }}
+            onChange={function (selected: MangaToolsOption[] | null) {
+              var codes = (selected || []).map(function (o) {
+                return o.value;
+              });
+              var str = NS.serializeEnabledLanguages(codes);
+
+              // Reflect the change immediately (the dropdown and this UI both
+              // read NS.enabledLanguages), then persist it.
+              NS.enabledLanguages = NS.parseEnabledLanguages(str);
+              emit();
+
+              savePlugin({
+                variables: {
+                  plugin_id: props.pluginID,
+                  input: { enabledLanguages: str },
+                },
+              }).catch(function (e) {
+                console.error("[mangaTools] failed to save plugin settings:", e);
+              });
+            }}
+          />
+        </div>
+      </div>
+    );
   }
 
   // ───────────────────────────── Patch registration ─────────────────────────────
@@ -820,6 +984,22 @@
         <DetailLanguageRow value={values[key]} />
       </>
     );
+  });
+
+  // 5. Settings page: swap the stock per-setting input for the multiselect above,
+  //    but only for this plugin — every other plugin's settings go straight back
+  //    to the original component untouched.
+  PluginApi.patch.instead("PluginSettings", function () {
+    var args = argsToArray(arguments);
+    var props = args[0] as { pluginID?: string };
+    var Original = originalFrom(args);
+    noteFired("PluginSettings");
+
+    if (props.pluginID === PLUGIN_ID) {
+      return <MangaToolsSettings pluginID={props.pluginID} />;
+    }
+
+    return <Original {...props} />;
   });
 
   start();

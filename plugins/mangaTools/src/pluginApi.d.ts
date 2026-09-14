@@ -49,6 +49,11 @@ interface MangaToolsNamespace {
   name(code: unknown, locale?: string | null): string;
   describe(raw: unknown, locale?: string | null): MangaToolsDescription | null;
   languageOptions(locale?: string | null): MangaToolsOption[];
+
+  /** Set of enabled languages, or null for "no restriction". Populated by mangaTools.tsx. */
+  enabledLanguages: Set<string> | null;
+  parseEnabledLanguages(raw: unknown): Set<string> | null;
+  serializeEnabledLanguages(codes: Iterable<string>): string;
 }
 
 /** What react-intl's useIntl() gives us — only the fields this plugin touches */
@@ -64,6 +69,11 @@ interface MangaToolsApolloClient {
     fetchPolicy?: string;
   }): Promise<{ data?: { [key: string]: unknown } }>;
 }
+
+/** The mutation StashService.useConfigurePlugin() returns */
+type MangaToolsConfigurePluginFn = (options: {
+  variables: { plugin_id: string; input: Record<string, unknown> };
+}) => Promise<unknown>;
 
 type MangaToolsGql = (source: string) => unknown;
 
@@ -92,7 +102,10 @@ interface IPluginApi {
   };
 
   utils: {
-    StashService: { getClient(): MangaToolsApolloClient };
+    StashService: {
+      getClient(): MangaToolsApolloClient;
+      useConfigurePlugin(): [MangaToolsConfigurePluginFn];
+    };
   };
 
   Event: {

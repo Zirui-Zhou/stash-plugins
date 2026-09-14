@@ -11,7 +11,9 @@ const PLUGIN = path.join(__dirname, "..", "plugins", "mangaTools", "build");
 // ── Stubs ──────────────────────────────────────────────────────────
 const globalListeners = {};
 const patched = {};
-let capturedQuery = null;
+const capturedQueries = [];
+let settingsEnabled = ""; // the stored enabledLanguages setting, mutated by tests
+let capturedConfigWrite = null; // last configurePlugin write, captured by the stub
 let currentLocale = "zh-CN";
 
 const React = {
@@ -32,8 +34,19 @@ const React = {
 };
 
 const fakeClient = {
-  query: () =>
-    Promise.resolve({
+  query: ({ query }) => {
+    // The plugin fires two queries: the gallery map (findGalleries) and the
+    // settings (configuration { plugins }). Branch on the query text.
+    if (/configuration/.test(String(query))) {
+      return Promise.resolve({
+        data: {
+          configuration: {
+            plugins: { mangaTools: { enabledLanguages: settingsEnabled } },
+          },
+        },
+      });
+    }
+    return Promise.resolve({
       data: {
         findGalleries: {
           count: 4,
@@ -46,7 +59,8 @@ const fakeClient = {
           ],
         },
       },
-    }),
+    });
+  },
 };
 
 // ── Minimal DOM stub: only the methods the mount points actually use ──
@@ -137,7 +151,7 @@ const PluginApi = {
   libraries: {
     Apollo: {
       gql: (s) => {
-        capturedQuery = s;
+        capturedQueries.push(s);
         return s;
       },
     },
@@ -161,7 +175,17 @@ const PluginApi = {
     },
     FontAwesomeSolid: { faMinus: "faMinus" },
   },
-  utils: { StashService: { getClient: () => fakeClient } },
+  utils: {
+    StashService: {
+      getClient: () => fakeClient,
+      useConfigurePlugin: () => [
+        (opts) => {
+          capturedConfigWrite = opts.variables;
+          return Promise.resolve({});
+        },
+      ],
+    },
+  },
   Event: {
     addEventListener: (name, cb) => {
       globalListeners[name] = cb;
@@ -335,26 +359,92 @@ console.log(`✓ language table complete (${Object.keys(NS.LANGUAGES).length} la
   "CustomFieldsInput",
   "CustomFieldInput",
   "CustomFields",
+  "PluginSettings",
 ].forEach((t) => assert.ok(patched[t], `missing patch: ${t}`));
-console.log("✓ all 4 patches registered");
+console.log("✓ all 5 patches registered");
 
 // ── 7. Query shape ─────────────────────────────────────────────────
 // Another bug this project hit: OR is singular in the schema
 // (OR: GalleryFilterType). Writing it as an array makes the whole query fail
 // validation, the failure is swallowed by the catch, and the symptom is
 // "no badges at all" with no clue anywhere outside the console.
-assert.ok(capturedQuery, "the plugin never built a query");
+const galleryQuery = capturedQueries.find((q) => /findGalleries/.test(q));
+assert.ok(galleryQuery, "the plugin never built the gallery-map query");
 assert.ok(
-  !/OR\s*:\s*\[/.test(capturedQuery),
+  !/OR\s*:\s*\[/.test(galleryQuery),
   "OR is singular in the schema; an array fails validation"
 );
 assert.ok(
   /custom_fields:\s*\[\{\s*field:\s*"language",\s*modifier:\s*NOT_NULL\s*\}\]/.test(
-    capturedQuery
+    galleryQuery
   ),
   "the query should filter on language with NOT_NULL"
 );
 console.log("✓ query shape (OR not misused as an array)");
+
+// ── 7b. Settings: enabledLanguages parse/serialise ─────────────────
+// The setting is a comma-separated string of canonical codes; an empty value
+// means "no restriction" (parse returns null).
+assert.strictEqual(NS.parseEnabledLanguages(null), null);
+assert.strictEqual(NS.parseEnabledLanguages(undefined), null);
+assert.strictEqual(NS.parseEnabledLanguages(""), null);
+assert.strictEqual(NS.parseEnabledLanguages("   "), null);
+assert.deepStrictEqual(
+  [...NS.parseEnabledLanguages("ja,en,zh-Hans")].sort(),
+  ["en", "ja", "zh-Hans"],
+  "parse should split on commas"
+);
+assert.deepStrictEqual(
+  [...NS.parseEnabledLanguages("ja, JA, klingon, zh-Hans ")].sort(),
+  ["ja", "zh-Hans"],
+  "parse should canonicalise case, drop unknown codes and dedupe"
+);
+assert.strictEqual(NS.parseEnabledLanguages("klingon"), null,
+  "a value with only unknown codes parses to null (no restriction)");
+
+assert.strictEqual(NS.serializeEnabledLanguages(["en", "ja"]), "ja,en",
+  "serialise should order by NS.ORDER, not insertion order");
+assert.strictEqual(NS.serializeEnabledLanguages(new Set(["zh-Hans", "ja"])), "ja,zh-Hans");
+assert.strictEqual(NS.serializeEnabledLanguages([]), "", "an empty set serialises to the empty string");
+console.log("✓ settings parse/serialise");
+
+// ── 7c. Settings UI: the multiselect writes the setting back ───────
+// The patched PluginSettings swaps the stock input for MangaToolsSettings only
+// for this plugin; other plugins fall back to the original component.
+const settingsEl = call("PluginSettings", { pluginID: "mangaTools" });
+assert.notStrictEqual(settingsEl.type, original,
+  "mangaTools should swap in its own settings component");
+assert.strictEqual(call("PluginSettings", { pluginID: "other" }).type, original,
+  "other plugins must go back to the original component");
+
+// Render the settings component (find renders function components) and locate
+// the react-select, which carries isMulti + the full option list.
+NS.enabledLanguages = new Set(["ja", "en"]);
+const settingsSelect = find(settingsEl, (n) => n.props && Array.isArray(n.props.options) && n.props.isMulti);
+assert.ok(settingsSelect, "the settings UI should render a multiselect");
+assert.strictEqual(settingsSelect.props.isClearable, true);
+assert.deepStrictEqual(
+  settingsSelect.props.value.map((o) => o.value),
+  ["ja", "en"],
+  "the current value should be the enabled set"
+);
+
+// Selecting a new set writes it back through configurePlugin and updates the
+// shared NS.enabledLanguages immediately.
+settingsSelect.props.onChange([{ value: "ja" }, { value: "zh-Hans" }]);
+assert.deepStrictEqual(capturedConfigWrite, {
+  plugin_id: "mangaTools",
+  input: { enabledLanguages: "ja,zh-Hans" },
+});
+assert.deepStrictEqual([...NS.enabledLanguages], ["ja", "zh-Hans"],
+  "the in-memory set should update immediately");
+
+// Clearing writes "" (which parses back to "no restriction").
+settingsSelect.props.onChange(null);
+assert.deepStrictEqual(capturedConfigWrite.input, { enabledLanguages: "" });
+assert.strictEqual(NS.enabledLanguages, null, "clearing should restore null (all languages)");
+NS.enabledLanguages = null;
+console.log("✓ settings UI (multiselect writes configurePlugin + updates shared state)");
 
 // ── 8. CustomFieldInput isolation ──────────────────────────────────
 assert.strictEqual(call("CustomFieldInput", { field: "language", value: "zh-Hans" }), null,
@@ -686,6 +776,21 @@ setTimeout(() => {
   assert.strictEqual(opts[0].flag, "jp");
   assert.strictEqual(opts.some((o) => o.flag === "vn"), true, "the Vietnam flag should be vn");
   assert.strictEqual(opts.every((o) => o.flag && o.flag.length === 2), true, "every option should have a flag");
+
+  // Enabled-languages restriction: the dropdown is limited to the selected set,
+  // but the currently-selected value still echoes even if it is outside the set
+  // (display is unaffected — only the option list is filtered).
+  NS.enabledLanguages = new Set(["ja", "en"]);
+  const filtered = find(renderRow({ language: "vi" }), (n) => n.props && n.props.options);
+  assert.deepStrictEqual(
+    filtered.props.options.map((o) => o.value),
+    ["ja", "en"],
+    "the dropdown should show only the enabled languages"
+  );
+  assert.strictEqual(filtered.props.value.value, "vi",
+    "a selected value outside the enabled set must still echo (display is unaffected)");
+  assert.strictEqual(filtered.props.value.flag, "vn");
+  NS.enabledLanguages = null; // restore
 
   // Selected value echo: a canonical code in the wrong case echoes back canonical
   const sel = find(renderRow({ language: "ZH-HANT" }), (n) => n.props && n.props.options);

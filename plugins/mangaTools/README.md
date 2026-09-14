@@ -9,19 +9,14 @@ upgrades never produce merge conflicts.
 | Feature | What it adds |
 |---|---|
 | **Language** | A language attribute on galleries, surfaced as a flag badge, an edit-page dropdown and a localised detail row |
+| **Settings** | An "Enabled languages" multiselect that limits which languages the edit-page dropdown offers — display is unaffected |
 
-Features are added one at a time, so there is one for now. Each occupies its own
-section below, and each keeps to the same rule: anything it does not own is
-handed straight back to Stash untouched.
+Each feature occupies its own section below, and each keeps to the same rule:
+anything it does not own is handed straight back to Stash untouched.
 
 ### Language
 
 Adds a "language" property to galleries.
-
-| Where | Effect |
-|---|---|
-| Gallery list / card | A **regional flag** in the bottom-right of the cover (Japan, China, Taiwan…). Fades out on hover like the studio icon, clearing the cover |
-| Gallery edit page | A "language" dropdown **between "studio" and "performers"**, listing "flag + localised name" — no typing codes by hand |
 
 | Where | Effect |
 |---|---|
@@ -77,12 +72,34 @@ takes for performer nationality (store `US`, display `United States`).
 The semantic meaning is **the language of the comic itself**, not whether it is
 raw or translated.
 
+### Settings
+
+Adds an "Enabled languages" multiselect under **Settings → Plugins → Manga
+Tools**.
+
+| Setting | Effect |
+|---|---|
+| **Enabled languages** | Limits which languages the edit-page dropdown offers; empty = every language |
+
+It is a *custom* multiselect rather than Stash's stock per-setting input. Stash
+can only render STRING/NUMBER/BOOLEAN settings one plain input each, so "which
+languages are enabled" would otherwise be a comma-separated text box. The plugin
+patches `PluginSettings` to render a react-select multiselect (flag + localised
+name, the same renderer as the edit dropdown) while writing the same
+comma-separated value to `Configuration.plugins.mangaTools.enabledLanguages`.
+
+**Only the edit dropdown is affected.** Display is untouched: a gallery whose
+language is disabled still shows its flag badge and detail row exactly as before —
+the value is simply no longer offered as a new choice. This is react-select's
+`value`/`options` split: the selected value is rendered from `value`, which is
+never filtered, while only the option *list* is filtered.
+
 ## Files
 
 ```
 mangaTools/
 ├── src/
-│   ├── mangaTools.tsx     Badge, dropdown, patch registration
+│   ├── mangaTools.tsx     Badge, dropdown, settings, patch registration
 │   ├── languages.ts       Language table (pure data, swappable on its own)
 │   └── pluginApi.d.ts     Types for window.PluginApi and window.MangaTools
 ├── mangaTools.yml         Plugin config (the file name is the plugin ID)
@@ -137,8 +154,8 @@ npm run typecheck
 exercise exactly what gets published and a broken build shows up here.
 
 They cover value normalisation, the unknown-value fallback, route scoping,
-write/clear semantics, badge rendering, and the string/CSS surface of every
-patched component.
+write/clear semantics, badge rendering, settings parse/serialise and the settings
+UI's write path, and the string/CSS surface of every patched component.
 
 Against a real Stash:
 
@@ -160,6 +177,10 @@ Against a real Stash:
    **no** language dropdown (the plugin only acts on gallery pages)
 7. **Check filtering**: gallery list → filter panel → Custom Fields → field
    `language`, modifier `=`, value `zh-Hans`
+8. **Check the settings**: Settings → Plugins → Manga Tools, tick only e.g.
+   `日本語` and `English`, save, then open a gallery edit page — the dropdown
+   should offer only those two, while a gallery already set to Vietnamese still
+   shows its flag and detail row
 
 ## Troubleshooting: the badge does not show up
 
@@ -288,8 +309,6 @@ value.
 
 ### Deliberately not done
 
-- Plugin settings (toggle the badge, custom colours) — would need to read
-  `Configuration.plugins`; currently hard-coded
 - A dedicated "language" section on the detail page — the value is only shown,
   localised, within the custom fields area
 - Splitting `src/mangaTools.tsx` into several files — it is ~800 lines, but

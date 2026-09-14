@@ -22,7 +22,7 @@ When something is updated later, click **Update** under **Installed Plugins**.
 
 | ID | Description |
 |---|---|
-| `mangaTools` | Adapts Stash galleries to manga/comic management. First feature: a language attribute — a flag badge on the card cover, a dropdown on the edit page, a localised row on the detail page. |
+| `mangaTools` | Adapts Stash galleries to manga/comic management. A language attribute — a flag badge on the card cover, a dropdown on the edit page, a localised row on the detail page — plus a plugin setting that limits which languages the dropdown offers. |
 
 Each plugin's own documentation lives in `plugins/<id>/README.md`.
 

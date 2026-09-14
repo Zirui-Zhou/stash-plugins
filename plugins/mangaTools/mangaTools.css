@@ -153,3 +153,14 @@
 .manga-tools-select {
   min-width: 14rem;
 }
+
+/* ─────────────────────── Settings-page multiselect ─────────────────────── */
+
+/*
+ * The settings multiselect holds several selected tags, so it can grow wider
+ * than the edit-page dropdown. Cap it so it does not stretch the whole setting
+ * row on wide screens.
+ */
+.manga-tools-settings-select {
+  max-width: 30rem;
+}

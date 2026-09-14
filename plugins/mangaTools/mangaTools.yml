@@ -13,3 +13,14 @@ ui:
     - mangaTools.js
   css:
     - mangaTools.css
+
+# Plugin settings, editable under Settings → Plugins. Stash renders one plain
+# input per entry below (STRING/NUMBER/BOOLEAN only); the plugin patches that UI
+# for itself to show a multiselect instead. The value is stored in
+# Configuration.plugins.mangaTools.enabledLanguages as a comma-separated list of
+# canonical language codes; empty means "no restriction" (show every language).
+settings:
+  enabledLanguages:
+    displayName: Enabled languages
+    description: Only these languages appear in the edit-page dropdown. Display (badge and detail row) is unaffected. Leave empty to show every language.
+    type: STRING

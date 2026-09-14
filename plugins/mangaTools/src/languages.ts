@@ -286,6 +286,61 @@
   };
 
   /**
+   * The set of languages the edit-page dropdown is limited to, or null to show
+   * every language.
+   *
+   * This is the only mutable field on the namespace. It is populated by
+   * mangaTools.tsx from the plugin settings (Configuration.plugins.mangaTools.
+   * enabledLanguages) and read back by the dropdown and the settings UI. null is
+   * both the initial value and the "no restriction" value, so a null can never
+   * hide a language before the settings have been fetched.
+   */
+  NS.enabledLanguages = null;
+
+  /**
+   * Parses the stored `enabledLanguages` setting — a comma-separated string of
+   * canonical codes — into a Set. Returns null for an empty/unset value, which
+   * means "no restriction".
+   *
+   * Only canonical codes survive: anything that does not resolve through
+   * findCanonical is dropped, so a hand-edited value can never corrupt the list,
+   * and duplicates collapse to one entry.
+   *
+   * @param {*} raw e.g. "ja,en,zh-Hans"
+   * @returns {Set<string>|null}
+   */
+  NS.parseEnabledLanguages = function (raw: unknown): Set<string> | null {
+    if (raw === null || raw === undefined) return null;
+    var s = String(raw).trim();
+    if (s === "") return null;
+
+    var out = new Set<string>();
+    s.split(",").forEach(function (piece) {
+      var canonical = NS.findCanonical(piece.trim());
+      if (canonical) out.add(canonical);
+    });
+
+    return out.size ? out : null;
+  };
+
+  /**
+   * Serialises a set of enabled codes back into the stored string form — the
+   * inverse of parseEnabledLanguages. An empty set serialises to "", which
+   * parses back to null ("all"). The codes are ordered by NS.ORDER, so the
+   * stored value is stable and readable regardless of the selection order.
+   *
+   * @param {Iterable<string>} codes
+   * @returns {string}
+   */
+  NS.serializeEnabledLanguages = function (codes: Iterable<string>): string {
+    return Array.from(codes)
+      .sort(function (a, b) {
+        return NS.ORDER.indexOf(a) - NS.ORDER.indexOf(b);
+      })
+      .join(",");
+  };
+
+  /**
    * Name of the custom field this plugin reads and writes. Changing it here is
    * all that is needed to use a different field (e.g. splitting into
    * original_language / translated_language later). Both reads and writes treat
