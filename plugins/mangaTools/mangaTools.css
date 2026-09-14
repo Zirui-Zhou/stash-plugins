@@ -157,6 +157,20 @@
 /* ─────────────────────── Settings-page multiselect ─────────────────────── */
 
 /*
+ * Stash lays a `.setting` out as two side-by-side columns (label | control),
+ * which suits a short input but not a wide multiselect. The whole settings UI
+ * is wrapped in one block so the heading, description and select stack
+ * vertically and the select gets the full width of the row.
+ */
+.manga-tools-settings-block {
+  width: 100%;
+}
+
+.manga-tools-settings-control {
+  margin-top: 0.75rem;
+}
+
+/*
  * The settings multiselect holds several selected tags, so it can grow wider
  * than the edit-page dropdown. Cap it so it does not stretch the whole setting
  * row on wide screens.

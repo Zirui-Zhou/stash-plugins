@@ -419,10 +419,20 @@ assert.strictEqual(call("PluginSettings", { pluginID: "other" }).type, original,
 
 // Render the settings component (find renders function components) and locate
 // the react-select, which carries isMulti + the full option list.
+// Empty (no restriction) must render as an empty box with an "All languages"
+// placeholder, NOT as every tag pre-selected.
+NS.enabledLanguages = null;
+const emptySelect = find(settingsEl, (n) => n.props && Array.isArray(n.props.options) && n.props.isMulti);
+assert.ok(emptySelect, "the settings UI should render a multiselect");
+assert.strictEqual(emptySelect.props.isClearable, true);
+assert.strictEqual(emptySelect.props.menuPlacement, "auto",
+  "the menu should flip up when there is not enough room below");
+assert.deepStrictEqual(emptySelect.props.value, [],
+  "empty must not pre-select every language");
+assert.strictEqual(emptySelect.props.placeholder, "All languages");
+
 NS.enabledLanguages = new Set(["ja", "en"]);
 const settingsSelect = find(settingsEl, (n) => n.props && Array.isArray(n.props.options) && n.props.isMulti);
-assert.ok(settingsSelect, "the settings UI should render a multiselect");
-assert.strictEqual(settingsSelect.props.isClearable, true);
 assert.deepStrictEqual(
   settingsSelect.props.value.map((o) => o.value),
   ["ja", "en"],

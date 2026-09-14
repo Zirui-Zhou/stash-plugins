@@ -81,6 +81,9 @@ Tools**.
 |---|---|
 | **Enabled languages** | Limits which languages the edit-page dropdown offers; empty = every language |
 
+An empty value shows an "All languages" placeholder rather than every tag; only a
+chosen subset renders tags.
+
 It is a *custom* multiselect rather than Stash's stock per-setting input. Stash
 can only render STRING/NUMBER/BOOLEAN settings one plain input each, so "which
 languages are enabled" would otherwise be a comma-separated text box. The plugin

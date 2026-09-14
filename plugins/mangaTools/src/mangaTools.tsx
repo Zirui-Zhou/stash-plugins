@@ -674,54 +674,61 @@
 
     var options: MangaToolsOption[] = NS.languageOptions(intl.locale);
     var enabled = NS.enabledLanguages;
+    // null (no restriction) renders an empty box whose placeholder reads
+    // "All languages", rather than filling the box with every tag. A non-empty
+    // selection renders exactly those tags.
     var value = enabled
       ? options.filter(function (o) {
           return enabled !== null && enabled.has(o.value);
         })
-      : options;
+      : [];
 
     if (!Select) return null;
 
     return (
       <div className="setting manga-tools-settings">
-        <div>
+        <div className="manga-tools-settings-block">
           <h3>Enabled languages</h3>
           <div className="sub-heading">
             Only these languages appear in the edit-page dropdown. Display (badge
             and detail row) is unaffected. Leave empty to show every language.
           </div>
-        </div>
-        <div>
-          <Select
-            className="manga-tools-settings-select"
-            classNamePrefix="react-select"
-            isMulti
-            isClearable
-            value={value}
-            options={options}
-            formatOptionLabel={formatLanguageOption}
-            components={{ IndicatorSeparator: () => null }}
-            onChange={function (selected: MangaToolsOption[] | null) {
-              var codes = (selected || []).map(function (o) {
-                return o.value;
-              });
-              var str = NS.serializeEnabledLanguages(codes);
+          <div className="manga-tools-settings-control">
+            <Select
+              className="manga-tools-settings-select"
+              classNamePrefix="react-select"
+              isMulti
+              isClearable
+              // Flip the menu above the control when there is not enough room
+              // below (the plugin is usually the last entry on the page).
+              menuPlacement="auto"
+              placeholder="All languages"
+              value={value}
+              options={options}
+              formatOptionLabel={formatLanguageOption}
+              components={{ IndicatorSeparator: () => null }}
+              onChange={function (selected: MangaToolsOption[] | null) {
+                var codes = (selected || []).map(function (o) {
+                  return o.value;
+                });
+                var str = NS.serializeEnabledLanguages(codes);
 
-              // Reflect the change immediately (the dropdown and this UI both
-              // read NS.enabledLanguages), then persist it.
-              NS.enabledLanguages = NS.parseEnabledLanguages(str);
-              emit();
+                // Reflect the change immediately (the dropdown and this UI both
+                // read NS.enabledLanguages), then persist it.
+                NS.enabledLanguages = NS.parseEnabledLanguages(str);
+                emit();
 
-              savePlugin({
-                variables: {
-                  plugin_id: props.pluginID,
-                  input: { enabledLanguages: str },
-                },
-              }).catch(function (e) {
-                console.error("[mangaTools] failed to save plugin settings:", e);
-              });
-            }}
-          />
+                savePlugin({
+                  variables: {
+                    plugin_id: props.pluginID,
+                    input: { enabledLanguages: str },
+                  },
+                }).catch(function (e) {
+                  console.error("[mangaTools] failed to save plugin settings:", e);
+                });
+              }}
+            />
+          </div>
         </div>
       </div>
     );
