@@ -1,0 +1,46 @@
+{
+  // Shared compiler options for every plugin in this repo. Each plugin has its
+  // own tsconfig.json that extends this one and sets rootDir/outDir.
+  //
+  // These started from the official Stash plugin example
+  // (pkg/plugin/examples/react-component in the Stash repo). The two options
+  // that matter most:
+  //
+  //   "module": "esnext"
+  //     The example used module: "None", which kept emitted files as plain
+  //     scripts (not ES modules) so they can be loaded independently via
+  //     ui.javascript and talk to each other through a window global. "None" is
+  //     deprecated in TypeScript 6.0 and removed in 7.0, so we use "esnext"
+  //     instead. In practice the output is the same: these source files contain
+  //     no import/export, so tsc emits them as plain scripts either way and the
+  //     window global survives. The one difference is that an `import` now
+  //     compiles instead of being an error — it then fails at runtime, because
+  //     Stash loads the file as a plain script. Pulling in an npm package still
+  //     needs a bundler (a later step).
+  //
+  //   "jsx": "react"  (the classic transform)
+  //     JSX compiles to React.createElement, using a `React` variable from the
+  //     surrounding scope. Plugins have no React import — they take it from
+  //     PluginApi.React — which is exactly what the classic transform expects.
+  "compilerOptions": {
+    "target": "es2019",
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    // TypeScript 7.0 is the native (Go) compiler and no longer auto-includes
+    // every package under node_modules/@types the way the JS compiler did, so
+    // the packages in use are listed explicitly.
+    "types": ["react"],
+    "jsx": "react",
+    // Source maps would be shipped inside the plugin zip and are of no use in
+    // the browser, since Stash serves the file raw.
+    "sourceMap": false,
+    "isolatedModules": true,
+    "noFallthroughCasesInSwitch": true,
+    "useDefineForClassFields": true
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "stash-plugins",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A collection of plugins for Stash",
+  "license": "AGPL-3.0",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "test": "node tools/build.mjs && node tests/smoke.js",
+    "typecheck": "tsc --noEmit -p plugins/mangaTools/tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.31",
+    "typescript": "^7.0.2"
+  }
+}

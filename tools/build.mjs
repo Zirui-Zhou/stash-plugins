@@ -53,6 +53,44 @@ function topLevelList(text, key) {
     .filter(Boolean);
 }
 
+/**
+ * Reads an indented list under a `<key>:` line at any depth — used for
+ * ui.javascript and ui.css, which sit under `ui:` rather than at column 0.
+ */
+function listUnderKey(text, key) {
+  const m = new RegExp(`^[ \\t]+${key}:[ \\t]*\\n((?:[ \\t]+-.*\\n?)*)`, "m").exec(
+    text
+  );
+  if (!m) return [];
+  return m[1]
+    .split("\n")
+    .map((line) => line.trim().replace(/^-[ \t]*/, "").trim())
+    .filter(Boolean);
+}
+
+/**
+ * Checks that every file the yml references actually made it into the package.
+ *
+ * This is the step that catches a build configuration mistake — a source file
+ * not included by tsconfig, a renamed file, a stale entry in ui.javascript.
+ * Without it the plugin would install cleanly and then silently do nothing,
+ * because Stash gets a 404 for the script and logs nothing the user would see.
+ */
+function assertReferencedFilesExist(id, ymlText, dir) {
+  for (const key of ["javascript", "css"]) {
+    for (const rel of listUnderKey(ymlText, key)) {
+      // External URLs are loaded by the browser, not shipped in the zip.
+      if (/^https?:\/\//.test(rel)) continue;
+      if (!fs.existsSync(path.join(dir, rel))) {
+        throw new Error(
+          `${id}: ${key} in the plugin config references "${rel}", ` +
+            `which is not in the package (looked in ${dir})`
+        );
+      }
+    }
+  }
+}
+
 /** Short SHA for this build, used as the version suffix. */
 function shortSha() {
   if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA.slice(0, 7);
@@ -78,6 +116,51 @@ function listPluginDirs() {
     .filter((e) => e.isDirectory() && !e.name.startsWith("."))
     .map((e) => e.name)
     .sort();
+}
+
+/**
+ * Produces the directory that should be packaged for a plugin.
+ *
+ * A plugin with a tsconfig.json is compiled into its own build/ directory, and
+ * the things Stash needs at runtime that tsc does not emit (the yml, any css,
+ * the README) are copied in alongside the compiled output.
+ *
+ * A plugin without a tsconfig.json is packaged as-is, so plain-JS plugins keep
+ * working.
+ */
+function compilePlugin(dirName, dir, files) {
+  const tsconfig = path.join(dir, "tsconfig.json");
+  if (!fs.existsSync(tsconfig)) return dir;
+
+  const outDir = path.join(dir, "build");
+  // Rebuild from scratch: a file deleted from src/ would otherwise linger in
+  // build/ and end up in the zip.
+  fs.rmSync(outDir, { recursive: true, force: true });
+
+  const tsc = path.join(ROOT, "node_modules", "typescript", "bin", "tsc");
+  if (!fs.existsSync(tsc)) {
+    throw new Error(
+      `plugins/${dirName} needs a TypeScript build, but typescript is not ` +
+        `installed — run \`npm ci\` (or \`npm install\`) first`
+    );
+  }
+
+  // Run the compiler through the current node binary rather than through npx or
+  // the node_modules/.bin shim: those differ per platform (tsc.cmd on Windows)
+  // and are awkward to invoke without going through a shell.
+  execFileSync(process.execPath, [tsc, "-p", tsconfig], {
+    cwd: ROOT,
+    stdio: "inherit",
+  });
+
+  for (const f of files) {
+    if (f === "tsconfig.json") continue;
+    if (f.endsWith(".yml") || f.endsWith(".css") || f.endsWith(".md")) {
+      fs.copyFileSync(path.join(dir, f), path.join(outDir, f));
+    }
+  }
+
+  return outDir;
 }
 
 /**
@@ -117,14 +200,24 @@ function buildPlugin(dirName, sha) {
   // hand-written base version; the full version only exists in the build output.
   const patchedYml = ymlText.replace(/^version:.*$/m, `version: ${version}`);
 
+  // What actually gets packaged: the compiled output for a TypeScript plugin,
+  // or the plugin directory itself for a plain-JS one.
+  const packageDir = compilePlugin(dirName, dir, files);
+  const packagedFiles = fs
+    .readdirSync(packageDir)
+    .filter((f) => !f.startsWith("."))
+    .sort();
+
+  assertReferencedFilesExist(id, ymlText, packageDir);
+
   const stage = fs.mkdtempSync(path.join(os.tmpdir(), `stash-plugins-${id}-`));
   const zipPath = path.join(DIST_DIR, `${id}.zip`);
   try {
-    for (const f of files) {
+    for (const f of packagedFiles) {
       if (f === ymlName) {
         fs.writeFileSync(path.join(stage, f), patchedYml);
       } else {
-        fs.copyFileSync(path.join(dir, f), path.join(stage, f));
+        fs.copyFileSync(path.join(packageDir, f), path.join(stage, f));
       }
     }
 
@@ -134,7 +227,9 @@ function buildPlugin(dirName, sha) {
 
     // Name the files explicitly instead of using ".": that keeps the archive
     // entries flat, with no prefix. -X drops extended attributes and uid/gid.
-    execFileSync("zip", ["-r", "-X", "-q", zipPath, ...files], { cwd: stage });
+    execFileSync("zip", ["-r", "-X", "-q", zipPath, ...packagedFiles], {
+      cwd: stage,
+    });
   } finally {
     fs.rmSync(stage, { recursive: true, force: true });
   }

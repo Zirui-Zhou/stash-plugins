@@ -30,10 +30,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: npm
 
-      # The ubuntu runner ships zip, which is what build.mjs shells out to.
-      - name: Package plugins and generate index.yml
-        run: node tools/build.mjs
+      # typescript and @types/react, which the plugins compile against.
+      - name: Install dependencies
+        run: npm ci
+
+      # `npm test` compiles every plugin, generates dist/, and then runs the
+      # smoke tests against that compiled output. Doing it in this order means a
+      # build or behaviour regression fails the job before anything is published.
+      - name: Build and test
+        run: npm test
 
       - name: Show build output
         run: |

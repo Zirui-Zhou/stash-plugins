@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    // "build" rather than the official example's "dist": the repo already uses
+    // dist/ for the final packaged zips, and having two dist/ directories would
+    // be confusing.
+    "outDir": "build"
+  },
+  "include": ["src"]
+}

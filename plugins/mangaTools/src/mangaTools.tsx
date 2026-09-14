@@ -27,24 +27,36 @@
 (function () {
   "use strict";
 
-  var PluginApi = window.PluginApi;
-  if (!PluginApi) {
+  // The guards test the window properties directly and the bindings are created
+  // after them. That order matters: control-flow narrowing does not cross a
+  // function boundary, so `const x = window.PluginApi; if (!x) return;` would
+  // still leave x as possibly-undefined inside every nested function. Narrowing
+  // the property first, then binding, gives these constants a non-optional type
+  // without a single non-null assertion later on.
+  if (!window.PluginApi) {
     console.error("[mangaTools] PluginApi not ready, plugin not loaded");
     return;
   }
+  const PluginApi = window.PluginApi;
 
-  var NS = window.MangaTools;
-  if (!NS) {
+  if (!window.MangaTools) {
     console.error("[mangaTools] languages.js not loaded, plugin not loaded");
     return;
   }
+  const NS = window.MangaTools;
 
+  // Must stay: the classic JSX transform compiles every element to
+  // React.createElement, which resolves to this binding.
   var React = PluginApi.React;
-  var h = React.createElement;
-  var Fragment = React.Fragment;
 
   var FIELD_NAME = NS.FIELD_NAME;
   var REFRESH_MS = 60000;
+
+  /** The Gallery custom_fields map as it comes back from GraphQL */
+  type CustomFieldsMap = { [key: string]: unknown };
+
+  /** Column class names copied off a native form row */
+  type NativeFieldClasses = { group: string; label: string; control: string };
 
   /**
    * Pulls the original component out of a patch.instead callback's arguments.
@@ -54,12 +66,12 @@
    * a hard-coded index can come back undefined. The last argument is always the
    * original component — reading it that way is safe either way.
    */
-  function originalFrom(args) {
+  function originalFrom(args: unknown[]): any {
     return args[args.length - 1];
   }
 
-  function argsToArray(args) {
-    return Array.prototype.slice.call(args);
+  function argsToArray(args: IArguments): unknown[] {
+    return Array.prototype.slice.call(args) as unknown[];
   }
 
   /**
@@ -71,9 +83,9 @@
    * This log is direct evidence that a patch took effect; it fires once per
    * target.
    */
-  var firedOnce = {};
+  var firedOnce: { [target: string]: boolean } = {};
 
-  function noteFired(target) {
+  function noteFired(target: string): void {
     if (firedOnce[target]) return;
     firedOnce[target] = true;
     console.info("[mangaTools] patch active: " + target);
@@ -81,13 +93,13 @@
 
   // ───────────────────────────── State ─────────────────────────────
 
-  /** galleryId (string) -> the raw language value from custom fields */
-  var store = new Map();
+  /** galleryId -> the raw language value from custom fields */
+  var store: Map<string, string> = new Map();
 
   /** Subscribers: re-render when the store or the route changes */
-  var listeners = new Set();
+  var listeners: Set<() => void> = new Set();
 
-  var inFlight = null;
+  var inFlight: Promise<unknown> | null = null;
   var started = false;
   var lastLoggedSize = -1;
 
@@ -97,13 +109,13 @@
    */
   var currentPath = window.location.pathname || "";
 
-  function emit() {
+  function emit(): void {
     listeners.forEach(function (fn) {
       fn();
     });
   }
 
-  function subscribe(fn) {
+  function subscribe(fn: () => void): () => void {
     listeners.add(fn);
     return function () {
       listeners.delete(fn);
@@ -111,7 +123,7 @@
   }
 
   /** Subscribes to global state (data or route) and re-renders on change. */
-  function useGlobalVersion() {
+  function useGlobalVersion(): number {
     var state = React.useState(0);
     var version = state[0];
     var setVersion = state[1];
@@ -135,7 +147,7 @@
    * one of them. A gallery detail page is /galleries/{id}, and the bulk edit
    * dialog opens over the gallery list at /galleries.
    */
-  function isGalleryContext() {
+  function isGalleryContext(): boolean {
     return currentPath.indexOf("/galleries") === 0;
   }
 
@@ -144,16 +156,16 @@
   /**
    * Reads the language value out of custom_fields. The field name is matched
    * case-insensitively.
-   * @param {object|undefined} customFields
-   * @returns {string} "" when there is no such field
+   * @returns "" when there is no such field
    */
-  function pickLanguage(customFields) {
+  function pickLanguage(customFields: unknown): string {
     if (!customFields || typeof customFields !== "object") return "";
 
-    var keys = Object.keys(customFields);
+    var map = customFields as CustomFieldsMap;
+    var keys = Object.keys(map);
     for (var i = 0; i < keys.length; i++) {
       if (keys[i].toLowerCase() === FIELD_NAME) {
-        var v = customFields[keys[i]];
+        var v = map[keys[i]];
         if (v === null || v === undefined) return "";
         return String(v);
       }
@@ -166,8 +178,8 @@
    * (the input is not mutated). An empty value removes every case variant of the
    * key — matching the delete semantics of the native CustomFieldInput.
    */
-  function setLanguage(customFields, code) {
-    var next = Object.assign({}, customFields || {});
+  function setLanguage(customFields: unknown, code: string): CustomFieldsMap {
+    var next = Object.assign({}, customFields || {}) as CustomFieldsMap;
     Object.keys(next).forEach(function (k) {
       if (k.toLowerCase() === FIELD_NAME) delete next[k];
     });
@@ -189,14 +201,13 @@
    * So lowercase is a hard constraint, guaranteed by the dropdown. Reads remain
    * case-insensitive, so a capitalised key already in the library still renders.
    */
-  var QUERY = null;
+  var QUERY: unknown = null;
 
-  function getQuery() {
+  function getQuery(): unknown {
     if (QUERY) return QUERY;
 
     var Apollo = PluginApi.libraries.Apollo;
-    var gql =
-      (Apollo && Apollo.gql) || (PluginApi.GQL && PluginApi.GQL.gql);
+    var gql = (Apollo && Apollo.gql) || (PluginApi.GQL && PluginApi.GQL.gql);
     if (!gql) {
       console.error("[mangaTools] gql not available, cannot build the query");
       return null;
@@ -224,8 +235,13 @@
     return QUERY;
   }
 
+  /** What the query above returns, as far as this plugin cares */
+  type GalleriesPayload = {
+    galleries?: Array<{ id: string; custom_fields?: CustomFieldsMap }>;
+  };
+
   /** Refetches the language map. Concurrent calls share one in-flight request. */
-  function refresh() {
+  function refresh(): Promise<unknown> {
     if (inFlight) return inFlight;
 
     var query = getQuery();
@@ -242,10 +258,13 @@
     inFlight = client
       .query({ query: query, fetchPolicy: "network-only" })
       .then(function (res) {
-        var result = res && res.data && res.data.findGalleries;
+        var data = res && res.data;
+        var result = data
+          ? (data.findGalleries as GalleriesPayload | undefined)
+          : undefined;
         var galleries = (result && result.galleries) || [];
 
-        var next = new Map();
+        var next: Map<string, string> = new Map();
         galleries.forEach(function (g) {
           var value = pickLanguage(g.custom_fields);
           if (value) next.set(String(g.id), value);
@@ -281,7 +300,12 @@
     return inFlight;
   }
 
-  function start() {
+  /** Shape of the payload of Stash's "stash:location" event */
+  type LocationEvent = {
+    detail?: { data?: { location?: { pathname?: string } } };
+  };
+
+  function start(): void {
     if (started) return;
     started = true;
 
@@ -295,7 +319,8 @@
 
     if (PluginApi.Event && PluginApi.Event.addEventListener) {
       PluginApi.Event.addEventListener("stash:location", function (e) {
-        var loc = e && e.detail && e.detail.data && e.detail.data.location;
+        var ev = e as LocationEvent;
+        var loc = ev && ev.detail && ev.detail.data && ev.detail.data.location;
         currentPath = (loc && loc.pathname) || window.location.pathname || "";
         refresh();
         // Tell subscribers to recompute isGalleryContext()
@@ -313,7 +338,7 @@
    * never guesses the user's language. This is a hook, so it must be called
    * inside a component body.
    */
-  function useLocale() {
+  function useLocale(): string {
     return PluginApi.libraries.Intl.useIntl().locale;
   }
 
@@ -327,17 +352,20 @@
    * These are CSS-drawn flags, not emoji: Windows' Segoe UI Emoji has no flag
    * glyphs, so a flag emoji degrades into a pair of boxed letters there.
    */
-  function Flag(props) {
-    return h("span", {
-      className:
-        "fi fi-" + props.flag + (props.className ? " " + props.className : ""),
-    });
+  function Flag(props: { flag: string; className?: string }) {
+    return (
+      <span
+        className={
+          "fi fi-" + props.flag + (props.className ? " " + props.className : "")
+        }
+      />
+    );
   }
 
   // ─────────────────────────── Cover badge ───────────────────────────
 
   /** Reads the in-memory store only; issues no requests. */
-  function LanguageBadge(props) {
+  function LanguageBadge(props: { galleryId: string }) {
     useGlobalVersion();
     var locale = useLocale();
 
@@ -346,26 +374,26 @@
 
     // Unknown values have no flag, so fall back to a grey text chip.
     if (!info.known) {
-      return h(
-        "div",
-        { className: "manga-tools-badge is-unknown" },
-        info.name
-      );
+      return <div className="manga-tools-badge is-unknown">{info.name}</div>;
     }
 
-    return h(
-      "div",
-      { className: "manga-tools-badge", "aria-label": info.name },
-      h(Flag, { flag: info.flag })
+    return (
+      <div className="manga-tools-badge" aria-label={info.name}>
+        <Flag flag={info.flag as string} />
+      </div>
     );
   }
 
   // ─────────────────────────── Edit-page dropdown ───────────────────────────
 
-  /** react-select is a namespace import on PluginApi.libraries; the component is its default export */
-  var SELECT = null;
+  /**
+   * react-select is a namespace import on PluginApi.libraries, and the component
+   * is its default export. It is looked up at runtime, so there is no static
+   * type to give it.
+   */
+  var SELECT: any = null;
 
-  function resolveSelect() {
+  function resolveSelect(): any {
     if (SELECT) return SELECT;
 
     var RS = PluginApi.libraries.ReactSelect;
@@ -383,14 +411,14 @@
    * react-select calls this for both the menu item and the selected value, so
    * the two always look the same.
    */
-  function formatLanguageOption(option) {
-    return h(
-      "span",
-      { className: "manga-tools-option" },
-      option.flag
-        ? h(Flag, { flag: option.flag, className: "manga-tools-flag" })
-        : null,
-      h("span", null, option.label)
+  function formatLanguageOption(option: MangaToolsOption) {
+    return (
+      <span className="manga-tools-option">
+        {option.flag ? (
+          <Flag flag={option.flag} className="manga-tools-flag" />
+        ) : null}
+        <span>{option.label}</span>
+      </span>
     );
   }
 
@@ -407,7 +435,7 @@
    * Returns null when nothing can be read, and the caller falls back to a
    * conservative default.
    */
-  function readNativeFieldClasses() {
+  function readNativeFieldClasses(): NativeFieldClasses | null {
     var anchor = document.querySelector('.form-group[data-field="studio_id"]');
     if (!anchor) return null;
 
@@ -436,7 +464,10 @@
    * The structure mirrors Stash's renderField (utils/form.tsx) — see
    * readNativeFieldClasses for how the column widths are matched.
    */
-  function LanguageRow(props) {
+  function LanguageRow(props: {
+    value: string;
+    onChange: (code: string) => void;
+  }) {
     useGlobalVersion();
 
     var intl = PluginApi.libraries.Intl.useIntl();
@@ -468,14 +499,17 @@
     if (!isGalleryContext() || !Select || !host) return null;
 
     var current = NS.describe(props.value, intl.locale);
-    var options = NS.languageOptions(intl.locale);
+    var options: MangaToolsOption[] = NS.languageOptions(intl.locale);
 
     // Keep an unrecognised current value in the list, otherwise picking
     // something else would make it unreachable.
     if (current && !current.known) {
+      // Spread rather than concat: concat infers the literal's `flag: null` as a
+      // literal type, which then fails to match MangaToolsOption's `string | null`.
       options = [
         { value: current.code, label: current.name, flag: null },
-      ].concat(options);
+        ...options,
+      ];
     }
 
     var selected = current
@@ -489,41 +523,41 @@
       control: "col-sm-9",
     };
 
-    var field = h(
+    var field = (
       // Plain div/label carrying the copied class names, rather than
       // Form.Group/Form.Label/Col: those components regenerate the width classes
       // from their own defaults, which is what broke the alignment before.
-      "div",
-      { className: cls.group, "data-field": "manga_tools_language" },
-      h("label", { className: cls.label, htmlFor: "manga_tools_language" }, fieldLabel(intl)),
-      h(
-        "div",
-        { className: cls.control },
-        h(Select, {
-          className: "manga-tools-select",
-          classNamePrefix: "react-select",
-          inputId: "manga_tools_language",
-          isClearable: true,
-          isSearchable: false,
-          placeholder: "Select language…",
-          value: selected,
-          options: options,
-          // react-select draws a vertical rule between the clear and expand
-          // icons by default, and none of Stash's own dropdowns have it — its
-          // Select.tsx sets components: { IndicatorSeparator: () => null } in
-          // its default props, and CountrySelect and FilterSelect each strip it
-          // too. Follow suit, so this field matches the ones above it.
-          components: { IndicatorSeparator: () => null },
-          // Flags are drawn with CSS and cannot live inside a plain-text label,
-          // so the option has to be rendered here.
-          formatOptionLabel: formatLanguageOption,
-          // An empty value deletes the field, matching the native
-          // onChange("", "") semantics.
-          onChange: function (opt) {
-            props.onChange(opt ? opt.value : "");
-          },
-        })
-      )
+      <div className={cls.group} data-field="manga_tools_language">
+        <label className={cls.label} htmlFor="manga_tools_language">
+          {fieldLabel(intl)}
+        </label>
+        <div className={cls.control}>
+          <Select
+            className="manga-tools-select"
+            classNamePrefix="react-select"
+            inputId="manga_tools_language"
+            isClearable
+            isSearchable={false}
+            placeholder="Select language…"
+            value={selected}
+            options={options}
+            // react-select draws a vertical rule between the clear and expand
+            // icons by default, and none of Stash's own dropdowns have it — its
+            // Select.tsx sets components: { IndicatorSeparator: () => null } in
+            // its default props, and CountrySelect and FilterSelect each strip it
+            // too. Follow suit, so this field matches the ones above it.
+            components={{ IndicatorSeparator: () => null }}
+            // Flags are drawn with CSS and cannot live inside a plain-text label,
+            // so the option has to be rendered here.
+            formatOptionLabel={formatLanguageOption}
+            // An empty value deletes the field, matching the native
+            // onChange("", "") semantics.
+            onChange={function (opt: MangaToolsOption | null) {
+              props.onChange(opt ? opt.value : "");
+            }}
+          />
+        </div>
+      </div>
     );
 
     return PluginApi.ReactDOM.createPortal(field, host);
@@ -539,19 +573,19 @@
   //    breaks the rules of hooks.
   PluginApi.patch.instead("GalleryCard.Overlays", function () {
     var args = argsToArray(arguments);
-    var props = args[0];
+    var props = args[0] as { gallery?: { id?: string } };
     var Original = originalFrom(args);
     noteFired("GalleryCard.Overlays");
 
     var id = props.gallery && props.gallery.id;
     var value = id ? store.get(String(id)) : "";
-    if (!value) return h(Original, props);
+    if (!value) return <Original {...props} />;
 
-    return h(
-      Fragment,
-      null,
-      h(Original, props),
-      h(LanguageBadge, { galleryId: id })
+    return (
+      <>
+        <Original {...props} />
+        <LanguageBadge galleryId={id as string} />
+      </>
     );
   });
 
@@ -559,20 +593,25 @@
   //    row, so it contributes nothing at this position).
   PluginApi.patch.instead("CustomFieldsInput", function () {
     var args = argsToArray(arguments);
-    var props = args[0];
+    var props = args[0] as {
+      values?: CustomFieldsMap;
+      onChange?: (values: CustomFieldsMap) => void;
+    };
     var Original = originalFrom(args);
     noteFired("CustomFieldsInput");
 
-    return h(
-      Fragment,
-      null,
-      h(LanguageRow, {
-        value: pickLanguage(props.values),
-        onChange: function (code) {
-          props.onChange(setLanguage(props.values, code));
-        },
-      }),
-      h(Original, props)
+    return (
+      <>
+        <LanguageRow
+          value={pickLanguage(props.values)}
+          onChange={function (code) {
+            if (props.onChange) {
+              props.onChange(setLanguage(props.values, code));
+            }
+          }}
+        />
+        <Original {...props} />
+      </>
     );
   });
 
@@ -585,25 +624,28 @@
   //    make the whole row vanish mid-keystroke.
   PluginApi.patch.instead("CustomFieldInput", function () {
     var args = argsToArray(arguments);
-    var props = args[0];
+    var props = args[0] as { field?: string; isNew?: boolean };
     var Original = originalFrom(args);
     noteFired("CustomFieldInput");
 
     var isLanguageField =
-      props.field && String(props.field).toLowerCase() === FIELD_NAME;
+      !!props.field && String(props.field).toLowerCase() === FIELD_NAME;
 
     if (!props.isNew && isLanguageField) {
       return null;
     }
 
-    return h(Original, props);
+    return <Original {...props} />;
   });
 
   /** Class name of the detail row's mount point */
   var DETAIL_HOST_CLASS = "manga-tools-detail-host";
 
-  /** The mount point. Held at module scope so a React re-render that drops it reuses the same node. */
-  var detailHost = null;
+  /**
+   * The mount point. Held at module scope so a React re-render that drops it
+   * reuses the same node instead of creating a new one every render.
+   */
+  var detailHost: HTMLElement | null = null;
 
   /**
    * Finds (creating if needed) the mount point for the detail-page language row.
@@ -615,7 +657,7 @@
    * Appending to the end of `.gallery-details` puts the row after "photographer"
    * and before "details" — the latter belongs to renderDetails() in the next .row.
    */
-  function ensureDetailHost() {
+  function ensureDetailHost(): HTMLElement | null {
     var panel = document.querySelector(".gallery-details");
     if (!panel) {
       detailHost = null;
@@ -642,7 +684,7 @@
   var FIELD_HOST_CLASS = "manga-tools-field-host";
 
   /** As above, held at module scope so the same node is reused */
-  var fieldHost = null;
+  var fieldHost: HTMLElement | null = null;
 
   /**
    * Finds (creating if needed) the mount point for the edit-page language field,
@@ -656,7 +698,7 @@
    * Conveniently renderField leaves a data-field attribute on every row, which
    * makes a far more stable anchor than walking the structure.
    */
-  function ensureFieldHost() {
+  function ensureFieldHost(): HTMLElement | null {
     var anchor = document.querySelector('.form-group[data-field="studio_id"]');
     if (!anchor || !anchor.parentNode) {
       fieldHost = null;
@@ -690,7 +732,7 @@
    * ja-JP "言語", …), so this gets all of Stash's UI languages for free instead
    * of maintaining a label table here.
    */
-  function fieldLabel(intl) {
+  function fieldLabel(intl: MangaToolsIntl): string {
     return intl.formatMessage({
       id: "config.ui.language.heading",
       defaultMessage: "Language",
@@ -707,7 +749,7 @@
    *
    * Rendered as an <h6> to match the "photographer" rows above it.
    */
-  function DetailLanguageRow(props) {
+  function DetailLanguageRow(props: { value: unknown }) {
     useGlobalVersion();
 
     var intl = PluginApi.libraries.Intl.useIntl();
@@ -726,23 +768,21 @@
     var host = ensureDetailHost();
     if (!host) return null;
 
-    // Built piece by piece rather than as one string: the space between the flag
-    // and the name is only added when there is a flag. Otherwise an unknown value
-    // would render as "Language:  klingon" — two spaces.
+    // The space between the flag and the name is only rendered when there is a
+    // flag, otherwise an unknown value would come out as "Language:  klingon"
+    // with two spaces.
     // The gap comes entirely from that space; the CSS adds no margin-right, so
     // the space before and after the flag match, and the row lines up with
     // "photographer: ..." above it.
-    var children = [fieldLabel(intl) + ": "];
-    if (info.flag) {
-      children.push(
-        h(Flag, { flag: info.flag, className: "manga-tools-flag" }),
-        " "
-      );
-    }
-    children.push(info.name);
-
     return PluginApi.ReactDOM.createPortal(
-      h("h6", { className: "manga-tools-detail" }, children),
+      <h6 className="manga-tools-detail">
+        {fieldLabel(intl) + ": "}
+        {info.flag ? (
+          <Flag flag={info.flag} className="manga-tools-flag" />
+        ) : null}
+        {info.flag ? " " : null}
+        {info.name}
+      </h6>,
       host
     );
   }
@@ -758,27 +798,27 @@
   //    DetailLanguageRow renders that one entry under "photographer".
   PluginApi.patch.instead("CustomFields", function () {
     var args = argsToArray(arguments);
-    var props = args[0];
+    var props = args[0] as { values?: CustomFieldsMap; fullWidth?: boolean };
     var Original = originalFrom(args);
     noteFired("CustomFields");
 
     var values = props.values;
-    if (!values || typeof values !== "object") return h(Original, props);
+    if (!values || typeof values !== "object") return <Original {...props} />;
 
-    var key = null;
+    var key: string | null = null;
     Object.keys(values).forEach(function (k) {
       if (key === null && k.toLowerCase() === FIELD_NAME) key = k;
     });
-    if (key === null) return h(Original, props);
+    if (key === null) return <Original {...props} />;
 
     var rest = Object.assign({}, values);
     delete rest[key];
 
-    return h(
-      Fragment,
-      null,
-      h(Original, Object.assign({}, props, { values: rest })),
-      h(DetailLanguageRow, { value: values[key] })
+    return (
+      <>
+        <Original {...props} values={rest} />
+        <DetailLanguageRow value={values[key]} />
+      </>
     );
   });
 

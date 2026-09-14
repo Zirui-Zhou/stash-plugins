@@ -81,16 +81,23 @@ raw or translated.
 
 ```
 mangaTools/
-├── mangaTools.yml   Plugin config (the file name is the plugin ID)
-├── languages.js        Language table (pure data, swappable on its own)
-├── mangaTools.js    Badge, dropdown, patch registration
-└── mangaTools.css   Styles
+├── src/
+│   ├── mangaTools.tsx     Badge, dropdown, patch registration
+│   ├── languages.ts       Language table (pure data, swappable on its own)
+│   └── pluginApi.d.ts     Types for window.PluginApi and window.MangaTools
+├── mangaTools.yml         Plugin config (the file name is the plugin ID)
+├── mangaTools.css         Styles
+├── tsconfig.json          Extends the repo's tsconfig.base.json
+└── build/                 Compiled output — generated, gitignored, and the only
+                           thing that gets packaged
 ```
 
 `languages.js` and `mangaTools.js` are loaded in the order given by
 `ui.javascript` and communicate through a single namespace,
-`window.MangaTools`. Introducing a TypeScript build later means bundling these
-files and dropping that global — no business logic has to change.
+`window.MangaTools`. That global does not go away at this build level: the
+compiler is configured with `module: "esnext"` and the source files contain no
+`import`/`export`, so they stay plain scripts; importing across them (or pulling
+in an npm package) would require a bundler.
 
 The smoke test lives at `tests/smoke.js` **outside this directory**, so it never
 ends up inside the zip that gets installed into a user's plugins folder.
@@ -118,14 +125,20 @@ To update later: **Installed Plugins → Update**.
 
 ## Verifying
 
-Run the logic tests (no Stash required):
+From the repository root (no Stash required):
 
 ```bash
-node tests/smoke.js
+npm install     # once
+npm test        # compiles, packages, then runs the tests
+npm run typecheck
 ```
 
+`npm test` runs the tests against the **compiled** plugin in `build/`, so they
+exercise exactly what gets published and a broken build shows up here.
+
 They cover value normalisation, the unknown-value fallback, route scoping,
-write/clear semantics and badge rendering.
+write/clear semantics, badge rendering, and the string/CSS surface of every
+patched component.
 
 Against a real Stash:
 
@@ -259,12 +272,14 @@ emoji degrades into a pair of boxed letters there. This is why the plugin uses
 from `i18n-iso-countries`, covering ~40 UI languages; this table is hand-written
 and covers 4, falling back to English. Full coverage would mean pulling in
 `i18n-iso-languages` and serving its locale files through `ui.assets` at
-`/plugin/{id}/assets/`, fetched at runtime — worth doing only once a build step
-exists.
+`/plugin/{id}/assets/`, fetched at runtime. Note that this does **not** become
+possible just because the repo compiles TypeScript: an `import` would fail at
+runtime, because Stash loads each file as a plain script, so an npm package
+still cannot be pulled in. That needs a bundler.
 
-**Changing the field name**: edit `NS.FIELD_NAME` at the end of `languages.js`.
-Note the GraphQL query in `getQuery` (`mangaTools.js`) hard-codes
-`"language"`, so that has to change too.
+**Changing the field name**: edit `NS.FIELD_NAME` at the end of
+`src/languages.ts`. Note the GraphQL query in `getQuery`
+(`src/mangaTools.tsx`) hard-codes `"language"`, so that has to change too.
 
 **Adding another field** (scanlation group, uncensored, …): the design is
 single-field right now. `pickLanguage` / `setLanguage` are generic read/write
@@ -277,5 +292,6 @@ value.
   `Configuration.plugins`; currently hard-coded
 - A dedicated "language" section on the detail page — the value is only shown,
   localised, within the custom fields area
-- TypeScript plus a build step — the file layout is already arranged so it can be
-  introduced later
+- Splitting `src/mangaTools.tsx` into several files — it is ~800 lines, but
+  splitting it would be a separate change from adding a feature, and keeping them
+  apart makes a regression easy to attribute

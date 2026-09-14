@@ -3,7 +3,10 @@ const path = require("path");
 const fs = require("fs");
 const assert = require("assert");
 
-const PLUGIN = path.join(__dirname, "..", "plugins", "mangaTools");
+// The tests run against the *compiled* plugin, not the TypeScript sources — so
+// they exercise exactly what gets published, and a broken build shows up here.
+// Run `npm test`, which builds first.
+const PLUGIN = path.join(__dirname, "..", "plugins", "mangaTools", "build");
 
 // ── Stubs ──────────────────────────────────────────────────────────
 const globalListeners = {};

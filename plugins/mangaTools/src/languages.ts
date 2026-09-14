@@ -27,7 +27,10 @@
 (function () {
   "use strict";
 
-  var NS = (window.MangaTools = window.MangaTools || {});
+  // The namespace is filled in immediately below; the cast is only needed
+  // because window.MangaTools is optional in the type declaration.
+  var NS = (window.MangaTools =
+    window.MangaTools || ({} as MangaToolsNamespace));
 
   /**
    * Canonical code → { flag, names }
@@ -155,7 +158,7 @@
    * @param {string} [locale] e.g. "zh-CN" / "zh-TW" / "en-US" / "ja-JP"
    * @returns {string}
    */
-  NS.localeCode = function (locale) {
+  NS.localeCode = function (locale?: string | null): string {
     if (!locale) return NS.FALLBACK_LOCALE;
     var code = String(locale);
     if (code === "zh-CN") return "zh";
@@ -169,7 +172,7 @@
    * @param {string} code
    * @returns {string}
    */
-  NS.findCanonical = function (code) {
+  NS.findCanonical = function (code?: string | null): string {
     if (!code) return "";
     var lower = String(code).trim().toLowerCase();
     if (lower === "") return "";
@@ -191,7 +194,7 @@
    * @param {*} raw
    * @returns {string}
    */
-  NS.normalize = function (raw) {
+  NS.normalize = function (raw: unknown): string {
     if (raw === null || raw === undefined) return "";
     var s = String(raw).trim();
     if (s === "") return "";
@@ -215,7 +218,7 @@
    * @param {string} [locale] react-intl locale
    * @returns {string}
    */
-  NS.name = function (code, locale) {
+  NS.name = function (code: unknown, locale?: string | null): string {
     // Go through normalize rather than findCanonical directly, so that
     // case-insensitive matches resolve to the canonical code; anything that
     // does not match comes back as the code itself.
@@ -239,7 +242,10 @@
    * @returns {{code: string, flag: string|null, name: string, known: boolean} | null}
    *          null for an empty value; `flag` is null for unknown values
    */
-  NS.describe = function (raw, locale) {
+  NS.describe = function (
+    raw: unknown,
+    locale?: string | null
+  ): MangaToolsDescription | null {
     var code = NS.normalize(raw);
     if (code === "") return null;
 
@@ -267,7 +273,7 @@
    * @param {string} [locale]
    * @returns {Array<{value: string, label: string, flag: string}>}
    */
-  NS.languageOptions = function (locale) {
+  NS.languageOptions = function (locale?: string | null): MangaToolsOption[] {
     return NS.ORDER.filter(function (code) {
       return !!NS.LANGUAGES[code];
     }).map(function (code) {
