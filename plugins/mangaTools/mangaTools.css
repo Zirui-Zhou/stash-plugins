@@ -61,12 +61,21 @@
 }
 
 /*
- * The grey text chip, used whenever the badge has no flag to draw: an
- * unrecognised value, or any value with the "Show flags" setting turned off.
+ * The text chip, used whenever the badge has no flag to draw. Two cases, which
+ * look the same but are not the same thing:
+ *
+ *   .is-unknown  an unrecognised value — arbitrary data, so it is bounded and
+ *                ellipsised. "klingon" and a pasted paragraph both behave.
+ *   .is-name     a recognised language with the "Show flags" setting turned off.
+ *                The name is one of ours and can be long — 印度尼西亚语,
+ *                "Traditional Chinese", "Chinesisch (traditionell)" — so it is
+ *                shown whole rather than clipped to a few characters.
+ *
  * The line-height has to be reset explicitly, overriding the `line-height: 0`
  * left behind by the .fi rule above.
  */
-.manga-tools-badge.is-unknown {
+.manga-tools-badge.is-unknown,
+.manga-tools-badge.is-name {
   background-color: #6b7280;
   border-radius: 3px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
@@ -75,12 +84,15 @@
   font-weight: 600;
   letter-spacing: 0.03rem;
   line-height: 1.5;
-  max-width: 5rem;
-  overflow: hidden;
   padding: 0.05rem 0.4rem;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.manga-tools-badge.is-unknown {
+  max-width: 5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /*

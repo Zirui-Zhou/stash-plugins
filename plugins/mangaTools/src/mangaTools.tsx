@@ -496,11 +496,20 @@ function LanguageBadge(props: { galleryId: string }) {
   var info = NS.describe(store.get(String(props.galleryId)), locale);
   if (!info) return null;
 
-  // No flag to show — either the value is unrecognised, or flags are turned off
-  // — so fall back to the grey text chip. It is the same chip in both cases
-  // because the reason is the same: there is no flag for this badge.
-  if (!info.known || !NS.showFlags) {
+  // No flag to show, for one of two reasons — and they are not the same chip:
+  //
+  //   unrecognised  arbitrary data, so it is bounded and ellipsised; a long junk
+  //                 value must not end up covering the cover
+  //   flags off     a real language name, so it is shown whole — clipping
+  //                 "印度尼西亚语" or "Traditional Chinese" to a few characters
+  //                 would make the setting hard to use
+  //
+  // The look is identical; what differs is whether the text may run its length.
+  if (!info.known) {
     return <div className="manga-tools-badge is-unknown">{info.name}</div>;
+  }
+  if (!NS.showFlags) {
+    return <div className="manga-tools-badge is-name">{info.name}</div>;
   }
 
   return (

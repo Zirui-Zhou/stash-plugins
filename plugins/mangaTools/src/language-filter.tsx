@@ -683,7 +683,13 @@ export function SidebarLanguageFilter(props: {
               />
               {query ? (
                 <Bootstrap.Button
+                  // "secondary", not the react-bootstrap default of "primary":
+                  // Stash's ClearableInput asks for secondary, and the primary
+                  // button paints this one with a solid blue background that
+                  // Stash's own .clearable-text-field-clear does not undo.
+                  variant="secondary"
                   className="clearable-text-field-clear"
+                  title={message(intl, "actions.clear", "Clear")}
                   onClick={function () {
                     setQuery("");
                   }}

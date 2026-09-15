@@ -232,24 +232,28 @@ const MESSAGES = {
   "zh-CN": {
     "config.ui.language.heading": "语言",
     "actions.search": "搜索",
+    "actions.clear": "清除",
     "criterion_modifier_values.any": "任意",
     "criterion_modifier_values.none": "无",
   },
   "zh-TW": {
     "config.ui.language.heading": "語言",
     "actions.search": "搜尋",
+    "actions.clear": "清除",
     "criterion_modifier_values.any": "任意",
     "criterion_modifier_values.none": "無",
   },
   "en-US": {
     "config.ui.language.heading": "Language",
     "actions.search": "Search",
+    "actions.clear": "Clear",
     "criterion_modifier_values.any": "Any",
     "criterion_modifier_values.none": "None",
   },
   "ja-JP": {
     "config.ui.language.heading": "言語",
     "actions.search": "検索",
+    "actions.clear": "クリア",
     "criterion_modifier_values.any": "任意",
     "criterion_modifier_values.none": "なし",
   },
@@ -1070,6 +1074,16 @@ assert.ok(
   /\.manga-tools-badge\s+\.fi\s*\{[^}]*height:/.test(css),
   "the badge flag sizing rule is missing"
 );
+// The text chip's truncation belongs to unrecognised values only. A recognised
+// language name is shown whole — clipping it is what made "印度尼西亚语" come out
+// as "印度尼…" with flags turned off.
+const boundedChip = /\.manga-tools-badge\.is-unknown\s*\{([^}]*)\}/.exec(css);
+assert.ok(boundedChip && /text-overflow:\s*ellipsis/.test(boundedChip[1]),
+  "an unrecognised value should be bounded and ellipsised");
+assert.ok(
+  !/\.manga-tools-badge\.is-name\s*\{[^}]*text-overflow/.test(css),
+  "a recognised language name must not be truncated — see the .is-name rule"
+);
 // Stash's `.setting-section .setting > div:last-child { text-align: right }`
 // right-aligns the heading and description of this full-width settings block
 // unless it is explicitly undone.
@@ -1485,6 +1499,26 @@ assert.strictEqual(
 );
 console.log("✓ sidebar section (selected + excluded lists / row shapes / click clears)");
 
+// The search box's clear button cannot be reached from these tests: it only
+// renders once the box has text, and this stub's useState cannot type. Its one
+// non-obvious requirement is therefore pinned in the bundle text instead — that
+// it asks for the *secondary* variant, since react-bootstrap defaults to primary
+// and Stash's own .clearable-text-field-clear does not undo that background,
+// leaving a solid blue block where a small cross should be.
+// If this ever fails, check that change against ClearableInput.tsx rather than
+// deleting the assertion.
+const bundleText = fs.readFileSync(path.join(PLUGIN, "mangaTools.js"), "utf8");
+const clearMarker = 'className: "clearable-text-field-clear"';
+const clearAt = bundleText.indexOf(clearMarker);
+assert.ok(clearAt > 0, "the clear button should be in the bundle");
+const clearProps = bundleText.slice(
+  bundleText.lastIndexOf("{", clearAt),
+  bundleText.indexOf("}", clearAt)
+);
+assert.ok(/variant:\s*"secondary"/.test(clearProps),
+  "the clear button must be a secondary button, like Stash's — a primary one is a blue block");
+console.log("✓ search box clear button (secondary, not the primary default)");
+
 setTimeout(() => {
   // ── 11. Badges (after the refresh promise settles) ───────────────
   const card = (id) => call("GalleryCard.Overlays", { gallery: { id } });
@@ -1633,12 +1667,27 @@ setTimeout(() => {
   // The badge survives flags being off: it falls back to the name chip. That
   // combination is exactly why the two switches are independent — the flag
   // mapping is lossy, so a name can be preferable without losing the badge.
+  //
+  // The class matters as much as the text: an unrecognised value is bounded and
+  // ellipsised, while a recognised name is not clipped at all. Getting those the
+  // same way round is what stopped "印度尼西亚语" rendering as "印度尼…".
   assert.strictEqual(card("1").type, React.Fragment, "the badge should survive flags being off");
   const flatBadge = badgeOf("1");
-  assert.strictEqual(flatBadge.props.className, "manga-tools-badge is-unknown",
-    "a recognised language falls back to the text chip");
+  assert.strictEqual(flatBadge.props.className, "manga-tools-badge is-name",
+    "a recognised language falls back to the name chip, which is not truncated");
   assert.strictEqual(flatBadge.props.children, "简体中文", "showing the localised name");
   assert.strictEqual(flagOf("1"), null, "and no flag element inside it");
+
+  // A long name is the case that motivated the split, so check one end to end:
+  // gallery 1 is zh-Hans, which is "Chinesisch (vereinfacht)" in German.
+  currentLocale = "de-DE";
+  assert.strictEqual(badgeOf("1").props.children, "Chinesisch (vereinfacht)");
+  assert.strictEqual(badgeOf("1").props.className, "manga-tools-badge is-name",
+    "a name long enough to be clipped keeps the chip that is allowed its full width");
+  currentLocale = "zh-CN";
+
+  // An unrecognised value keeps the bounded chip, whatever its length
+  assert.strictEqual(badgeOf("3").props.className, "manga-tools-badge is-unknown");
 
   NS.showFlags = true;
   assert.strictEqual(flagOf("1").props.className, "fi fi-cn", "the flag comes back");
