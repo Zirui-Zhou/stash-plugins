@@ -264,7 +264,7 @@ Three states, and the third is the absence of the field rather than a value:
 
 | State | Stored | Card | Toolbar |
 |---|---|---|---|
-| Not marked | no field | nothing | a question mark, dimmed |
+| Not marked | no field | nothing | an empty chessboard, dimmed |
 | Censored | `censored` | a knight | a knight |
 | Uncensored | `uncensored` | a pawn | a pawn |
 
@@ -275,6 +275,15 @@ the reader it is aimed at. The icons carry it and nothing on screen spells it
 out: a tooltip about a word rather than about the gallery would be worse than no
 tooltip. If the pun wears off, `censorshipIcon` in `src/mangaTools.tsx` is the
 one place to change it.
+
+**Why a board for the third state.** It is the third member of the same set, so
+the button reads as one control with three states rather than as two chess pieces
+beside a UI glyph — and the circled question mark it replaced is the universal
+"help" mark, in a toolbar, which is a thing people click by mistake. A board with
+nothing on it is also just true: nothing has been marked. It looks a little like
+the mosaic the other two are named after, which the dimmed grey helps along. The
+name needs no fallback, unlike `faXmark` in `language-filter.tsx`: `chess-board`
+has been spelled that way in every FontAwesome since 5.
 
 **Only "not marked" has a colour of its own** — it is dimmed, so the button reads
 as an offer rather than as a setting with a value. The two marked states keep the
@@ -479,7 +488,7 @@ Against a real Stash:
 6. **Check the scope**: open any scene or performer edit page — there should be
    **no** language dropdown (the plugin only acts on gallery pages)
 6b. **Check censorship**: on that gallery's **detail** page, the toolbar should
-   have a dimmed question-mark button between the organized box and the `⋮`
+   have a dimmed chessboard button between the organized box and the `⋮`
    menu. Its tooltip should read "mark as censored".
    - Click it: the icon becomes a knight, the tooltip "mark as uncensored", and
      the mark should appear on the gallery's card in the list behind — at the

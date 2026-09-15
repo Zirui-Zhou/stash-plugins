@@ -418,11 +418,11 @@ const PluginApi = {
       faChevronRight: "faChevronRight",
       faCheckCircle: "faCheckCircle",
       faTimesCircle: "faTimesCircle",
-      // The censorship pair, and the unmarked state. Names rather than
-      // definitions, so a test can assert which icon a state was given.
+      // The censorship trio. Names rather than definitions, so a test can
+      // assert which icon a state was given.
       faChessPawn: "faChessPawn",
       faChessKnight: "faChessKnight",
-      faCircleQuestion: "faCircleQuestion",
+      faChessBoard: "faChessBoard",
     },
     FontAwesomeRegular: { faTimesCircle: "faTimesCircle(regular)" },
     // Captured so a test can assert the URL the filter pushes.
@@ -4013,6 +4013,12 @@ setTimeout(() => {
     "minimal manga-tools-censorship btn btn-secondary is-unmarked",
     "and carries the one state class the CSS has a rule for, so an unmarked " +
       "gallery's button reads as an offer rather than as a value"
+  );
+  assert.strictEqual(
+    unmarked.drawn.node.props.children.props.icon,
+    "faChessBoard",
+    "an empty board for a gallery with nothing on it — the third member of the " +
+      "same set, rather than a UI glyph the toolbar already uses for help"
   );
   assert.ok(
     /\.manga-tools-censorship\.is-unmarked\s*\{/.test(css),

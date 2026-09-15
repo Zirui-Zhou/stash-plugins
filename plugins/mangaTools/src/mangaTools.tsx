@@ -609,16 +609,21 @@ function LanguageBadge(props: { galleryId: string }) {
  * nowhere on screen: the icons carry it, and a tooltip that spelled it out would
  * be a tooltip about a word rather than about the gallery.
  *
- * `faCircleQuestion` is the unmarked state. It is looked up with a fallback
- * because it was `faQuestionCircle` before FontAwesome 6, and which version is
- * bundled is Stash's decision rather than this plugin's — the same precaution as
- * `faXmark` in language-filter.tsx.
+ * `faChessBoard` is the unmarked state, and it earns its place twice over — it is
+ * the third member of the same set, so the button reads as one control with three
+ * states rather than as a chess piece beside a UI glyph, and a board with nothing
+ * on it *is* "nothing marked yet". It even looks a little like the mosaic the
+ * other two are named after, which the dimmed grey helps along.
+ *
+ * No fallback name is needed, unlike `faXmark` in language-filter.tsx: chess-board
+ * has been spelled that way in every FontAwesome since 5, so whichever version
+ * Stash bundles answers to it.
  */
 function censorshipIcon(value: string): unknown {
   const Solid = PluginApi.libraries.FontAwesomeSolid || {};
   if (value === "censored") return Solid.faChessKnight;
   if (value === "uncensored") return Solid.faChessPawn;
-  return Solid.faCircleQuestion || Solid.faQuestionCircle;
+  return Solid.faChessBoard;
 }
 
 /** The plugin's own word for a state, for a tooltip or a label */
