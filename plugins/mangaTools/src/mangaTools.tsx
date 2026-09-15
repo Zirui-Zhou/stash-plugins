@@ -445,7 +445,12 @@ function refreshSettings(): void {
   }
 
   client
-    .query({ query: query, fetchPolicy: "network-only" })
+    // no-cache rather than network-only: `configuration` is a singleton with no
+    // id, and writing a result like that into Apollo's normalised cache is what
+    // makes it complain that ConfigResult "either needs an ID or a custom merge
+    // function" — on every page load, from a read this plugin does not want
+    // cached in the first place. It is re-read on every navigation anyway.
+    .query({ query: query, fetchPolicy: "no-cache" })
     .then((res) => {
       const data = res?.data as SettingsPayload | undefined;
       const plugins = data?.configuration?.plugins;
@@ -1949,6 +1954,10 @@ function DetailLanguageRow(props: { value: unknown }) {
 //    which is why this component is where it is rendered from. It is the one
 //    patchable component on this page that has the gallery's custom fields in
 //    hand, and the toolbar's own component is not patchable at all.
+//
+//    The button does not depend on those fields being there, only on this being
+//    a gallery: `CustomFields` is rendered by the gallery detail panel whatever
+//    a gallery carries, including nothing.
 PluginApi.patch.instead("CustomFields", (...args: unknown[]) => {
   const props = args[0] as { values?: CustomFieldsMap; fullWidth?: boolean };
   const Original = originalFrom(args);
@@ -1968,27 +1977,42 @@ PluginApi.patch.instead("CustomFields", (...args: unknown[]) => {
     delete rest[k];
   });
 
-  if (languageKey === null && censorshipKey === null) {
-    return <Original {...props} />;
-  }
+  const lifted = languageKey !== null || censorshipKey !== null;
 
   // Empty on every entity's page but a gallery's, which is what keeps the
   // button off a scene's or a performer's detail page.
-  const galleryId = currentGalleryId();
+  const galleryId = CAN_WRITE_CENSORSHIP ? currentGalleryId() : "";
+
+  // Nothing to lift out and no toolbar to put a button in: hand the original
+  // component its own props object back, unwrapped. This is the common case on
+  // every non-gallery entity.
+  if (!lifted && !galleryId) return <Original {...props} />;
 
   return (
     <>
-      <Original {...props} values={rest} />
+      {/* Stash passed `values`, and `rest` differs from it only when something
+          of ours was lifted out; passing the original props object otherwise
+          keeps the identity its own memoisation compares. */}
+      <Original
+        {...(lifted ? Object.assign({}, props, { values: rest }) : props)}
+      />
       {languageKey === null ? null : (
         <DetailLanguageRow value={values[languageKey]} />
       )}
-      {censorshipKey === null || !galleryId || !CAN_WRITE_CENSORSHIP ? null : (
+      {/*
+        Rendered whether or not this gallery carries the field yet, and that is
+        the whole point: this button is the only way to set a mark, so gating it
+        on a mark already existing would leave every gallery permanently
+        unmarked. An absent key is simply the "not marked" state, and the first
+        click writes the canonical spelling.
+      */}
+      {galleryId ? (
         <CensorshipToolbarButton
           galleryId={galleryId}
           value={censorshipOf(values)}
-          fieldKey={censorshipKey}
+          fieldKey={censorshipKey || CENSORSHIP_FIELD_NAME}
         />
-      )}
+      ) : null}
     </>
   );
 });

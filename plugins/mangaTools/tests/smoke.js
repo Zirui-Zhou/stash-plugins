@@ -3933,6 +3933,43 @@ setTimeout(() => {
     "the icon is the current state's"
   );
 
+  // A gallery carrying nothing at all still gets the button, because the button
+  // is the only way to set a first mark — gating it on the field already
+  // existing would leave every gallery permanently unmarked. This is the bug
+  // that shipped in 0.5.0 and was caught on the first real page.
+  const bareValues = {};
+  const bare = call("CustomFields", { values: bareValues });
+  assert.strictEqual(
+    bare.props.children[2].props.value,
+    "",
+    "a gallery with no fields at all is offered the button, reading as unmarked"
+  );
+  assert.strictEqual(
+    bare.props.children[2].props.fieldKey,
+    CF,
+    "and it writes the canonical spelling, since there is no key to match"
+  );
+  assert.strictEqual(
+    bare.props.children[0].props.values,
+    bareValues,
+    "with nothing lifted out, the props object is handed back as it was — the " +
+      "identity Stash's own memoisation compares"
+  );
+
+  const languageOnly = call("CustomFields", {
+    values: { [NS.FIELD_NAME]: "ja" },
+  });
+  assert.strictEqual(
+    languageOnly.props.children[2].props.fieldKey,
+    CF,
+    "a gallery carrying a language but no mark is offered it too"
+  );
+  assert.strictEqual(
+    languageOnly.props.children[1].props.value,
+    "ja",
+    "…and still gets its language row"
+  );
+
   // Clicking cycles: censored → uncensored → not marked → censored.
   const clicksBefore = galleryWrites.length;
   first.drawn.node.props.onClick();

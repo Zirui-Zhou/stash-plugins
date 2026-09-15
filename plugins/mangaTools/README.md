@@ -281,6 +281,14 @@ one place to change it.
 | Gallery list / card | The state's icon **at the end of the popover row** — the row that appears on hover with the image count, the tag count and the organized box. An unmarked gallery adds nothing there, since most galleries are unmarked |
 | Gallery detail page | A **button in the toolbar**, between Stash's organized button and the operation menu, cycling not marked → censored → uncensored. The tooltip names what the **next** click does, which is the whole of how a three-state button explains itself |
 
+**The toolbar button is drawn on every gallery detail page, marked or not.** It
+has to be: it is the only way to set a mark, so gating it on the field already
+existing would leave every gallery permanently unmarked — which is exactly the
+bug that shipped in 0.5.0 and was fixed in 0.5.1. An absent key *is* the "not
+marked" state, and the first click writes the canonical spelling. A gallery that
+has never been marked therefore looks untouched everywhere except that one
+dimmed question mark, which is the offer rather than a state.
+
 **The card's mark is spliced into Stash's own row, and that row is a flex
 container** — rendering a second `.card-popovers` beside it would put the mark on
 a line of its own instead of at the end of this one. So the mark renders an
@@ -608,7 +616,7 @@ canonical spelling.
   `plugin.mangaTools.language` field by hand instead of using the dropdown, you
   type the value yourself; with the dropdown there is no field to create — picking
   a value writes it. The censorship field has no such problem, since its button
-  only ever appears once a value is already there.
+  is always there and its first click creates the field.
 - **Changes can take up to 60 seconds to appear.** After saving, badges refresh
   from a poll rather than instantly. Changing route (navigating) refreshes
   immediately, and a write from the censorship button updates the store directly.
