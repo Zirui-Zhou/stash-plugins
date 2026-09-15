@@ -262,6 +262,172 @@ function readLanguageFilter(
   return selection;
 }
 
+/**
+ * Changes to a selection.
+ *
+ * Pure functions rather than methods on a component, because two very different
+ * surfaces share this state: the sidebar section and the filter dialog's card.
+ * They are laid out differently and they commit at different times — the sidebar
+ * writes the URL at once, the dialog waits for Apply — but what a click *means*
+ * has to be identical in both, or the two drift apart and a filter set in one is
+ * not the filter the other shows. Keeping the meaning here and the rendering
+ * there is what prevents that.
+ */
+
+/** Adds a language to the included list, or takes it out again */
+export function toggleIncluded(
+  selection: MangaToolsLanguageSelection,
+  code: string
+): MangaToolsLanguageSelection {
+  var already = selection.included.indexOf(code) !== -1;
+
+  return {
+    modifier: "",
+    included: already
+      ? selection.included.filter(function (c) {
+          return c !== code;
+        })
+      : selection.included.concat([code]),
+    // A language is included or excluded, never both: EQUALS and NOT_EQUALS for
+    // one value is a contradiction and matches nothing.
+    excluded: selection.excluded.filter(function (c) {
+      return c !== code;
+    }),
+  };
+}
+
+/** The same, on the excluded side */
+export function toggleExcluded(
+  selection: MangaToolsLanguageSelection,
+  code: string
+): MangaToolsLanguageSelection {
+  var already = selection.excluded.indexOf(code) !== -1;
+
+  return {
+    modifier: "",
+    included: selection.included.filter(function (c) {
+      return c !== code;
+    }),
+    excluded: already
+      ? selection.excluded.filter(function (c) {
+          return c !== code;
+        })
+      : selection.excluded.concat([code]),
+  };
+}
+
+/**
+ * (Any) or (None): the two states a language field can be in with no particular
+ * value asked for.
+ *
+ * The lists are dropped rather than kept. They cannot be expressed at the same
+ * time as a modifier — only the modifier survives into the query — and quietly
+ * discarding them later would be worse than making the choice visible now.
+ */
+export function withModifier(
+  selection: MangaToolsLanguageSelection,
+  modifier: "any" | "none"
+): MangaToolsLanguageSelection {
+  return { modifier: modifier, included: [], excluded: [] };
+}
+
+/** Back to the default, which is "no restriction at all" */
+export function withoutModifier(
+  selection: MangaToolsLanguageSelection
+): MangaToolsLanguageSelection {
+  return {
+    modifier: "",
+    included: selection.included.slice(),
+    excluded: selection.excluded.slice(),
+  };
+}
+
+/** Is this asking for nothing? */
+export function isEmptySelection(
+  selection: MangaToolsLanguageSelection
+): boolean {
+  return (
+    !selection.modifier &&
+    !selection.included.length &&
+    !selection.excluded.length
+  );
+}
+
+/** Are these the same request? Compared as sets, so click order cannot matter */
+export function sameSelection(
+  a: MangaToolsLanguageSelection,
+  b: MangaToolsLanguageSelection
+): boolean {
+  return a.modifier === b.modifier &&
+    sameCodes(a.included, b.included) &&
+    sameCodes(a.excluded, b.excluded);
+}
+
+function sameCodes(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+
+  var x = a.slice().sort();
+  var y = b.slice().sort();
+  for (var i = 0; i < x.length; i++) {
+    if (x[i] !== y[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * The one-line description of a selection, in Stash's own words.
+ *
+ * Assembled from Stash's messages rather than written here, so a tag this plugin
+ * draws reads exactly like one Stash draws — "Language is Japanese, English",
+ * "Language is not null". That means the criterion's localised name and the
+ * modifier's own label, which is also why (Any) comes out as "is not null": that
+ * is what the modifier it produces means.
+ */
+export function selectionLabel(
+  intl: MangaToolsIntl,
+  selection: MangaToolsLanguageSelection
+): string {
+  var criterion = fieldLabel(intl);
+  var names = function (codes: string[]): string {
+    return codes
+      .map(function (c) {
+        return NS.name(c, intl.locale);
+      })
+      .join(", ");
+  };
+
+  if (selection.modifier) {
+    return intl.formatMessage(
+      { id: "criterion_modifier.format_string" },
+      {
+        criterion: criterion,
+        modifierString: message(
+          intl,
+          selection.modifier === "any"
+            ? "criterion_modifier.not_null"
+            : "criterion_modifier.is_null",
+          selection.modifier === "any" ? "is not null" : "is null"
+        ),
+        valueString: "",
+      }
+    );
+  }
+
+  return intl.formatMessage(
+    {
+      id: selection.excluded.length
+        ? "criterion_modifier.format_string_excludes"
+        : "criterion_modifier.format_string",
+    },
+    {
+      criterion: criterion,
+      modifierString: message(intl, "criterion_modifier.equals", "is"),
+      valueString: names(selection.included),
+      excludedString: names(selection.excluded),
+    }
+  );
+}
+
 /** The conditions our selection turns into */
 function selectionConditions(
   selection: MangaToolsLanguageSelection
@@ -381,6 +547,13 @@ function applyLanguage(
 // Published on the namespace alongside the rest of the plugin's pure logic, so
 // the smoke tests can exercise the read/merge rules against a stub filter model
 // without rendering anything.
+NS.toggleIncluded = toggleIncluded;
+NS.toggleExcluded = toggleExcluded;
+NS.withModifier = withModifier;
+NS.withoutModifier = withoutModifier;
+NS.isEmptySelection = isEmptySelection;
+NS.sameSelection = sameSelection;
+NS.selectionLabel = selectionLabel;
 NS.readLanguageFilter = readLanguageFilter;
 NS.languageFilterQuery = languageFilterQuery;
 NS.registerLanguageCriterionOption = registerLanguageCriterionOption;
@@ -1027,44 +1200,15 @@ export function SidebarLanguageFilter(props: {
     }
   }
 
-  /**
-   * Clicking a chosen value removes it; clicking a candidate adds it.
-   *
-   * Several values at once, because that is what the studio filter this mirrors
-   * allows — and because the backend unions them, so "Japanese or Traditional
-   * Chinese" is one condition rather than a contradiction. The two lists are
-   * mutually exclusive: a value moves between them rather than sitting in both,
-   * which would send EQUALS and NOT_EQUALS for the same language and match
-   * nothing at all.
-   */
+  // Thin wrappers around the shared operations, which are what actually define
+  // what a click means — the dialog's card uses the same ones, so the two
+  // surfaces cannot drift apart.
   function toggleInclude(code: string) {
-    var already = selection.included.indexOf(code) !== -1;
-    update({
-      modifier: "",
-      included: already
-        ? selection.included.filter(function (c) {
-            return c !== code;
-          })
-        : selection.included.concat([code]),
-      excluded: selection.excluded.filter(function (c) {
-        return c !== code;
-      }),
-    });
+    update(toggleIncluded(selection, code));
   }
 
   function toggleExclude(code: string) {
-    var already = selection.excluded.indexOf(code) !== -1;
-    update({
-      modifier: "",
-      included: selection.included.filter(function (c) {
-        return c !== code;
-      }),
-      excluded: already
-        ? selection.excluded.filter(function (c) {
-            return c !== code;
-          })
-        : selection.excluded.concat([code]),
-    });
+    update(toggleExcluded(selection, code));
   }
 
   // Two actions, not one, exactly as Stash has them: picking a modifier entry
@@ -1072,11 +1216,11 @@ export function SidebarLanguageFilter(props: {
   // chosen list takes it back to the default (its onUnselect — which sets the
   // modifier back rather than toggling, so it cannot be reached from here).
   function setModifier(modifier: "any" | "none") {
-    update({ modifier: modifier, included: [], excluded: [] });
+    update(withModifier(selection, modifier));
   }
 
   function clearModifier() {
-    update({ modifier: "", included: [], excluded: [] });
+    update(withoutModifier(selection));
   }
 
   // The same "enabled languages" setting that limits the edit dropdown limits

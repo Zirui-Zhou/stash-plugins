@@ -248,6 +248,14 @@ const MESSAGES = {
     "actions.exclude_lowercase": "排除",
     "criterion_modifier_values.any": "任意",
     "criterion_modifier_values.none": "无",
+    // The pieces Stash composes a criterion's tag from. Its real strings are
+    // "is" / "is not null"; these stand in so the composition can be asserted.
+    "criterion_modifier.format_string": "{criterion} {modifierString} {valueString}",
+    "criterion_modifier.format_string_excludes":
+      "{criterion} {modifierString} {valueString} (excludes {excludedString})",
+    "criterion_modifier.equals": "是",
+    "criterion_modifier.is_null": "为空",
+    "criterion_modifier.not_null": "不为空",
   },
   "zh-TW": {
     "config.ui.language.heading": "語言",
@@ -312,8 +320,14 @@ const PluginApi = {
         locale: currentLocale,
         // Stands in for Stash's react-intl: a hit in the locale files returns the
         // translation, otherwise defaultMessage is used.
-        formatMessage: ({ id, defaultMessage }) =>
-          (MESSAGES[currentLocale] || {})[id] || defaultMessage,
+        formatMessage: ({ id, defaultMessage }, values) => {
+          const text = (MESSAGES[currentLocale] || {})[id] || defaultMessage;
+          if (!values || typeof text !== "string") return text;
+          // Enough of ICU for the messages the plugin reads: {name} placeholders.
+          return text.replace(/\{(\w+)\}/g, (whole, name) =>
+            name in values ? String(values[name]) : whole
+          );
+        },
       }),
     },
     FontAwesomeSolid: {
@@ -1709,6 +1723,56 @@ NS.languageFilterQuery(dialogModel, { modifier: "", included: ["ja"], excluded: 
 assert.strictEqual(encodedCriteria[0][0].criterionOption.type, "language",
   "the sidebar should create the criterion the dialog's card represents");
 console.log("✓ filter dialog card (registered once / usable criterion / stored as a custom field)");
+
+// ── 10f. The selection operations both surfaces share ──────────────
+// Pure functions, so they can be tested directly rather than through two
+// components. They are what the sidebar section and the dialog's card both mean
+// by a click; the two commit at different times, which is exactly why the
+// meaning has to live in one place.
+// `sel` is the helper the filter-condition tests above already define.
+assert.deepStrictEqual(NS.toggleIncluded(sel(), "ja"), sel("", ["ja"]),
+  "a pick adds to the included list");
+assert.deepStrictEqual(NS.toggleIncluded(sel("", ["ja"]), "ja"), sel(),
+  "picking the same one again takes it out");
+assert.deepStrictEqual(NS.toggleIncluded(sel("", ["ja"]), "en"), sel("", ["ja", "en"]),
+  "several values are a union, not a replacement");
+assert.deepStrictEqual(NS.toggleIncluded(sel("none"), "ja"), sel("", ["ja"]),
+  "picking a value leaves the (None) state");
+assert.deepStrictEqual(NS.toggleIncluded(sel("", [], ["ja"]), "ja"), sel("", ["ja"]),
+  "…and moves a value out of the excluded list: one or the other, never both");
+
+assert.deepStrictEqual(NS.toggleExcluded(sel(), "ko"), sel("", [], ["ko"]));
+assert.deepStrictEqual(NS.toggleExcluded(sel("", ["ko"]), "ko"), sel("", [], ["ko"]),
+  "excluding a value includes no longer");
+
+assert.deepStrictEqual(NS.withModifier(sel("", ["ja"]), "any"), sel("any"),
+  "(Any) cannot be said at the same time as particular values, so the values go");
+assert.deepStrictEqual(NS.withoutModifier(sel("none")), sel(),
+  "clearing the modifier leaves no restriction");
+assert.deepStrictEqual(NS.withoutModifier(sel("none", ["ja"])), sel("", ["ja"]),
+  "…and keeps any values that were there");
+
+assert.strictEqual(NS.isEmptySelection(sel()), true);
+assert.strictEqual(NS.isEmptySelection(sel("any")), false);
+assert.strictEqual(NS.isEmptySelection(sel("", ["ja"])), false);
+assert.strictEqual(NS.sameSelection(sel("", ["ja", "en"]), sel("", ["en", "ja"])), true,
+  "compared as sets: click order must not count as a change");
+assert.strictEqual(NS.sameSelection(sel("", ["ja"]), sel("", ["ja", "en"])), false);
+assert.strictEqual(NS.sameSelection(sel("any"), sel("none")), false);
+console.log("✓ selection operations (toggle / modifier / emptiness / sameness)");
+
+// The tag text, assembled from Stash's own messages so a tag this plugin draws
+// reads like one Stash draws.
+const intl = PluginApi.libraries.Intl.useIntl();
+assert.strictEqual(NS.selectionLabel(intl, sel("", ["ja", "en"])), "语言 是 日语, 英语",
+  "the criterion's localised name, the modifier's label, the values joined");
+assert.strictEqual(NS.selectionLabel(intl, sel("", ["ja"], ["ko"])),
+  "语言 是 日语 (excludes 韩语)", "exclusions are spelled out the way Stash spells them");
+assert.strictEqual(NS.selectionLabel(intl, sel("any")), "语言 不为空 ",
+  "(Any) is not-null, and says so — that is what it produces");
+assert.strictEqual(NS.selectionLabel(intl, sel("none")), "语言 为空 ",
+  "…and (None) is null");
+console.log("✓ selection label (built from Stash's messages, not a table of ours)");
 
 setTimeout(() => {
   // ── 11. Badges (after the refresh promise settles) ───────────────

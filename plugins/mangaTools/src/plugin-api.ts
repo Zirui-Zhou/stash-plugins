@@ -101,6 +101,36 @@ export interface MangaToolsNamespace {
    * filters" dialog offers a card for it. Idempotent.
    */
   registerLanguageCriterionOption(filter: MangaToolsFilterModel): void;
+
+  /*
+   * Changes to a selection. Shared by the sidebar section and the dialog's card,
+   * which commit at different times but must mean the same thing by a click.
+   */
+  toggleIncluded(
+    selection: MangaToolsLanguageSelection,
+    code: string
+  ): MangaToolsLanguageSelection;
+  toggleExcluded(
+    selection: MangaToolsLanguageSelection,
+    code: string
+  ): MangaToolsLanguageSelection;
+  withModifier(
+    selection: MangaToolsLanguageSelection,
+    modifier: "any" | "none"
+  ): MangaToolsLanguageSelection;
+  withoutModifier(
+    selection: MangaToolsLanguageSelection
+  ): MangaToolsLanguageSelection;
+  isEmptySelection(selection: MangaToolsLanguageSelection): boolean;
+  sameSelection(
+    a: MangaToolsLanguageSelection,
+    b: MangaToolsLanguageSelection
+  ): boolean;
+  /** The one-line description of a selection, built from Stash's own messages */
+  selectionLabel(
+    intl: MangaToolsIntl,
+    selection: MangaToolsLanguageSelection
+  ): string;
 }
 
 /**
@@ -119,7 +149,10 @@ export interface MangaToolsLanguageSelection {
 /** What react-intl's useIntl() gives us — only the fields this plugin touches */
 export interface MangaToolsIntl {
   locale: string;
-  formatMessage(descriptor: { id: string; defaultMessage?: string }): string;
+  formatMessage(
+    descriptor: { id: string; defaultMessage?: string },
+    values?: { [name: string]: unknown }
+  ): string;
 }
 
 /** The slice of the Apollo client this plugin uses */
