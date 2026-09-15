@@ -415,24 +415,27 @@ function LanguageItem(props: {
             {props.label}
           </span>
         </div>
-        {/* Stash renders this wrapper whether or not there is a button in it */}
-        <div>
-          {props.canExclude && Bootstrap ? (
-            <Bootstrap.Button
-              className="minimal exclude-button"
-              onClick={function (e: { stopPropagation: () => void }) {
-                e.stopPropagation();
-                if (props.onExclude) props.onExclude();
-              }}
-              onKeyDown={function (e: { stopPropagation: () => void }) {
-                e.stopPropagation();
-              }}
-            >
-              <span className="exclude-button-text">exclude</span>
-              <Icon className="fa-fw exclude-icon" icon={Solid.faMinus} />
-            </Bootstrap.Button>
-          ) : null}
-        </div>
+        {/* Candidates carry this wrapper whether or not there is a button in it;
+            the selected and excluded rows have no second column at all. */}
+        {selected ? null : (
+          <div>
+            {props.canExclude && Bootstrap ? (
+              <Bootstrap.Button
+                className="minimal exclude-button"
+                onClick={function (e: { stopPropagation: () => void }) {
+                  e.stopPropagation();
+                  if (props.onExclude) props.onExclude();
+                }}
+                onKeyDown={function (e: { stopPropagation: () => void }) {
+                  e.stopPropagation();
+                }}
+              >
+                <span className="exclude-button-text">exclude</span>
+                <Icon className="fa-fw exclude-icon" icon={Solid.faMinus} />
+              </Bootstrap.Button>
+            ) : null}
+          </div>
+        )}
       </a>
     </li>
   );
@@ -581,6 +584,14 @@ export function SidebarLanguageFilter(props: {
     return NS.showFlags ? o.flag : null;
   };
 
+  // (Any) and (None) are the two states a language field can be in before any
+  // particular language is chosen, so Stash offers them only while nothing is
+  // chosen — confirmed against a real section, where choosing two studios and
+  // excluding a third left just the one hierarchical entry and neither of
+  // these. Once one is picked it shows above, in the chosen list.
+  var showModifiers =
+    !selection.modifier && !selection.included.length && !selection.excluded.length;
+
   // The section above the fold-away list: whatever is being asked for, in the
   // same "selected-object" shape as a chosen studio. The modifier entries are
   // shown in parentheses, exactly as Stash labels its own.
@@ -682,26 +693,28 @@ export function SidebarLanguageFilter(props: {
               ) : null}
             </div>
             <ul>
-              {/* (Any) and (None) — the two states a language field can be in
-                  before any particular language is chosen. */}
-              <LanguageItem
-                label={"(" + message(intl, "criterion_modifier_values.any", "Any") + ")"}
-                state={selection.modifier === "any" ? "included" : "candidate"}
-                modifier
-                canExclude={false}
-                onClick={function () {
-                  setModifier("any");
-                }}
-              />
-              <LanguageItem
-                label={"(" + message(intl, "criterion_modifier_values.none", "None") + ")"}
-                state={selection.modifier === "none" ? "included" : "candidate"}
-                modifier
-                canExclude={false}
-                onClick={function () {
-                  setModifier("none");
-                }}
-              />
+              {showModifiers ? (
+                <LanguageItem
+                  label={"(" + message(intl, "criterion_modifier_values.any", "Any") + ")"}
+                  state="candidate"
+                  modifier
+                  canExclude={false}
+                  onClick={function () {
+                    setModifier("any");
+                  }}
+                />
+              ) : null}
+              {showModifiers ? (
+                <LanguageItem
+                  label={"(" + message(intl, "criterion_modifier_values.none", "None") + ")"}
+                  state="candidate"
+                  modifier
+                  canExclude={false}
+                  onClick={function () {
+                    setModifier("none");
+                  }}
+                />
+              ) : null}
               {candidates.map(function (o) {
                 return (
                   <LanguageItem

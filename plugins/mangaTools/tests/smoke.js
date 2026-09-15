@@ -1429,7 +1429,10 @@ console.log("✓ sidebar section (modifier entries: any / none)");
 
 // With something selected, it moves above the fold-away list — outside the
 // collapse, so it stays visible — and the candidates no longer offer it.
-section = renderLanguageFilter([conditionsOf("EQUALS", ["ja"])]);
+section = renderLanguageFilter([
+  conditionsOf("EQUALS", ["ja"]),
+  conditionsOf("NOT_EQUALS", ["ko"]),
+]);
 const selectedList = find(section.node, (n) =>
   n.props && n.props.className === "selected-list");
 assert.ok(selectedList, "a chosen language should appear in the selected-list");
@@ -1439,29 +1442,48 @@ assert.strictEqual(find(selectedList, (n) => n.type === "Icon").props.icon, "faC
   "a chosen entry is ticked");
 assert.strictEqual(find(selectedList, (n) => n.props.children === "日语") !== null, true);
 
+// A selected row has no second column, unlike a candidate — checked against a
+// real section, where a candidate's <a> holds the exclude button and a chosen
+// one holds nothing but its label.
+const selectedLink = find(selectedList, (n) => n.type === "a");
+/** The children that actually render — a null slot produces nothing */
+const renderedChildren = (el) =>
+  (Array.isArray(el.props.children) ? el.props.children : [el.props.children])
+    .filter((c) => c !== null && c !== undefined);
+assert.strictEqual(renderedChildren(selectedLink).length, 1,
+  "a chosen row holds only its label group");
+assert.strictEqual(renderedChildren(selectedLink)[0].props.className, "label-group");
+
 const remaining = [];
 find(find(section.node, (n) =>
   n.props && n.props.className === "queryable-candidate-list"), (n) => {
   if (n.props && /^unselected-object\b/.test(n.props.className)) remaining.push(n);
   return false;
 });
-assert.strictEqual(remaining.length, Object.keys(NS.LANGUAGES).length + 2 - 1,
-  "a chosen language should not also be offered as a candidate");
+assert.strictEqual(remaining.length, Object.keys(NS.LANGUAGES).length - 2,
+  "neither chosen language should also be offered as a candidate");
+assert.strictEqual(remaining.some((i) => /modifier-object/.test(i.props.className)), false,
+  "(Any) and (None) are for the empty state, and those are only offered then");
 
 // Clicking the chosen one clears it
 historyReplaces.length = 0;
-find(selectedList, (n) => n.type === "a").props.onClick();
-assert.strictEqual(historyReplaces[0].search, "ENCODED([])",
-  "clicking the chosen language should clear the filter");
+selectedLink.props.onClick();
+assert.ok(/"modifier":"NOT_EQUALS","value":\["ko"\]/.test(historyReplaces[0].search)
+  && !/"EQUALS"/.test(historyReplaces[0].search),
+  "clicking the chosen language should drop it and leave the excluded one");
 
 // An excluded language goes in its own list, which Stash marks excluded-list
-section = renderLanguageFilter([conditionsOf("NOT_EQUALS", ["ko"])]);
 const excludedList = find(section.node, (n) =>
   n.props && n.props.className === "selected-list excluded-list");
 assert.ok(excludedList, "an excluded language should get the excluded-list");
 assert.strictEqual(find(excludedList, (n) => n.type === "Icon").props.icon, "faTimesCircle",
   "and be marked with a cross rather than a tick");
-console.log("✓ sidebar section (selected list / click clears / excluded list)");
+assert.strictEqual(
+  find(excludedList, (n) => n.props.className === "TruncatedText inline excluded-object-label") !== null,
+  true,
+  "with the excluded label class, as Stash has it"
+);
+console.log("✓ sidebar section (selected + excluded lists / row shapes / click clears)");
 
 setTimeout(() => {
   // ── 11. Badges (after the refresh promise settles) ───────────────
