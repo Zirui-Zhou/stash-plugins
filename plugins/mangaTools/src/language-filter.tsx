@@ -434,6 +434,15 @@ var filterHost: HTMLElement | null = null;
  * Going through the prototype's setter leaves the tracker alone, and the
  * dispatched event then reads as real input.
  */
+/**
+ * Sets a React-controlled input's value the way a person would.
+ *
+ * Assigning `input.value` directly does not reach React: its onChange is driven
+ * by a value tracker that records the last value React wrote, and a plain
+ * assignment updates that tracker too — so the change looks like no change.
+ * Going through the prototype's setter leaves the tracker alone, and the
+ * dispatched event then reads as real input.
+ */
 function setReactInputValue(input: HTMLInputElement, value: string): void {
   var descriptor = Object.getOwnPropertyDescriptor(
     window.HTMLInputElement.prototype,
@@ -446,30 +455,81 @@ function setReactInputValue(input: HTMLInputElement, value: string): void {
 }
 
 /**
- * Commits a language through Stash's own custom-fields editor: fills its field
- * and value inputs, then presses its confirm button.
+ * The same for the modifier picker, which is a native <select> — and a select
+ * reports through `change`, not `input`.
+ */
+function setReactSelectValue(select: HTMLSelectElement, value: string): void {
+  var descriptor = Object.getOwnPropertyDescriptor(
+    window.HTMLSelectElement.prototype,
+    "value"
+  );
+  if (!descriptor || !descriptor.set) return;
+
+  descriptor.set.call(select, value);
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+/**
+ * Drops the language condition this plugin left here before.
+ *
+ * Stash's editor *appends* a condition every time its confirm button is pressed,
+ * so choosing a second language without this would leave two EQUALS conditions on
+ * one field — which the backend ANDs, matching nothing at all. This route can
+ * express one language, so the previous one has to go first.
+ *
+ * The criterion is Stash's and there is no handle on it, so the only way to drop
+ * a condition is the remove button its own tag carries. It is found by the field
+ * name the label starts with: Stash's format string is
+ * "{criterion} (custom field) …" and that criterion is the raw field name,
+ * untranslated. Requiring the trailing space keeps a field called
+ * original_language out of it.
+ */
+function dropPreviousConditions(editor: Element): void {
+  var pills = editor.querySelectorAll(".filter-tags .tag-item");
+  for (var i = 0; i < pills.length; i++) {
+    var text = pills[i].textContent || "";
+    if (text.indexOf(NS.FIELD_NAME + " ") !== 0) continue;
+
+    var remove = pills[i].querySelector("button");
+    if (remove) (remove as HTMLElement).click();
+  }
+}
+
+/**
+ * Puts a language into Stash's criterion by driving Stash's own editor: drops
+ * whatever was there, sets the modifier, fills the two inputs, and presses its
+ * confirm button.
  *
  * Driving rather than reimplementing is the whole point. The dialog hands the
  * callback that actually inserts a criterion — `replaceCriterion` — to whichever
- * editor component it picks, and that is the only place the callback goes. So
- * the criterion has to remain a real custom-field one, and the way to give it a
- * value from outside is its own inputs. Everything downstream then behaves as if
- * the value had been typed: the criterion is committed, the tag appears above,
- * and Apply and Cancel work because Stash is the one committing.
+ * editor component it picks, and that is the only place the callback goes. So the
+ * criterion has to remain a real custom-field one, and the way to give it a value
+ * from outside is its own controls. Everything downstream then behaves as if the
+ * value had been typed: the criterion is committed, the tag appears above, and
+ * Apply and Cancel work because Stash is the one committing.
  *
  * The two inputs are found by `form-control`, which Form.Control always sets and
  * the react-select beside them does not — so the pair is unambiguous, and in
  * source order: field first, value second.
  */
-function commitThroughStashEditor(editor: Element, code: string): boolean {
+function commitThroughStashEditor(
+  editor: Element,
+  code: string,
+  modifier: string
+): boolean {
   var inputs = editor.querySelectorAll("input.form-control");
   if (inputs.length < 2) return false;
+
+  dropPreviousConditions(editor);
+
+  var picker = editor.querySelector("select.modifier-selector");
+  if (picker) setReactSelectValue(picker as HTMLSelectElement, modifier);
 
   setReactInputValue(inputs[0] as HTMLInputElement, NS.FIELD_NAME);
   setReactInputValue(inputs[1] as HTMLInputElement, code);
 
   // `onConfirm` reads the editor's state, and the events above have only queued
-  // an update to it. Clicking in the same tick would submit the empty form.
+  // updates to it. Clicking in the same tick would submit the empty form.
   window.setTimeout(function () {
     var confirm = editor.querySelector(
       ".custom-field-filter-buttons button.btn-success"
@@ -478,6 +538,11 @@ function commitThroughStashEditor(editor: Element, code: string): boolean {
   }, 0);
 
   return true;
+}
+
+/** Clears the choice, leaving the criterion with no language condition */
+function clearThroughStashEditor(editor: Element): void {
+  dropPreviousConditions(editor);
 }
 
 /** Class of the box our list is drawn in, inside Stash's editor container */
@@ -506,44 +571,176 @@ function ensureDialogHost(editor: Element): Element {
 }
 
 /**
+ * A chosen value, drawn the way Stash's own SelectableFilter draws one.
+ *
+ * Worth knowing for anyone comparing the two: this is *not* the sidebar's
+ * markup. There the label sits in a `label-group` and is wrapped in a
+ * `TruncatedText inline` span; here it is a bare div and a plain span, and a
+ * chosen row carries an empty second div where a candidate carries its exclude
+ * button. Copying the sidebar's classes into the dialog is what made this card
+ * look wrong.
+ */
+function DialogSelectedRow(props: {
+  label: string;
+  flag: string | null;
+  excluded: boolean;
+  onClick: () => void;
+}) {
+  var Solid = PluginApi.libraries.FontAwesomeSolid || {};
+  var Regular = PluginApi.libraries.FontAwesomeRegular || {};
+  var Icon = PluginApi.components.Icon;
+
+  var hover = React.useState(false);
+  var hovered = hover[0];
+  var setHovered = hover[1];
+
+  function setHover(next: boolean) {
+    return function () {
+      setHovered(next);
+    };
+  }
+
+  // A tick, or a cross for an excluded value; and a hollow cross under the
+  // cursor, which is how Stash says that clicking takes it away again.
+  var icon = hovered
+    ? Regular.faTimesCircle || Solid.faTimesCircle
+    : props.excluded
+      ? Solid.faTimesCircle
+      : Solid.faCheckCircle;
+
+  return (
+    <li className="selected-object">
+      <a
+        tabIndex={0}
+        onClick={props.onClick}
+        onMouseEnter={setHover(true)}
+        onMouseLeave={setHover(false)}
+        onFocus={setHover(true)}
+        onBlur={setHover(false)}
+      >
+        <div>
+          <Icon
+            className={
+              "fa-fw " + (props.excluded ? "exclude-icon" : "include-button")
+            }
+            icon={icon}
+          />
+          {props.flag ? <Flag flag={props.flag} /> : null}
+          <span
+            className={
+              props.excluded ? "excluded-object-label" : "selected-object-label"
+            }
+          >
+            {props.label}
+          </span>
+        </div>
+        <div></div>
+      </a>
+    </li>
+  );
+}
+
+/** A value that can be chosen, with the exclude button Stash puts on one */
+function DialogUnselectedRow(props: {
+  label: string;
+  flag?: string | null;
+  canExclude?: boolean;
+  onClick: () => void;
+  onExclude?: () => void;
+}) {
+  var intl = PluginApi.libraries.Intl.useIntl();
+  var Solid = PluginApi.libraries.FontAwesomeSolid || {};
+  var Icon = PluginApi.components.Icon;
+  var Bootstrap = PluginApi.libraries.Bootstrap;
+
+  return (
+    <li className="unselected-object">
+      <a tabIndex={0} onClick={props.onClick}>
+        <div>
+          <Icon className="fa-fw include-button" icon={Solid.faPlus} />
+          {props.flag ? <Flag flag={props.flag} /> : null}
+          <span className="unselected-object-label">{props.label}</span>
+        </div>
+        <div>
+          {props.canExclude && Bootstrap ? (
+            <Bootstrap.Button
+              className="minimal exclude-button"
+              onClick={function (e: { stopPropagation: () => void }) {
+                e.stopPropagation();
+                if (props.onExclude) props.onExclude();
+              }}
+              onKeyDown={function (e: { stopPropagation: () => void }) {
+                e.stopPropagation();
+              }}
+            >
+              <span className="exclude-button-text">
+                {message(intl, "actions.exclude_lowercase", "exclude")}
+              </span>
+              <Icon className="fa-fw exclude-icon" icon={Solid.faMinus} />
+            </Bootstrap.Button>
+          ) : null}
+        </div>
+      </a>
+    </li>
+  );
+}
+
+/**
  * The language list inside the filter dialog's card.
  *
  * The list is ours; the value is Stash's. Picking a language drives Stash's own
  * custom-fields editor, so the criterion is committed by Stash and joins the
  * dialog's Apply and Cancel like any other.
  *
- * Rendered from the list patch rather than from inside the dialog, because the
- * dialog cannot be patched — but this is not the sidebar's arrangement. There
- * the section sat outside Stash's React tree and had to be positioned by hand;
- * here it is a portal into a box Stash itself creates, so there is nothing to
- * keep in place, only something to fill.
+ * ONE LANGUAGE AT A TIME, unlike the studio card it sits beside — and that is not
+ * a preference. The criterion underneath is a custom-field one, and Stash's
+ * editor gives it one condition per confirm; a second condition on the same field
+ * would be ANDed with the first and match nothing. Several languages at once are
+ * expressible, but only in the sidebar section, which is the interface that owns
+ * this feature. This card is a way in for someone already in the dialog.
+ *
+ * The markup mirrors SelectableFilter, the component Stash uses for object
+ * criteria here, rather than the sidebar's list.
  */
 export function DialogLanguageFilter(props: {
   filter: MangaToolsFilterModel;
 }) {
   var intl = PluginApi.libraries.Intl.useIntl();
-  var Solid = PluginApi.libraries.FontAwesomeSolid || {};
-  var Icon = PluginApi.components.Icon;
 
   var bumpState = React.useState(0);
   var bump = bumpState[1];
 
-  // What we last committed. Stash's editor resets to a blank row once its
-  // confirm button is pressed — the value moves into a tag above — so its inputs
-  // cannot be read back. The filter the dialog opened with is the other source,
-  // and that is where this starts.
-  var chosenState = React.useState<string | null>(function () {
-    return readLanguageFilter(props.filter).included[0] || null;
+  // What is chosen, read once from the filter the dialog opened with. Stash's
+  // editor resets to a blank row after its confirm button is pressed — the value
+  // moves into a tag above — so its inputs cannot be read back.
+  var choiceState = React.useState<{
+    code: string;
+    excluded: boolean;
+  } | null>(function () {
+    var current = readLanguageFilter(props.filter);
+    if (current.included.length) {
+      return { code: current.included[0], excluded: false };
+    }
+    if (current.excluded.length) {
+      return { code: current.excluded[0], excluded: true };
+    }
+    return null;
   });
-  var chosen = chosenState[0];
-  var setChosen = chosenState[1];
+  var choice = choiceState[0];
+  var setChoice = choiceState[1];
+
+  var queryState = React.useState("");
+  var query = queryState[0];
+  var setQuery = queryState[1];
+
+  var searchRef = React.useRef<HTMLInputElement | null>(null);
 
   /**
    * Opening the card is Stash's own state change, inside the dialog, so this
    * component does not re-render with it. The moments that matter — opening the
    * card from its header, or selecting it from a tag above — are both clicks
-   * inside the dialog, so that is what is watched for. The tick lets Stash
-   * finish writing the box before it is looked for.
+   * inside the dialog, so that is what is watched for. The tick lets Stash finish
+   * writing the box before it is looked for.
    */
   React.useEffect(function () {
     function onClick(event: Event) {
@@ -564,58 +761,107 @@ export function DialogLanguageFilter(props: {
     };
   }, []);
 
-  // The box is Stash's and comes and goes with the card, so it is re-read every
-  // pass. Nothing is created here: if the card is closed there is nothing to
-  // draw, and nothing of ours is left behind in Stash's markup.
   var found = dialogEditorBox();
   if (!found) return null;
 
-  // Aliased so the type survives into the callback below: narrowing a captured
+  // Aliased so the type survives into the callbacks below: narrowing a captured
   // variable does not carry into a closure, but a local's declared type does.
   var box = found;
   var host = ensureDialogHost(box);
+
+  var needle = query.trim().toLowerCase();
+  var matches = function (o: MangaToolsOption) {
+    if (!needle) return true;
+    return (
+      o.label.toLowerCase().indexOf(needle) !== -1 ||
+      o.value.toLowerCase().indexOf(needle) !== -1
+    );
+  };
 
   var options = NS.languageOptions(intl.locale).filter(function (o) {
     return !NS.enabledLanguages || NS.enabledLanguages.has(o.value);
   });
 
+  var candidates = options.filter(function (o) {
+    return (!choice || o.value !== choice.code) && matches(o);
+  });
+
+  var chosenOption: MangaToolsOption | null = null;
+  for (var i = 0; i < options.length; i++) {
+    if (choice && options[i].value === choice.code) chosenOption = options[i];
+  }
+
+  var flagFor = function (o: MangaToolsOption): string | null {
+    return NS.showFlags ? o.flag : null;
+  };
+
+  function pick(code: string, excluded: boolean) {
+    if (!commitThroughStashEditor(box, code, excluded ? "NOT_EQUALS" : "EQUALS")) {
+      return;
+    }
+
+    setChoice({ code: code, excluded: excluded });
+    setQuery("");
+    if (!isTouchDevice() && searchRef.current) {
+      searchRef.current.focus();
+    }
+  }
+
+  function clearChoice() {
+    clearThroughStashEditor(box);
+    setChoice(null);
+  }
+
   var list = (
-    <ul className="selected-list">
-      {options.map(function (o) {
-        var isChosen = o.value === chosen;
-        return (
-          <li
-            key={o.value}
-            className={isChosen ? "selected-object" : "unselected-object"}
-          >
-            <a
-              tabIndex={0}
+    <div className="selectable-filter">
+      <div className="clearable-input-group">
+        <input
+          ref={searchRef}
+          className="clearable-text-field form-control"
+          value={query}
+          placeholder={message(intl, "actions.search", "Search") + "…"}
+          onChange={function (e: { target: { value: string } }) {
+            setQuery(e.target.value);
+          }}
+          onKeyDown={function (e: { key?: string }) {
+            if (e.key === "Escape") {
+              if (searchRef.current) searchRef.current.blur();
+              return;
+            }
+
+            // Enter takes the one value left, as Stash's own list does.
+            if (e.key !== "Enter" || candidates.length !== 1) return;
+            pick(candidates[0].value, false);
+          }}
+        />
+      </div>
+      <ul>
+        {chosenOption ? (
+          <DialogSelectedRow
+            label={chosenOption.label}
+            flag={flagFor(chosenOption)}
+            excluded={!!(choice && choice.excluded)}
+            onClick={clearChoice}
+          />
+        ) : null}
+        {candidates.map(function (o) {
+          return (
+            <DialogUnselectedRow
+              key={o.value}
+              label={o.label}
+              flag={flagFor(o)}
+              canExclude
               onClick={function () {
-                if (commitThroughStashEditor(box, o.value)) setChosen(o.value);
+                pick(o.value, false);
               }}
-            >
-              <div className="label-group">
-                <Icon
-                  className="fa-fw include-button"
-                  icon={isChosen ? Solid.faCheckCircle : Solid.faPlus}
-                />
-                {NS.showFlags && o.flag ? <Flag flag={o.flag} /> : null}
-                <span
-                  className={
-                    "TruncatedText inline " +
-                    (isChosen
-                      ? "selected-object-label"
-                      : "unselected-object-label")
-                  }
-                >
-                  {o.label}
-                </span>
-              </div>
-            </a>
-          </li>
-        );
-      })}
-    </ul>
+              onExclude={function () {
+                pick(o.value, true);
+              }}
+            />
+          );
+        })}
+      </ul>
+    </div>
   );
 
   return PluginApi.ReactDOM.createPortal(list, host);

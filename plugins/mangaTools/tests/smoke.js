@@ -245,6 +245,7 @@ const MESSAGES = {
     "config.ui.language.heading": "语言",
     "actions.search": "搜索",
     "actions.clear": "清除",
+    "actions.exclude_lowercase": "排除",
     "criterion_modifier_values.any": "任意",
     "criterion_modifier_values.none": "无",
   },
