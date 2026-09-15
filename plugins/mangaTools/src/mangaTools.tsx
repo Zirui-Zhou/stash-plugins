@@ -129,9 +129,6 @@ var lastLoggedSize = -1;
 var currentPath = window.location.pathname || "";
 
 function emit(): void {
-  // TEMPORARY render-loop probe, in language-filter.tsx — remove with it
-  if (NS.noteCause && !NS.noteCause("emit")) return;
-
   listeners.forEach(function (fn) {
     fn();
   });
@@ -264,9 +261,6 @@ type GalleriesPayload = {
 
 /** Refetches the language map. Concurrent calls share one in-flight request. */
 function refresh(): Promise<unknown> {
-  // TEMPORARY render-loop probe, in language-filter.tsx — remove with it
-  if (NS.noteCause && !NS.noteCause("refresh")) return Promise.resolve();
-
   if (inFlight) return inFlight;
 
   var query = getQuery();

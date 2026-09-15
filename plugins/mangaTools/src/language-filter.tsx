@@ -664,7 +664,6 @@ NS.adoptLanguageCriterion = adoptLanguageCriterion;
 NS.relabelTags = relabelTags;
 NS.manageDialogTags = manageDialogTags;
 NS.ownTagLabels = ownTagLabels;
-NS.noteCause = noteCause;
 NS.clickedTagRemove = clickedTagRemove;
 
 /** The language table's own label, from Stash's locale files (see mangaTools.tsx
@@ -705,78 +704,6 @@ function message(intl: MangaToolsIntl, id: string, fallback: string): string {
  * and the section does not visibly move.
  */
 var SECTION_STATE_KEY = "mangaToolsLanguageOpen";
-
-/**
- * TEMPORARY — render-loop probe, to be removed once the loop is found.
- *
- * Every path in this plugin that asks React for another render announces itself
- * here. A tick is one turn of the event loop, so more than a handful of the same
- * cause within a tick is a loop, and the 25th one prints where it came from —
- * the stack names the caller — and then stops asking, so the page survives with
- * a stale tag instead of going blank.
- *
- * Delete this, noteCause, and its call sites together.
- */
-var tickCounts: { [name: string]: number } = {};
-var tickEnd: number | null = null;
-
-function noteCause(name: string): boolean {
-  tickCounts[name] = (tickCounts[name] || 0) + 1;
-  var count = tickCounts[name];
-
-  if (tickEnd === null) {
-    tickEnd = setTimeout(function () {
-      tickCounts = {};
-      tickEnd = null;
-    }, 0);
-  }
-
-  if (count === 5) {
-    console.info("[mangaTools] probe: " + name + " has run 5 times in one tick");
-  }
-
-  if (count === 25) {
-    console.error(
-      "[mangaTools] probe: " + name + " ran 25 times in one tick — this is the loop",
-      new Error(name).stack
-    );
-    return false;
-  }
-
-  return count <= 25;
-}
-
-/**
- * TEMPORARY — names whoever writes the URL, with a stack.
- *
- * The history object this hands back is the one Stash's own filter hook uses, so
- * wrapping its `replace` catches Stash's writes as well as this plugin's. The
- * loop this is chasing is a URL that keeps being rewritten, and what it is
- * rewritten *to* is the whole question.
- *
- * Delete with noteCause.
- */
-var historyWatched = false;
-
-function watchHistory(history: MangaToolsHistory): void {
-  if (historyWatched || !history || typeof history.replace !== "function") {
-    return;
-  }
-  historyWatched = true;
-
-  var original = history.replace;
-  history.replace = function (location: MangaToolsHistory["location"]) {
-    if (!noteCause("history.replace")) return;
-
-    console.info(
-      "[mangaTools] probe: replace -> " + String(location && location.search),
-      new Error("replace").stack
-    );
-
-    // Whatever the incoming state was, the same shape goes back out
-    return original.call(history, location) as unknown as void;
-  };
-}
 
 /**
  * Whether the reader is on a touch device.
@@ -1325,8 +1252,6 @@ export function DialogLanguageFilter(props: {
   var intl = PluginApi.libraries.Intl.useIntl();
   var history = PluginApi.libraries.ReactRouterDOM.useHistory();
 
-  noteCause("dialog render");
-
   var bumpState = React.useState(0);
   var bump = bumpState[1];
 
@@ -1385,8 +1310,7 @@ export function DialogLanguageFilter(props: {
       if (state === dialogDom.current) return;
 
       dialogDom.current = state;
-      if (!noteCause("observer bump")) return;
-      bump(function (v) {
+        bump(function (v) {
         return v + 1;
       });
     });
@@ -1414,25 +1338,20 @@ export function DialogLanguageFilter(props: {
       // which case it sees nothing pending and the merge never happens again.
       if (clicked.closest(".modal-footer button.btn-primary")) {
         applyPending.current = true;
-        console.info("[mangaTools] Apply pressed");
 
-        // A deadline, because the wait in the merge below has no other way out.
-        // This writes nothing: it reports what the filter and the URL looked like
-        // when the wait ran out, which is the only way to tell a merge that was
-        // never needed from one that could not happen.
+        // A deadline, because the wait in the merge below has no other way out,
+        // and it reports a case worth knowing about rather than a bug: Apply
+        // commits Stash's own filter, which this card's selection is not part of.
+        // Choosing a language and nothing else leaves that filter untouched, so
+        // there is nothing for the merge to wait for and the language is not
+        // applied. Changing it from the sidebar is what works.
         window.setTimeout(function () {
           if (!applyPending.current) return;
           applyPending.current = false;
 
-          var filter = filterRef.current;
           console.warn(
-            "[mangaTools] 2s after Apply the filter still had not updated, so the "
-              + "language was not merged. Its criteria: "
-              + (filter ? filter.criteria.map(function (c) {
-                  return String(c.criterionOption && c.criterionOption.type);
-                }).join(", ") : "none")
-              + " | url: "
-              + window.location.search
+            "[mangaTools] Apply changed nothing in Stash's filter, so the language "
+              + "picked in the card was not applied. Pick it in the sidebar instead."
           );
         }, 2000);
       }
@@ -1492,11 +1411,6 @@ export function DialogLanguageFilter(props: {
    * identity and so never compares equal to a freshly decoded one. If it somehow
    * does not arrive, the timer says so rather than merging later and wrongly.
    */
-  // The latest filter, for the deadline above to report on — a timeout cannot see
-  // this render's props.
-  var filterRef = React.useRef(props.filter);
-  filterRef.current = props.filter;
-
   var lastModel = React.useRef<MangaToolsFilterModel | null>(null);
   React.useEffect(function () {
     var model = props.filter;
@@ -1514,21 +1428,6 @@ export function DialogLanguageFilter(props: {
     applyPending.current = false;
     var unchanged = sameSelection(choice, readLanguageFilter(model));
 
-    // Every stage is reported, because this is the whole path that can only be
-    // checked in a browser. "Apply pressed" without this line means no render
-    // followed the click; the numbers here say whether there was anything to
-    // write; the line after the write says whether it reached the URL.
-    console.info(
-      "[mangaTools] merge after Apply: unchanged=" +
-        unchanged +
-        ", included=" +
-        choice.included.length +
-        ", excluded=" +
-        choice.excluded.length +
-        ", modifier=" +
-        JSON.stringify(choice.modifier)
-    );
-
     if (unchanged) return;
 
     var search = languageFilterQuery(model, choice);
@@ -1541,9 +1440,7 @@ export function DialogLanguageFilter(props: {
 
     // Stash reads the URL on every navigation, so this is the whole of it — the
     // same route the sidebar takes.
-    if (!noteCause("merge URL write")) return;
-    history.replace(Object.assign({}, history.location, { search: search }));
-    console.info("[mangaTools] applied the language filter to the URL");
+      history.replace(Object.assign({}, history.location, { search: search }));
   });
 
   /**
@@ -1598,7 +1495,6 @@ export function DialogLanguageFilter(props: {
     // it does not need — a setState in a layout effect is a synchronous render,
     // and one that changes nothing every time is a loop.
     var applied = readLanguageFilter(props.filter);
-    noteCause("session sync");
     setChoice(function (previous) {
       return sameSelection(previous, applied) ? previous : applied;
     });
@@ -1871,8 +1767,6 @@ export function SidebarLanguageFilter(props: {
   var intl = PluginApi.libraries.Intl.useIntl();
   var history = PluginApi.libraries.ReactRouterDOM.useHistory();
 
-  noteCause("sidebar render");
-
   // Read during the render rather than restored in an effect, so the first paint
   // already has the right answer. Stash restores its sections in a `useEffect`,
   // which is why they can appear to jump on a reload; there is no need to copy
@@ -1922,8 +1816,7 @@ export function SidebarLanguageFilter(props: {
     if (tagLabelsFor) relabelTags(tagLabelsFor);
 
     if (ensureFilterHost() !== host) {
-      if (!noteCause("sidebar host bump")) return;
-      bump(function (v) {
+        bump(function (v) {
         return v + 1;
       });
     }
@@ -1938,9 +1831,6 @@ export function SidebarLanguageFilter(props: {
     );
     return null;
   }
-
-  // TEMPORARY, with noteCause
-  watchHistory(history);
 
   var Solid = PluginApi.libraries.FontAwesomeSolid || {};
   var Icon = PluginApi.components.Icon;

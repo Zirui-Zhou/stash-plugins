@@ -119,8 +119,6 @@ export interface MangaToolsNamespace {
   manageDialogTags(labels: string[]): void;
   /** The labels the card must draw itself, having found no tag of Stash's for them */
   ownTagLabels(labels: string[]): string[];
-  /** TEMPORARY render-loop probe — see noteCause in language-filter.tsx */
-  noteCause(name: string): boolean;
   /** Was the ✗ of a language tag in the dialog's row what was clicked? */
   clickedTagRemove(target: Element | null): boolean;
 

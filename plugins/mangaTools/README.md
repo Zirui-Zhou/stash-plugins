@@ -566,6 +566,16 @@ values through the plugin's dropdown never hits this, since that writes lowercas
   the ✗ on it clears the card — so a click on either is applied on **Apply**, and
   Cancel discards both. That is deliberate: Stash's copy cannot be written to from
   a plugin, so the card is the one that has to be the truth.
+- **A language chosen in the dialog is applied on an Apply that changed something
+  of Stash's, and not otherwise.** The merge that carries the card's selection runs
+  once the list's filter has become what Apply committed — and Apply commits the
+  dialog's *copy*, which the card's selection is not part of. Change a criterion
+  alongside it and the language comes with it; change nothing else and Apply
+  commits nothing, the filter never moves, and there is nothing to merge on to.
+  The console says which happened (`Apply changed nothing in Stash's filter…`).
+  **Picking the language in the sidebar always works**, and that is the way round
+  it. Fixing this properly is not a small change: it needs the filter to follow
+  the URL every time Apply rewrites it, which is Stash's business, not a plugin's.
 - **Fetch size scales with the number of tagged galleries**, not the library
   size. Verified working against a 1194-gallery library.
 
