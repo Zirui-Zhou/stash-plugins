@@ -47,6 +47,7 @@ import { NS } from "./languages";
 import { requirePluginApi } from "./plugin-api";
 import type { ReactElement } from "react";
 import type {
+  MangaToolsCriterionOption,
   MangaToolsCustomFieldCondition,
   MangaToolsFilterCriterion,
   MangaToolsFilterModel,
@@ -63,6 +64,15 @@ var React = PluginApi.React;
 
 /** The `type` Stash's ListFilterOptions gives the custom-fields criterion */
 var CUSTOM_FIELDS_TYPE = "custom_fields";
+
+/**
+ * The type this plugin registers its own criterion under, so the "edit filters"
+ * dialog can offer a Language card of its own.
+ *
+ * Deliberately a different type from `custom_fields`, and deliberately not what
+ * gets written to the URL — see registerLanguageCriterionOption.
+ */
+var LANGUAGE_TYPE = "language";
 
 /**
  * What the section is currently asking for.
@@ -90,7 +100,85 @@ var EMPTY_SELECTION: MangaToolsLanguageSelection = {
 };
 
 /**
- * Finds the filter's custom-fields criterion, if it has one.
+ * Adds a Language criterion to Stash's list filter options, so the "edit
+ * filters" dialog offers a card for it alongside its own.
+ *
+ * Why it is reachable at all: the dialog builds its cards from
+ * `getFilterOptions(mode).criterionOptions`, a module-level array, and the model
+ * reaches it as `filter.options.criterionOptions`. Stash only reads `type`,
+ * `messageID` and `makeCriterion` off an option, so one can be added from here
+ * without the class it would normally be built from.
+ *
+ * What it is NOT: a criterion of our own. The card opens Stash's custom-fields
+ * editor, because CriterionEditor dispatches on `instanceof CustomFieldsCriterion`
+ * and that is what makeCriterion returns. So it saves knowing the field name and
+ * typing it — the value is still a code typed by hand. The sidebar is the
+ * interface with the dropdown; this is a way in for someone already in the dialog.
+ */
+export function registerLanguageCriterionOption(
+  filter: MangaToolsFilterModel
+): void {
+  var options = filter && filter.options && filter.options.criterionOptions;
+  if (!options) return;
+
+  var found: MangaToolsCriterionOption | null = null;
+  for (var i = 0; i < options.length; i++) {
+    // Guarding on the array rather than a flag of our own: it is Stash's list
+    // and it outlives this call, so asking it is both simpler and correct even
+    // if Stash ever keeps more than one.
+    if (options[i].type === LANGUAGE_TYPE) return;
+    if (options[i].type === CUSTOM_FIELDS_TYPE) found = options[i];
+  }
+  if (!found) return;
+
+  // Bound to a const so the closure below keeps the non-null type.
+  var customFieldsOption = found;
+
+  var option: MangaToolsCriterionOption = {
+    type: LANGUAGE_TYPE,
+    messageID: "config.ui.language.heading",
+    makeCriterion: function () {
+      // A real CustomFieldsCriterion, so CriterionEditor renders the editor
+      // Stash wrote for it and the query it produces is the one the sidebar
+      // already writes.
+      var criterion = customFieldsOption.makeCriterion();
+
+      // …relabelled as ours. Stash decides whether the card is in use by
+      // comparing the criterion's option *type* against the card's, so without
+      // this our card would never light up — worse, it would not open at all,
+      // because the card body only renders for the criterion whose type matches.
+      criterion.criterionOption = option;
+
+      // Seeded with a condition that is both meaningful and harmless. NOT_NULL
+      // rather than EQUALS: an emptiness check against a real backend showed
+      // EQUALS with no value matches *nothing*, so a seeded EQUALS would empty
+      // the gallery list the moment someone opened the card and pressed Apply.
+      criterion.value = [{ field: NS.FIELD_NAME, modifier: "NOT_NULL" }];
+
+      // Kept off the URL on purpose. Stash decodes the query string inside
+      // FilteredGalleryList, before this option can be registered, so a stored
+      // type of "language" would fail to resolve on a reload and the filter
+      // would vanish silently. The stored type stays "custom_fields", which
+      // Stash always understands; only the in-session identity is ours.
+      criterion.toQueryParams = function () {
+        return { type: CUSTOM_FIELDS_TYPE, value: criterion.value };
+      };
+
+      return criterion;
+    },
+  };
+
+  options.push(option);
+}
+
+/**
+ * Finds the filter's criterion for language, whether it was made here or typed
+ * by hand into the custom-fields card.
+ *
+ * Both types are accepted because they are the same criterion underneath: one
+ * made by the dialog's Language card carries our label, one made by hand carries
+ * the generic one. Missing either would let the two surfaces disagree about the
+ * filter that is set.
  *
  * Matched on the criterion option's type rather than by importing Stash's
  * CustomFieldsCriterion class, which lives inside its bundle and is not
@@ -102,7 +190,10 @@ function customFieldsCriterion(
   var criteria = (filter && filter.criteria) || [];
   for (var i = 0; i < criteria.length; i++) {
     var option = criteria[i] && criteria[i].criterionOption;
-    if (option && option.type === CUSTOM_FIELDS_TYPE) return criteria[i];
+    if (!option) continue;
+    if (option.type === CUSTOM_FIELDS_TYPE || option.type === LANGUAGE_TYPE) {
+      return criteria[i];
+    }
   }
   return null;
 }
@@ -201,12 +292,17 @@ function languageFilterQuery(
 ): string | null {
   if (!filter || typeof filter.clone !== "function") return null;
 
+  // Ours if the dialog's Language card registered one, so a filter set here
+  // shows as that card rather than as a generic custom field. Falls back to the
+  // custom-fields option, which is the same criterion underneath.
   var options = (filter.options && filter.options.criterionOptions) || [];
-  var option = null;
+  var option: MangaToolsCriterionOption | null = null;
   for (var i = 0; i < options.length; i++) {
     if (options[i].type === CUSTOM_FIELDS_TYPE) option = options[i];
+    if (options[i].type === LANGUAGE_TYPE) option = options[i];
   }
   if (!option) return null;
+  var criterionOption = option;
 
   var next = filter.clone();
   var criterion = customFieldsCriterion(next);
@@ -228,7 +324,7 @@ function languageFilterQuery(
     });
   } else {
     if (!criterion) {
-      criterion = option.makeCriterion();
+      criterion = criterionOption.makeCriterion();
       next.criteria = (next.criteria || []).concat([criterion]);
     }
     criterion.value = conditions;
@@ -270,6 +366,7 @@ function applyLanguage(
 // without rendering anything.
 NS.readLanguageFilter = readLanguageFilter;
 NS.languageFilterQuery = languageFilterQuery;
+NS.registerLanguageCriterionOption = registerLanguageCriterionOption;
 
 /** The language table's own label, from Stash's locale files (see mangaTools.tsx
  *  for the longer note; this is the same message, duplicated so this module

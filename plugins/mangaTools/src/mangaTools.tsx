@@ -30,7 +30,10 @@
  */
 import { NS } from "./languages";
 import { requirePluginApi } from "./plugin-api";
-import { SidebarLanguageFilter } from "./language-filter";
+import {
+  registerLanguageCriterionOption,
+  SidebarLanguageFilter,
+} from "./language-filter";
 import type { MangaToolsFilterModel } from "./plugin-api";
 import type {
   MangaToolsApolloOperation,
@@ -1559,6 +1562,11 @@ PluginApi.patch.instead("GalleryList", function () {
   var props = args[0] as { filter?: MangaToolsFilterModel };
   var Original = originalFrom(args);
   noteFired("GalleryList.filter");
+
+  // The filter dialog builds its cards from a shared options array that the
+  // model reaches. Registering here is the first moment that array is in hand;
+  // the call is idempotent and the array is only ever pushed to once.
+  if (props.filter) registerLanguageCriterionOption(props.filter);
 
   return (
     <>

@@ -696,6 +696,14 @@ assert.strictEqual(listOriginal.type, original, "the original GalleryList must s
 assert.strictEqual(listOriginal.props.filter, listModel, "…receiving the same filter it was given");
 assert.strictEqual(typeof listEl.props.children[0].type, "function",
   "and the language filter as a sibling");
+
+// Rendering the list is also what offers the filter dialog a Language card: the
+// dialog builds its cards from the same options array the model holds, and this
+// is the first moment that array is in hand.
+assert.ok(
+  listModel.options.criterionOptions.some((o) => o.type === "language"),
+  "the list patch should register a language criterion for the dialog"
+);
 console.log("✓ all 6 patches registered (+ GalleryList observed and wrapped)");
 
 // ── 7. Query shape ─────────────────────────────────────────────────
@@ -1577,6 +1585,57 @@ const clearProps = bundleText.slice(
 assert.ok(/variant:\s*"secondary"/.test(clearProps),
   "the clear button must be a secondary button, like Stash's — a primary one is a blue block");
 console.log("✓ search box clear button (secondary, not the primary default)");
+
+// ── 10e. The filter dialog's Language card ─────────────────────────
+// Stash's "edit filters" dialog builds its cards from a shared options array
+// that the model reaches, so an option can be added from a plugin. Three things
+// matter about the one we add: it goes in once, the criterion it makes is
+// usable, and it still stores itself as a custom field.
+const dialogModel = makeFilterModel();
+const dialogOptions = dialogModel.options.criterionOptions;
+const before = dialogOptions.length;
+NS.registerLanguageCriterionOption(dialogModel);
+assert.strictEqual(dialogOptions.length, before + 1, "one card should be added");
+NS.registerLanguageCriterionOption(dialogModel);
+assert.strictEqual(dialogOptions.length, before + 1,
+  "registering again must not add a second card — the list is shared");
+
+const languageCriterionOption = dialogOptions.find((o) => o.type === "language");
+assert.ok(languageCriterionOption, "the card should be keyed on its own type");
+assert.strictEqual(languageCriterionOption.messageID, "config.ui.language.heading",
+  "and labelled with Stash's own word for language");
+
+const madeCriterion = languageCriterionOption.makeCriterion();
+assert.strictEqual(madeCriterion.criterionOption.type, "language",
+  "the criterion must carry our type, or the card cannot open or light up");
+assert.deepStrictEqual(madeCriterion.value, [{ field: "language", modifier: "NOT_NULL" }],
+  "seeded with a condition that is valid and harmless — an EQUALS with no value matches nothing");
+
+// The guarantee that makes it safe: what reaches the URL is a plain custom
+// field. A stored type of "language" would not resolve on reload, because Stash
+// decodes the query string before this option has been registered.
+assert.deepStrictEqual(madeCriterion.toQueryParams(),
+  { type: "custom_fields", value: madeCriterion.value },
+  "the URL must carry custom_fields, which Stash always understands");
+
+// A criterion made by the card is recognised by the sidebar, and vice versa:
+// they are the same criterion underneath, so the two must not disagree.
+assert.deepStrictEqual(
+  NS.readLanguageFilter(makeFilterModel([{
+    criterionOption: { type: "language" },
+    value: [{ field: "language", modifier: "EQUALS", value: ["ja"] }],
+  }])),
+  { modifier: "", included: ["ja"], excluded: [] },
+  "the sidebar should read a filter set from the dialog"
+);
+
+// …and a filter set from the sidebar is made under our type, so it shows as the
+// Language card rather than as a generic custom field.
+encodedCriteria.length = 0;
+NS.languageFilterQuery(dialogModel, { modifier: "", included: ["ja"], excluded: [] });
+assert.strictEqual(encodedCriteria[0][0].criterionOption.type, "language",
+  "the sidebar should create the criterion the dialog's card represents");
+console.log("✓ filter dialog card (registered once / usable criterion / stored as a custom field)");
 
 setTimeout(() => {
   // ── 11. Badges (after the refresh promise settles) ───────────────

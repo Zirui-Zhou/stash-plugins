@@ -96,6 +96,11 @@ export interface MangaToolsNamespace {
     filter: MangaToolsFilterModel,
     selection: MangaToolsLanguageSelection
   ): string | null;
+  /**
+   * Adds the Language criterion to a list's filter options, so Stash's "edit
+   * filters" dialog offers a card for it. Idempotent.
+   */
+  registerLanguageCriterionOption(filter: MangaToolsFilterModel): void;
 }
 
 /**
@@ -186,11 +191,21 @@ export interface MangaToolsFilterCriterion {
   criterionOption?: { type?: string };
   value?: MangaToolsCustomFieldCondition[];
   clone?(): MangaToolsFilterCriterion;
+  /** How the criterion writes itself into the URL */
+  toQueryParams?(): { type: string; value: unknown };
 }
 
-/** An entry of ListFilterOptions.criterionOptions — a factory for its criterion */
+/**
+ * An entry of ListFilterOptions.criterionOptions — a factory for its criterion.
+ *
+ * Stash only ever reads `type` (to identify the criterion), `messageID` (the
+ * card's label) and `makeCriterion` off these, which is what lets a plugin add
+ * one without the class it would normally be built from.
+ */
 export interface MangaToolsCriterionOption {
   type: string;
+  messageID: string;
+  sfwMessageID?: string;
   makeCriterion(): MangaToolsFilterCriterion;
 }
 
