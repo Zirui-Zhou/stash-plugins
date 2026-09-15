@@ -490,6 +490,14 @@ values through the plugin's dropdown never hits this, since that writes lowercas
   and nothing patchable up there holds one either. Publishing the model from
   `GalleryList` was tried and renders nothing at all, because `GalleryList` is the
   list of cards and renders *after* the sidebar. The anchor stands.
+- **The sidebar section appears a moment after the page, and the cause is not
+  known.** Two explanations have been ruled out by reading Stash: plugin scripts
+  run before the app's first render (`PluginsLoader` waits on `useScript`, which
+  waits for the `load` event), and the mount-point corrections already run in
+  layout effects, i.e. before the browser paints. The delay is brief and the
+  section arrives in the right place, so it is left as it is rather than chased
+  with more machinery — if you do go after it, start by confirming which version
+  Stash is actually running, since a cached earlier build would look identical.
 - **Excluding a language also matches galleries with no language set**, because
   that is what Stash's `NOT_EQUALS` means. On a library where most galleries are
   untagged, "not Japanese" therefore returns nearly everything; `(None)` asks for

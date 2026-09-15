@@ -484,14 +484,13 @@ export function SidebarLanguageFilter(props: {
   var setQuery = queryState[1];
 
   // A React re-render can drop the mount point, and the first render never finds
-  // it at all: this component is a sibling rendered before the list that owns the
+  // it: this component is a sibling rendered before the list that owns the
   // sidebar, so the anchor's element does not exist yet. One extra pass fixes it.
   //
-  // A *layout* effect, not a plain one. Plain effects are flushed after the
-  // browser has painted, so the sidebar would appear without this section and
-  // everything below it would jump a frame later. Layout effects run after React
-  // writes the DOM but before paint, which is the only window where the
-  // correction is invisible.
+  // A layout effect, so the extra pass is flushed after React writes the DOM but
+  // before the browser paints — which means this correction adds no visible step
+  // of its own. It does not remove the brief flash the section still shows on
+  // load; that has another cause, not identified. See the README.
   var bump = React.useState(0)[1];
   var host = ensureFilterHost();
 

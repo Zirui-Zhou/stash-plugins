@@ -625,10 +625,9 @@ function LanguageRow(props: {
   // It only bumps when the mount point differs from the one used for this
   // render, so once things settle the condition is never true again and there
   // is no render loop.
-  // Layout effect, not a plain one: this correction has to land before the
-  // browser paints, or the row is missing for a frame and the fields below it
-  // visibly jump. Layout effects are flushed after React writes the DOM but
-  // before paint, which is exactly the window this needs.
+  // A layout effect, so the extra pass is flushed after React writes the DOM but
+  // before the browser paints, and this correction adds no visible step of its
+  // own.
   React.useLayoutEffect(function () {
     if (isGalleryContext() && ensureFieldHost() !== host) {
       bump(function (v) {
@@ -1121,7 +1120,7 @@ function BulkLanguageRow() {
   // from its rating row, which renders **before** the studio row it has to
   // anchor on has been committed to the DOM. The effect runs after the commit,
   // and one extra render is all it takes.
-  // As in LanguageRow: before paint, so the row does not appear a frame late.
+  // As in LanguageRow: before paint, so this pass adds no step of its own.
   React.useLayoutEffect(function () {
     if (isGalleryContext()) {
       installBulkLink();
