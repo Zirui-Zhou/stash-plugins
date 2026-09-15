@@ -407,6 +407,18 @@ function message(intl: MangaToolsIntl, id: string, fallback: string): string {
  */
 var SECTION_STATE_KEY = "mangaToolsLanguageOpen";
 
+/**
+ * Whether the reader is on a touch device.
+ *
+ * Mirrors Stash's ScreenUtils.isTouch, which its own sidebar filters consult
+ * before moving focus back to their search box: on a touch screen that would
+ * raise the keyboard after every tap, which is worse than the convenience is
+ * worth.
+ */
+function isTouchDevice(): boolean {
+  return window.matchMedia("(pointer: coarse)").matches;
+}
+
 /** Class name of the section's mount point */
 var FILTER_HOST_CLASS = "manga-tools-field-host";
 
@@ -782,6 +794,9 @@ export function SidebarLanguageFilter(props: {
   var query = queryState[0];
   var setQuery = queryState[1];
 
+  /** The search box, so focus can be put back into it after a change */
+  var searchRef = React.useRef<HTMLInputElement | null>(null);
+
   // A React re-render can drop the mount point, and the first render never finds
   // it: this component is a sibling rendered before the list that owns the
   // sidebar, so the anchor's element does not exist yet. One extra pass fixes it.
@@ -818,6 +833,13 @@ export function SidebarLanguageFilter(props: {
 
   function update(next: MangaToolsLanguageSelection) {
     applyLanguage(props.filter, history, next);
+
+    // Every change funnels through here, which is this component's equivalent of
+    // Stash's selectHook and unselectHook both ending in setInputFocus(): the
+    // cursor stays in the box so a second language can be typed straight away.
+    if (!isTouchDevice() && searchRef.current) {
+      searchRef.current.focus();
+    }
   }
 
   /**
@@ -860,12 +882,16 @@ export function SidebarLanguageFilter(props: {
     });
   }
 
+  // Two actions, not one, exactly as Stash has them: picking a modifier entry
+  // sets it (its onSelect), and clicking the same entry once it sits in the
+  // chosen list takes it back to the default (its onUnselect — which sets the
+  // modifier back rather than toggling, so it cannot be reached from here).
   function setModifier(modifier: "any" | "none") {
-    update({
-      modifier: selection.modifier === modifier ? "" : modifier,
-      included: [],
-      excluded: [],
-    });
+    update({ modifier: modifier, included: [], excluded: [] });
+  }
+
+  function clearModifier() {
+    update({ modifier: "", included: [], excluded: [] });
   }
 
   // The same "enabled languages" setting that limits the edit dropdown limits
@@ -881,6 +907,13 @@ export function SidebarLanguageFilter(props: {
       selection.excluded.indexOf(o.value) !== -1
     );
   });
+
+  // No candidates while (Any) or (None) is chosen: there is no particular value
+  // to pick in those states. That is Stash's own rule — its useCandidates returns
+  // an empty list for IsNull and NotNull — and it is why choosing (None) in the
+  // studio filter makes the studio list disappear. The search box stays, standing
+  // over nothing, exactly as it does there.
+  var selectable = selection.modifier ? [] : options;
 
   /** What the reader typed, against both the name and the code */
   var needle = query.trim().toLowerCase();
@@ -898,7 +931,7 @@ export function SidebarLanguageFilter(props: {
   var excludedChosen = options.filter(function (o) {
     return selection.excluded.indexOf(o.value) !== -1;
   });
-  var candidates = options.filter(function (o) {
+  var candidates = selectable.filter(function (o) {
     return (
       selection.included.indexOf(o.value) === -1 &&
       selection.excluded.indexOf(o.value) === -1 &&
@@ -947,7 +980,7 @@ export function SidebarLanguageFilter(props: {
   if (selection.modifier) {
     chosenItems.push(
       <li className="selected-object modifier-object" key="modifier">
-        <a tabIndex={0} onClick={function () { setModifier(selection.modifier as "any"); }}>
+        <a tabIndex={0} onClick={clearModifier}>
           <div className="label-group">
             <Icon className="fa-fw include-button" icon={Solid.faCheckCircle} />
             <span className="TruncatedText inline selected-object-label">
@@ -1017,11 +1050,21 @@ export function SidebarLanguageFilter(props: {
                 these fourteen are already in memory, so filtering is immediate. */}
             <div className="clearable-input-group">
               <input
+                ref={searchRef}
                 className="clearable-text-field form-control"
                 value={query}
                 placeholder={message(intl, "actions.search", "Search") + "…"}
                 onChange={function (e: { target: { value: string } }) {
                   setQuery(e.target.value);
+                }}
+                onKeyDown={function (e: { key?: string }) {
+                  // Enter takes the one candidate the search has narrowed to,
+                  // as Stash's onEnter does. Deliberately the candidates rather
+                  // than the modifier entries listed above them, which is what
+                  // Stash does too.
+                  if (e.key !== "Enter" || candidates.length !== 1) return;
+                  toggleInclude(candidates[0].value);
+                  setQuery("");
                 }}
               />
               {query ? (
@@ -1074,9 +1117,11 @@ export function SidebarLanguageFilter(props: {
                     canExclude
                     onClick={function () {
                       toggleInclude(o.value);
+                      setQuery("");
                     }}
                     onExclude={function () {
                       toggleExclude(o.value);
+                      setQuery("");
                     }}
                   />
                 );

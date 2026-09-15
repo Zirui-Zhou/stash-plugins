@@ -53,6 +53,9 @@ const React = {
   useLayoutEffect: (fn) => {
     fn();
   },
+  // A ref that never gets filled: nothing here mounts a real element, so
+  // `current` stays null and code that focuses it quietly does nothing.
+  useRef: (init) => ({ current: init }),
 };
 
 /** The chain the plugin installed via setLink, captured by the client stub */
@@ -352,7 +355,13 @@ const PluginApi = {
   },
 };
 
-global.window = { location: { pathname: "/galleries" }, setInterval: () => 0 };
+global.window = {
+  location: { pathname: "/galleries" },
+  setInterval: () => 0,
+  // Reported as a fine pointer, so the focus code runs rather than being skipped
+  // as it would be on a touch device.
+  matchMedia: () => ({ matches: false }),
+};
 global.document = {
   visibilityState: "visible",
   body: documentRoot,
@@ -1549,7 +1558,28 @@ assert.deepStrictEqual(historyReplaces[0].state,
 assert.strictEqual(historyReplaces[0].search, searchBeforeToggle,
   "and the URL's query must be left exactly as it was — this is not a filter change");
 fakeHistory.location.state = undefined;
-console.log("✓ sidebar section (open state remembered in the history entry)");
+// Enter takes the only candidate left, as Stash's onEnter does. Restricted to a
+// single enabled language so the list really does hold one — the search box
+// itself cannot be typed into here, since this stub's useState is inert.
+NS.enabledLanguages = new Set(["ja"]);
+const oneCandidate = renderLanguageFilter();
+const oneSearchBox = find(oneCandidate, (n) =>
+  n.props && n.props.className === "clearable-text-field form-control");
+assert.ok(oneSearchBox, "precondition: the search box is rendered");
+historyReplaces.length = 0;
+oneSearchBox.props.onKeyDown({ key: "Enter" });
+assert.ok(/"field":"language","modifier":"EQUALS","value":\["ja"\]/.test(historyReplaces[0].search),
+  "Enter should take the only candidate on offer");
+NS.enabledLanguages = null;
+
+// …and stays out of the way when there is a choice to make
+const manyCandidates = renderLanguageFilter();
+historyReplaces.length = 0;
+find(manyCandidates, (n) =>
+  n.props && n.props.className === "clearable-text-field form-control")
+  .props.onKeyDown({ key: "Enter" });
+assert.strictEqual(historyReplaces.length, 0,
+  "Enter must not pick one of several — that choice is the reader's");
 
 // (Any) and (None) are absent while a value is chosen, and come back when it is
 // cleared — the state Stash offers them in.
@@ -1566,6 +1596,37 @@ assert.strictEqual(
   find(section.node, (n) => n.props && n.props.children === "(任意)") !== null, true,
   "…and are shown as the chosen value"
 );
+
+// …and the languages go with them. Stash's own useCandidates returns an empty
+// list for IsNull and NotNull, which is why choosing (None) in the studio filter
+// makes the studios disappear; the same must happen here or the two sections
+// behave differently for no reason the reader can see.
+const offeredWhileFiltered = [];
+find(find(section.node, (n) =>
+  n.props && n.props.className === "queryable-candidate-list"), (n) => {
+  if (n.props && /^unselected-object\b/.test(n.props.className)) {
+    offeredWhileFiltered.push(n);
+  }
+  return false;
+});
+assert.strictEqual(offeredWhileFiltered.length, 0,
+  "(Any) or (None) leaves nothing to choose, so no language is offered");
+assert.ok(
+  find(section.node, (n) => n.props && n.props.className === "clearable-text-field form-control"),
+  "…though the search box stays, standing over an empty list, as it does in Stash"
+);
+
+// And there is a way back. Clicking the chosen modifier entry returns it to the
+// default — Stash's onUnselect does this by setting the modifier back, which is
+// a different action from selecting it, so it cannot be a toggle on the
+// candidate. That escape hatch was silently broken once, hence this test.
+historyReplaces.length = 0;
+const chosenModifier = find(section.node, (n) =>
+  n.props && n.props.className === "selected-object modifier-object");
+assert.ok(chosenModifier, "the chosen modifier should sit in the selected list");
+chosenModifier.props.children.props.onClick();
+assert.strictEqual(historyReplaces[0].search, "ENCODED([])",
+  "clearing it should leave no language condition at all");
 
 // The search box's clear button cannot be reached from these tests: it only
 // renders once the box has text, and this stub's useState cannot type. Its one
