@@ -784,6 +784,38 @@ function noteCause(name: string): boolean {
 }
 
 /**
+ * TEMPORARY — names whoever writes the URL, with a stack.
+ *
+ * The history object this hands back is the one Stash's own filter hook uses, so
+ * wrapping its `replace` catches Stash's writes as well as this plugin's. The
+ * loop this is chasing is a URL that keeps being rewritten, and what it is
+ * rewritten *to* is the whole question.
+ *
+ * Delete with noteCause.
+ */
+var historyWatched = false;
+
+function watchHistory(history: MangaToolsHistory): void {
+  if (historyWatched || !history || typeof history.replace !== "function") {
+    return;
+  }
+  historyWatched = true;
+
+  var original = history.replace;
+  history.replace = function (location: MangaToolsHistory["location"]) {
+    if (!noteCause("history.replace")) return;
+
+    console.info(
+      "[mangaTools] probe: replace -> " + String(location && location.search),
+      new Error("replace").stack
+    );
+
+    // Whatever the incoming state was, the same shape goes back out
+    return original.call(history, location) as unknown as void;
+  };
+}
+
+/**
  * Whether the reader is on a touch device.
  *
  * Mirrors Stash's ScreenUtils.isTouch, which its own sidebar filters consult
@@ -1903,6 +1935,9 @@ export function SidebarLanguageFilter(props: {
     );
     return null;
   }
+
+  // TEMPORARY, with noteCause
+  watchHistory(history);
 
   var Solid = PluginApi.libraries.FontAwesomeSolid || {};
   var Icon = PluginApi.components.Icon;
