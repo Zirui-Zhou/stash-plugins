@@ -60,11 +60,37 @@ export interface MangaToolsOption {
   flag: string | null;
 }
 
-/** The namespace languages.ts publishes on window.MangaTools */
+/**
+ * A gallery's custom_fields, as Stash's GraphQL Map scalar gives it: string keys,
+ * arbitrary values. This plugin only ever writes strings, but it does not get to
+ * decide what is already in there.
+ */
+export interface MangaToolsCustomFields {
+  [key: string]: unknown;
+}
+
+/** The namespace languages.ts and fields.ts publish on window.MangaTools */
 export interface MangaToolsNamespace {
   LANGUAGES: { [code: string]: MangaToolsLanguage };
   FALLBACK_LOCALE: string;
+
+  /** The language field's name. See fields.ts. */
   FIELD_NAME: string;
+  /** The censorship field's name. See fields.ts. */
+  CENSORSHIP_FIELD_NAME: string;
+  /** The values the censorship field takes, in cycle order. See fields.ts. */
+  CENSORSHIP_VALUES: string[];
+  /** A stored censorship value as one of CENSORSHIP_VALUES, or "" for anything else. */
+  normalizeCensorship(raw: unknown): string;
+
+  /** Reads a named field out of a custom_fields map, case-insensitively. */
+  pickField(customFields: unknown, name: string): string;
+  /** Writes a named field into a copy of the map. "" removes it. */
+  setField(
+    customFields: unknown,
+    name: string,
+    value: string
+  ): MangaToolsCustomFields;
 
   findCanonical(code?: string | null): string;
   normalize(raw: unknown): string;
@@ -325,6 +351,11 @@ export type MangaToolsConfigurePluginFn = (options: {
   variables: { plugin_id: string; input: Record<string, unknown> };
 }) => Promise<unknown>;
 
+/** The mutation StashService.useGalleryUpdate() returns */
+export type MangaToolsGalleryUpdateFn = (options: {
+  variables: { input: Record<string, unknown> };
+}) => Promise<unknown>;
+
 export type MangaToolsGql = (source: string) => unknown;
 
 /**
@@ -381,6 +412,12 @@ export interface IPluginApi {
     StashService: {
       getClient(): MangaToolsApolloClient;
       useConfigurePlugin(): [MangaToolsConfigurePluginFn];
+      /**
+       * Stash's own gallery-update mutation, cache eviction included. The same
+       * one its organized button uses, so a write from this plugin is
+       * indistinguishable from one of Stash's.
+       */
+      useGalleryUpdate(): [MangaToolsGalleryUpdateFn];
     };
   };
 

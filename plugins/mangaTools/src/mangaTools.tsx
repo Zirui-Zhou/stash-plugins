@@ -17,17 +17,27 @@
  *   - a filter section in the gallery list's sidebar (language-filter.tsx),
  *     which narrows the list to one language
  *
- * `languages.ts` holds the codes and their flags; `language-filter.tsx` holds
- * the sidebar filter. Everything else is below.
+ * A second attribute, the censorship mark, works the same way and lives in
+ * `plugin.mangaTools.censorship`. It surfaces in two places:
+ *
+ *   - an icon at the end of the gallery card's popover row, for the two marked
+ *     states only — an unmarked gallery shows nothing, since most are unmarked
+ *   - a button on the gallery detail page's toolbar, beside Stash's organized
+ *     button, cycling not marked → censored → uncensored
+ *
+ * `languages.ts` holds the codes and their flags, `fields.ts` the field names
+ * and the generic read/write helpers, `language-filter.tsx` the sidebar filter.
+ * Everything else is below.
  *
  * New features should keep the same shape: patches that hand anything they do
  * not own straight back to the original component, and shared data in a module
  * rather than on the window.
  *
- * The plugin is one bundled file. languages.ts is imported below and inlined
- * into it, so Stash loads exactly the one file ui.javascript names in
- * mangaTools.yml and there is no load order left to get wrong.
+ * The plugin is one bundled file. The modules imported below are inlined into
+ * it, so Stash loads exactly the one file ui.javascript names in mangaTools.yml
+ * and there is no load order left to get wrong.
  */
+import "./fields";
 import { NS } from "./languages";
 import { t } from "./i18n";
 import { requirePluginApi } from "./plugin-api";
@@ -40,6 +50,7 @@ import type { MangaToolsFilterModel } from "./plugin-api";
 import type {
   MangaToolsApolloClient,
   MangaToolsApolloOperation,
+  MangaToolsCustomFields,
   MangaToolsIntl,
   MangaToolsOption,
 } from "./plugin-api";
@@ -54,11 +65,13 @@ const PluginApi = requirePluginApi();
 const React = PluginApi.React;
 
 const FIELD_NAME = NS.FIELD_NAME;
+const CENSORSHIP_FIELD_NAME = NS.CENSORSHIP_FIELD_NAME;
 
-// The same name lowercased. Every read compares case-insensitively, so the
-// left-hand side is lowercased and this is what it is compared against.
+// The field names lowercased. Every read compares case-insensitively, so the
+// left-hand side is lowercased and these are what it is compared against.
 // Derived rather than written out, so the two can never drift apart.
 const FIELD_KEY = FIELD_NAME.toLowerCase();
+const CENSORSHIP_KEY = CENSORSHIP_FIELD_NAME.toLowerCase();
 
 const PLUGIN_ID = "mangaTools";
 
@@ -80,7 +93,7 @@ const BULK_ANCHOR = '[data-field="studio"]';
 const REFRESH_MS = 60000;
 
 /** The Gallery custom_fields map as it comes back from GraphQL */
-type CustomFieldsMap = { [key: string]: unknown };
+type CustomFieldsMap = MangaToolsCustomFields;
 
 /** Column class names copied off a native form row */
 type NativeFieldClasses = { group: string; label: string; control: string };
@@ -117,8 +130,16 @@ function noteFired(target: string): void {
 
 // ───────────────────────────── State ─────────────────────────────
 
-/** galleryId -> the raw language value from custom fields */
-let store: Map<string, string> = new Map();
+/**
+ * galleryId -> that gallery's custom fields.
+ *
+ * The whole map is kept rather than the values this plugin reads, because the
+ * query fetches it whole anyway (a single key cannot be projected out of the
+ * GraphQL Map scalar) and because a second field would otherwise mean a second
+ * store. What is in here is only ever from a gallery that carries one of the
+ * plugin's fields — see refresh().
+ */
+let store: Map<string, CustomFieldsMap> = new Map();
 
 /** Subscribers: re-render when the store or the route changes */
 const listeners: Set<() => void> = new Set();
@@ -175,63 +196,85 @@ function isGalleryContext(): boolean {
   return currentPath.indexOf("/galleries") === 0;
 }
 
+/**
+ * The gallery id in the current URL, or "" when this is not one gallery's page.
+ *
+ * The detail page's toolbar belongs to a component that cannot be patched and is
+ * handed no id, so the URL is the only place to read it from. isGalleryContext
+ * is the same test, one segment coarser: this one needs the id, that one only
+ * needs to know the plugin is on a gallery page at all.
+ */
+function currentGalleryId(): string {
+  const m = /^\/galleries\/(\d+)(?:\/|$)/.exec(currentPath);
+  return m ? m[1] : "";
+}
+
 // ───────────────────── Reading and writing custom fields ─────────────────────
 
 /**
- * Reads the language value out of custom_fields. The field name is matched
- * case-insensitively.
- * @returns "" when there is no such field
+ * Reads the language value out of custom_fields, and writes a new one back.
+ *
+ * Both are two lines over the generic helpers in fields.ts; they exist so the
+ * call sites below say which field they mean rather than repeating its name.
  */
 function pickLanguage(customFields: unknown): string {
-  if (!customFields || typeof customFields !== "object") return "";
+  return NS.pickField(customFields, FIELD_NAME);
+}
 
-  const map = customFields as CustomFieldsMap;
-  const keys = Object.keys(map);
-  for (let i = 0; i < keys.length; i++) {
-    if (keys[i].toLowerCase() === FIELD_KEY) {
-      const v = map[keys[i]];
-      if (v === null || v === undefined) return "";
-      return String(v);
-    }
-  }
-  return "";
+function setLanguage(customFields: unknown, code: string): CustomFieldsMap {
+  return NS.setField(customFields, FIELD_NAME, code);
 }
 
 /**
- * Writes a new language value into custom_fields and returns the new object
- * (the input is not mutated). An empty value removes every case variant of the
- * key — matching the delete semantics of the native CustomFieldInput.
+ * The censorship mark a gallery's custom fields carry.
+ *
+ * Through normalizeCensorship, so anything that is not one of the two known
+ * values — including a key this plugin did not write — reads as "not marked"
+ * rather than being shown or guessed at.
  */
-function setLanguage(customFields: unknown, code: string): CustomFieldsMap {
-  const next = Object.assign({}, customFields || {}) as CustomFieldsMap;
-  Object.keys(next).forEach((k) => {
-    if (k.toLowerCase() === FIELD_KEY) delete next[k];
-  });
-  if (code) next[FIELD_NAME] = code;
-  return next;
+function censorshipOf(customFields: unknown): string {
+  return NS.normalizeCensorship(
+    NS.pickField(customFields, CENSORSHIP_FIELD_NAME)
+  );
+}
+
+/** The censorship mark the store holds for a gallery */
+function storedCensorship(galleryId: string): string {
+  return censorshipOf(store.get(String(galleryId)));
+}
+
+/** Whether a custom-field key is one of ours, whatever its case */
+function isOwnField(key: string): boolean {
+  const k = key.toLowerCase();
+  return k === FIELD_KEY || k === CENSORSHIP_KEY;
 }
 
 // ───────────────────────────── Fetching ─────────────────────────────
 
 /**
  * A Gallery's custom_fields is the GraphQL Map scalar, and a single key cannot
- * be projected out of it. So we filter for galleries that have the language
- * field and fetch the whole map, then keep it in memory.
+ * be projected out of it. So we filter for galleries that have one of this
+ * plugin's fields and fetch the whole map, then keep it in memory.
  *
- * The query spells the field name exactly as FIELD_NAME does. Asking for the
- * case variants in the same query is impossible:
- *   - OR is singular in the schema (OR: GalleryFilterType), not an array
- *   - multiple criteria inside the custom_fields array are ANDed, not ORed
- * So one spelling is a hard constraint, guaranteed by the dropdown. Reads and
- * writes remain case-insensitive (pickLanguage, setLanguage), so a key in the
- * library that has drifted in case is still found and corrected on the next
- * write — but a gallery whose key drifted is not matched by *this* query, and
- * so is missing from the badge map until it is written once.
+ * **One query per field.** A gallery carrying only the censorship mark would
+ * not be matched by a query filtered on the language field, and vice versa, and
+ * the two cannot be asked for together: `OR` is singular in the schema
+ * (`OR: GalleryFilterType`), not an array, and several criteria inside the
+ * custom_fields array are ANDed, so listing both would mean "has both". Two
+ * queries are the only way, and their answers are merged by gallery id.
+ *
+ * Each query spells its field name exactly. Asking for the case variants in one
+ * query is impossible for the same reason, so one spelling per field is a hard
+ * constraint, guaranteed by the dropdown that writes it. Reads and writes remain
+ * case-insensitive (NS.pickField, NS.setField), so a key that has drifted in
+ * case is still found and corrected on the next write — but a gallery whose key
+ * drifted is not matched by this query, and so is missing from the map until
+ * something writes it once.
  */
-let QUERY: unknown = null;
+const QUERIES: { [field: string]: unknown } = {};
 
-function getQuery(): unknown {
-  if (QUERY) return QUERY;
+function getQuery(field: string): unknown {
+  if (QUERIES[field]) return QUERIES[field];
 
   const Apollo = PluginApi.libraries.Apollo;
   const gql = Apollo?.gql || PluginApi.GQL?.gql;
@@ -240,14 +283,12 @@ function getQuery(): unknown {
     return null;
   }
 
-  QUERY = gql(
+  QUERIES[field] = gql(
     [
       "query MangaToolsMap {",
       "  findGalleries(",
       "    gallery_filter: {",
-      '      custom_fields: [{ field: "' +
-        FIELD_NAME +
-        '", modifier: NOT_NULL }]',
+      '      custom_fields: [{ field: "' + field + '", modifier: NOT_NULL }]',
       "    }",
       "    filter: { per_page: -1 }",
       "  ) {",
@@ -261,20 +302,26 @@ function getQuery(): unknown {
     ].join("\n")
   );
 
-  return QUERY;
+  return QUERIES[field];
 }
 
-/** What the query above returns, as far as this plugin cares */
+/** What one query above returns, as far as this plugin cares */
 type GalleriesPayload = {
   galleries?: Array<{ id: string; custom_fields?: CustomFieldsMap }>;
 };
 
-/** Refetches the language map. Concurrent calls share one in-flight request. */
+/**
+ * Refetches the map. Concurrent calls share one in-flight request.
+ *
+ * Both queries run together and are merged; a gallery that carries both fields
+ * is returned by both, with the same map, so the merge is a plain overwrite.
+ */
 function refresh(): Promise<unknown> {
   if (inFlight) return inFlight;
 
-  const query = getQuery();
-  if (!query) return Promise.resolve();
+  const fields = [FIELD_NAME, CENSORSHIP_FIELD_NAME];
+  const queries = fields.map(getQuery);
+  if (queries.some((q) => !q)) return Promise.resolve();
 
   let client: MangaToolsApolloClient;
   try {
@@ -284,19 +331,23 @@ function refresh(): Promise<unknown> {
     return Promise.resolve();
   }
 
-  inFlight = client
-    .query({ query: query, fetchPolicy: "network-only" })
-    .then((res) => {
-      const data = res?.data;
-      const result = data
-        ? (data.findGalleries as GalleriesPayload | undefined)
-        : undefined;
-      const galleries = result?.galleries || [];
+  inFlight = Promise.all(
+    queries.map((query) =>
+      client.query({ query: query, fetchPolicy: "network-only" })
+    )
+  )
+    .then((results) => {
+      const next: Map<string, CustomFieldsMap> = new Map();
+      results.forEach((res) => {
+        const data = res?.data;
+        const result = data
+          ? (data.findGalleries as GalleriesPayload | undefined)
+          : undefined;
+        const galleries = result?.galleries || [];
 
-      const next: Map<string, string> = new Map();
-      galleries.forEach((g) => {
-        const value = pickLanguage(g.custom_fields);
-        if (value) next.set(String(g.id), value);
+        galleries.forEach((g) => {
+          if (g.custom_fields) next.set(String(g.id), g.custom_fields);
+        });
       });
 
       store = next;
@@ -304,12 +355,12 @@ function refresh(): Promise<unknown> {
 
       // Only log when the count changes, so it does not spam every minute.
       // This line is the first thing to check when a badge does not show up:
-      // if it says 0, the query worked but no gallery carries a language field,
+      // if it says 0, the queries worked but no gallery carries either field,
       // so the problem is the data rather than the plugin.
       if (next.size !== lastLoggedSize) {
         lastLoggedSize = next.size;
         console.info(
-          "[mangaTools] loaded language tags for " + next.size + " gallery(ies)"
+          "[mangaTools] loaded custom fields for " + next.size + " gallery(ies)"
         );
       }
     })
@@ -318,7 +369,7 @@ function refresh(): Promise<unknown> {
       // none, and the next refresh will try again. Query syntax errors land
       // here too (Apollo throws GraphQL errors), so this log has to be loud.
       console.error(
-        "[mangaTools] failed to fetch language data, badges will not show. Raw error:",
+        "[mangaTools] failed to fetch custom fields, marks will not show. Raw error:",
         e
       );
     })
@@ -512,7 +563,10 @@ function LanguageBadge(props: { galleryId: string }) {
   useGlobalVersion();
   const locale = useLocale();
 
-  const info = NS.describe(store.get(String(props.galleryId)), locale);
+  const info = NS.describe(
+    pickLanguage(store.get(String(props.galleryId))),
+    locale
+  );
   if (!info) return null;
 
   // No flag to show, for one of two reasons — and they are not the same chip:
@@ -535,6 +589,382 @@ function LanguageBadge(props: { galleryId: string }) {
     <div className="manga-tools-badge" aria-label={info.name}>
       <Flag flag={info.flag as string} />
     </div>
+  );
+}
+
+// ─────────────────────────── Censorship mark ───────────────────────────
+
+/**
+ * The icon for a censorship state.
+ *
+ * The pairing is a Chinese pun rather than anything to do with chess: 步兵,
+ * "infantry", is what a censored release is *not*, and 骑兵, "cavalry", is what
+ * it is — by way of the mosaic a censor lays over the page. A pawn and a knight
+ * say the same thing in one glyph each. The joke is deliberately explained
+ * nowhere on screen: the icons carry it, and a tooltip that spelled it out would
+ * be a tooltip about a word rather than about the gallery.
+ *
+ * `faCircleQuestion` is the unmarked state. It is looked up with a fallback
+ * because it was `faQuestionCircle` before FontAwesome 6, and which version is
+ * bundled is Stash's decision rather than this plugin's — the same precaution as
+ * `faXmark` in language-filter.tsx.
+ */
+function censorshipIcon(value: string): unknown {
+  const Solid = PluginApi.libraries.FontAwesomeSolid || {};
+  if (value === "censored") return Solid.faChessKnight;
+  if (value === "uncensored") return Solid.faChessPawn;
+  return Solid.faCircleQuestion || Solid.faQuestionCircle;
+}
+
+/** The plugin's own word for a state, for a tooltip or a label */
+function censorshipLabel(intl: MangaToolsIntl, value: string): string {
+  if (value === "censored") return t(intl, "mangaTools.censorship.censored");
+  if (value === "uncensored")
+    return t(intl, "mangaTools.censorship.uncensored");
+  return t(intl, "mangaTools.censorship.unset");
+}
+
+/**
+ * What a click on the toolbar button will do.
+ *
+ * The button is a cycle, so this names the *next* state rather than the current
+ * one, and that tooltip is the whole of how a three-state button explains
+ * itself — the icon shows where you are, the tooltip where you would go.
+ */
+function censorshipAction(intl: MangaToolsIntl, value: string): string {
+  if (value === "censored")
+    return t(intl, "mangaTools.censorship.markUncensored");
+  if (value === "uncensored") return t(intl, "mangaTools.censorship.clear");
+  return t(intl, "mangaTools.censorship.markCensored");
+}
+
+/**
+ * The state a click moves to: not marked → censored → uncensored → not marked.
+ *
+ * Driven off CENSORSHIP_VALUES rather than written out, so the cycle order is
+ * stated in one place and a third value would extend it without a second edit.
+ * "" is the state before the first value and the one after the last.
+ */
+function nextCensorship(value: string): string {
+  const values = NS.CENSORSHIP_VALUES;
+  const i = values.indexOf(value);
+  return i === -1 ? values[0] : values[i + 1] || "";
+}
+
+/** Class of the empty span kept beside Stash's popover row, one per card */
+const POPOVER_ANCHOR_CLASS = "manga-tools-popover-anchor";
+/** Class of the node inside that row that our button is portalled into */
+const POPOVER_SLOT_CLASS = "manga-tools-popover-slot";
+/** Marks a row this plugin had to make, because Stash drew none */
+const POPOVER_ROW_CLASS = "manga-tools-popovers";
+
+/**
+ * Forces one more render once a component has mounted.
+ *
+ * Every mount point below is found by looking in the document, and the first
+ * render of a page happens *before* React has committed any of it: a lookup at
+ * that point sees the previous page's markup, which on a load is nothing at all.
+ * Effects flush after the commit, so the extra render this asks for is the first
+ * one that can see the toolbar. One bump and not a loop: the dependency list is
+ * empty, so the effect never runs twice.
+ *
+ * A layout effect rather than a plain one, for the reason the other mount points
+ * give: it runs after React has written the DOM but before the browser paints,
+ * which is the only window in which the second render is invisible. A plain
+ * effect would leave the button missing for a frame.
+ *
+ * The tests' React stub runs the callback immediately and its state setter is
+ * inert, so under the stub this is a no-op — which is sound, because a test
+ * builds the DOM it wants found *before* calling the component.
+ */
+function useAfterMount(): void {
+  const bump = React.useState(0)[1];
+  React.useLayoutEffect(() => {
+    bump(1);
+  }, []);
+}
+
+/**
+ * Whether an element carries a class.
+ *
+ * Read off `className` rather than through `classList`: the smoke tests' DOM
+ * stub has the former and not the latter, and a class name is all this needs.
+ */
+function hasClass(el: Element | null, name: string): boolean {
+  return !!el && (el.className || "").split(/\s+/).indexOf(name) >= 0;
+}
+
+/**
+ * Finds (creating if needed) the node to portal a card's mark into: the last
+ * child of Stash's own `.card-popovers` row.
+ *
+ * Why a portal *into* Stash's row, rather than a second row of our own: the row
+ * is a flex container, so anything rendered beside it lands on a line of its own
+ * instead of being another button on this one.
+ *
+ * The anchor is the empty span the caller renders next to that row, carrying the
+ * gallery id. Searching for *that* is what makes the row found the right one: a
+ * gallery appears in exactly one card in Stash's list, so the id names one anchor
+ * — where `.card-popovers` alone would match the first row on the page however
+ * far down it this card is. If a gallery ever did appear twice, the mark would
+ * go to the first of them and the second would go without.
+ *
+ * A card with no image count, no tags, no performers, no scenes and no organized
+ * mark has no row at all. One is then created with the classes Stash uses, so it
+ * is indistinguishable from the real thing — because there is no real thing to
+ * be distinguished from.
+ */
+function ensurePopoverSlot(galleryId: string): HTMLElement | null {
+  const anchor = document.querySelector(
+    '[data-gallery="' + galleryId + '"]'
+  ) as HTMLElement | null;
+  if (!anchor?.parentNode) return null;
+
+  const previous = anchor.previousElementSibling;
+  let row: Element;
+
+  if (
+    hasClass(previous, "card-popovers") ||
+    hasClass(previous, POPOVER_ROW_CLASS)
+  ) {
+    row = previous as Element;
+  } else {
+    row = document.createElement("div");
+    row.className = "btn-group card-popovers " + POPOVER_ROW_CLASS;
+    anchor.parentNode.insertBefore(row, anchor);
+  }
+
+  let slot: Element | null = null;
+  for (let i = 0; i < row.children.length; i++) {
+    if (hasClass(row.children[i], POPOVER_SLOT_CLASS)) {
+      slot = row.children[i];
+      break;
+    }
+  }
+
+  if (slot) {
+    // Stash re-renders its row and can leave ours in the middle of it; the mark
+    // belongs after Stash's own buttons, which is where they still are.
+    if (row.lastElementChild !== slot) row.appendChild(slot);
+    return slot as HTMLElement;
+  }
+
+  slot = document.createElement("span");
+  slot.className = POPOVER_SLOT_CLASS;
+  row.appendChild(slot);
+  return slot as HTMLElement;
+}
+
+/**
+ * The censorship mark at the end of a card's popover row, or null when the
+ * gallery carries no mark.
+ *
+ * An anchor plus a portal rather than the button itself, because the row it
+ * belongs in is Stash's and React does not own it — see ensurePopoverSlot. The
+ * anchor is rendered on every pass so there is always exactly one to find; on
+ * the pass that also has a slot to draw, the two go out together.
+ *
+ * `useAfterMount` is what turns the anchor of this render into the slot of the
+ * next one, on a real page: the anchor is not in the document until this render
+ * has been committed.
+ */
+function CensorshipPopoverMark(props: { galleryId: string }) {
+  useGlobalVersion();
+  useAfterMount();
+
+  // Read here rather than bound at module scope: plugin scripts can run before
+  // Stash has registered its components, so a module-level read can come back
+  // undefined and never recover. language-filter.tsx reads it the same way.
+  const Icon = PluginApi.components.Icon;
+  const intl = PluginApi.libraries.Intl.useIntl();
+  const value = storedCensorship(props.galleryId);
+  const slot = value ? ensurePopoverSlot(props.galleryId) : null;
+
+  if (!value) return null;
+
+  return (
+    <>
+      <span className={POPOVER_ANCHOR_CLASS} data-gallery={props.galleryId} />
+      {slot
+        ? PluginApi.ReactDOM.createPortal(
+            <button
+              type="button"
+              className="minimal btn btn-primary manga-tools-mark"
+              title={censorshipLabel(intl, value)}
+            >
+              <Icon icon={censorshipIcon(value)} />
+            </button>,
+            slot
+          )
+        : null}
+    </>
+  );
+}
+
+// ────────────────────── Censorship toolbar button ──────────────────────
+
+/** Class of the mount point in the gallery toolbar */
+const TOOLBAR_HOST_CLASS = "manga-tools-toolbar-host";
+
+/**
+ * Whether this Stash has the mutation the censorship button writes through.
+ *
+ * Asked once, at load, so that a Stash predating `useGalleryUpdate` leaves the
+ * button out rather than calling a hook that is not there — and, more to the
+ * point, rather than throwing inside the detail page's render, which would take
+ * the whole custom-fields panel down with it. Stash injects StashService itself
+ * (it is a namespace import of `src/core/StashService`), so a version that
+ * lacks this function is the only way the lookup can fail.
+ */
+const CAN_WRITE_CENSORSHIP =
+  typeof PluginApi.utils.StashService.useGalleryUpdate === "function";
+
+if (!CAN_WRITE_CENSORSHIP) {
+  console.error(
+    "[mangaTools] this Stash has no useGalleryUpdate, so the censorship button " +
+      "will not be shown. The language features are unaffected."
+  );
+}
+
+/** As with the other mount points, held at module scope so a re-render reuses
+ *  the same node rather than making a new one every time. */
+let toolbarHost: HTMLElement | null = null;
+
+/**
+ * Finds (creating if needed) the mount point in the gallery detail page's
+ * toolbar, directly after the span holding Stash's organized button.
+ *
+ * Why the DOM at all: the toolbar is rendered by `Gallery`, which is not a
+ * registered component, so there is no patch to hang a React child off — the
+ * same situation as the detail row (see ensureDetailHost).
+ *
+ * Why that button and not the group's two spans by position: the second span is
+ * the operation menu, whose contents depend on the entity and on the user's
+ * settings. The organized button is drawn for every gallery, on every version,
+ * in a group of its own, which makes it the one stable handle in there.
+ *
+ * Scoped to `.gallery-toolbar`, so the bulk edit dialog's organized button —
+ * same class, different place — is never mistaken for it.
+ */
+function ensureToolbarHost(): HTMLElement | null {
+  const button = document.querySelector(".gallery-toolbar .organized-button");
+  const anchor = (button?.parentNode || null) as HTMLElement | null;
+  if (!anchor?.parentNode) {
+    toolbarHost = null;
+    return null;
+  }
+
+  if (!toolbarHost) {
+    toolbarHost = document.createElement("span");
+    toolbarHost.className = TOOLBAR_HOST_CLASS;
+  }
+
+  // A React re-render may displace it; keep it directly after that span, which
+  // puts it between the organized button and the operation menu.
+  if (anchor.nextElementSibling !== toolbarHost) {
+    anchor.parentNode.insertBefore(toolbarHost, anchor.nextElementSibling);
+  }
+
+  return toolbarHost;
+}
+
+/**
+ * Records a mark in the store, so the card behind the detail page follows a
+ * write without waiting for the next poll.
+ *
+ * The store is this plugin's own Map, not an Apollo query, so Stash's cache
+ * eviction on a gallery update does not reach it.
+ */
+function setStoredCensorship(galleryId: string, value: string): void {
+  const id = String(galleryId);
+  const next = new Map(store);
+  next.set(id, NS.setField(next.get(id), CENSORSHIP_FIELD_NAME, value));
+  store = next;
+  emit();
+}
+
+/**
+ * The gallery detail page's censorship button.
+ *
+ * A cycle rather than a menu, matching the organized button it sits beside: one
+ * square in a toolbar, and the tooltip names what the next click will do.
+ *
+ * A plain `<button>` with Bootstrap's own classes rather than Bootstrap's
+ * `Button`: that component composes exactly these classes and nothing else, and
+ * the markup it produces is what Stash's OrganizedButton renders — so this is
+ * the same DOM without a second library to be missing.
+ *
+ * The write goes through Stash's `useGalleryUpdate`, which is the mutation its
+ * own organized button uses, so the cache eviction that makes the rest of the
+ * page notice is Stash's rather than something re-derived here.
+ *
+ * `useAfterMount` is what finds the mount point on a real page: this component
+ * renders as part of the page's first pass, before the toolbar it portals into
+ * has been committed.
+ */
+function CensorshipToolbarButton(props: {
+  galleryId: string;
+  value: string;
+  fieldKey: string;
+}) {
+  useGlobalVersion();
+  useAfterMount();
+
+  const Icon = PluginApi.components.Icon;
+  const intl = PluginApi.libraries.Intl.useIntl();
+  const update = PluginApi.utils.StashService.useGalleryUpdate();
+
+  const busyState = React.useState(false);
+  const busy = busyState[0];
+  const setBusy = busyState[1];
+
+  const host = ensureToolbarHost();
+  if (!host) return null;
+
+  const mark = props.value;
+  const next = nextCensorship(mark);
+
+  const onClick = () => {
+    const input: Record<string, unknown> = { id: props.galleryId };
+    if (next) {
+      input.custom_fields = { partial: { [CENSORSHIP_FIELD_NAME]: next } };
+    } else {
+      // Cleared by removing the key rather than by writing an empty value: "not
+      // marked" is the absence of the field, which is what the language dropdown
+      // means by an empty value too. The key named here is the one this gallery
+      // actually carries, so one that drifted in case is removed rather than
+      // left behind holding the old mark.
+      input.custom_fields = { remove: [props.fieldKey] };
+    }
+
+    setBusy(true);
+    update[0]({ variables: { input } }).then(
+      () => {
+        setBusy(false);
+        setStoredCensorship(props.galleryId, next);
+      },
+      (e: unknown) => {
+        setBusy(false);
+        // The button keeps the mark it had, so the click can simply be repeated.
+        console.error("[mangaTools] failed to write the censorship mark:", e);
+      }
+    );
+  };
+
+  return PluginApi.ReactDOM.createPortal(
+    <button
+      type="button"
+      title={censorshipAction(intl, mark)}
+      className={
+        "minimal manga-tools-censorship btn btn-secondary" +
+        (mark ? " is-" + mark : "")
+      }
+      disabled={busy}
+      onClick={onClick}
+    >
+      <Icon icon={censorshipIcon(mark)} />
+    </button>,
+    host
   );
 }
 
@@ -963,9 +1393,9 @@ function captureSelection(selectedIds: unknown): void {
 function selectedLanguageAggregate(): string | null {
   if (!selectedGalleryIds.length) return null;
 
-  const first = store.get(selectedGalleryIds[0]) || "";
+  const first = pickLanguage(store.get(selectedGalleryIds[0]));
   for (let i = 1; i < selectedGalleryIds.length; i++) {
-    if ((store.get(selectedGalleryIds[i]) || "") !== first) return null;
+    if (pickLanguage(store.get(selectedGalleryIds[i])) !== first) return null;
   }
 
   return first || null;
@@ -1246,7 +1676,7 @@ PluginApi.patch.instead("GalleryCard.Overlays", (...args: unknown[]) => {
   noteFired("GalleryCard.Overlays");
 
   const id = props.gallery?.id;
-  const value = id ? store.get(String(id)) : "";
+  const value = id ? pickLanguage(store.get(String(id))) : "";
 
   // Nothing to add: the gallery has no language, or the badge is turned off.
   if (!value || !NS.showCoverBadge) return <Original {...props} />;
@@ -1255,6 +1685,30 @@ PluginApi.patch.instead("GalleryCard.Overlays", (...args: unknown[]) => {
     <>
       <Original {...props} />
       <LanguageBadge galleryId={id as string} />
+    </>
+  );
+});
+
+// 1b. The censorship mark at the end of the same card's popover row.
+//
+//     Deliberately not another cover badge: the language badge is a flag, which
+//     reads at a glance, while "censored" is a property you look up rather than
+//     scan for — and two overlapping chips on one cover would fight. The popover
+//     row is where Stash already puts this kind of attribute (organized, and the
+//     two counts), and it costs nothing on the covers of the many galleries that
+//     carry no mark at all.
+PluginApi.patch.instead("GalleryCard.Popovers", (...args: unknown[]) => {
+  const props = args[0] as { gallery?: { id?: string } };
+  const Original = originalFrom(args);
+  noteFired("GalleryCard.Popovers");
+
+  const id = props.gallery?.id;
+  if (!id || !storedCensorship(String(id))) return <Original {...props} />;
+
+  return (
+    <>
+      <Original {...props} />
+      <CensorshipPopoverMark galleryId={String(id)} />
     </>
   );
 });
@@ -1482,14 +1936,19 @@ function DetailLanguageRow(props: { value: unknown }) {
 }
 
 // 4. Detail page: show the language as "flag + localised name", positioned
-//    under "photographer".
+//    under "photographer", and hang the censorship button off the toolbar.
 //
 //    Note the target is CustomFields (plural, the container), not CustomField —
 //    the latter is a plain React.FC with no PatchComponent wrapper, so patching
 //    it reports no error and simply never runs.
-//    The language entry is lifted out of `values` (otherwise it would be
-//    rendered twice) and everything else is handed to the original unchanged;
-//    DetailLanguageRow renders that one entry under "photographer".
+//
+//    Both of this plugin's fields are lifted out of `values`, so Stash does not
+//    also draw them as raw custom-field rows; everything else is handed to the
+//    original untouched. DetailLanguageRow renders the language entry under
+//    "photographer", and the censorship button portals itself into the toolbar —
+//    which is why this component is where it is rendered from. It is the one
+//    patchable component on this page that has the gallery's custom fields in
+//    hand, and the toolbar's own component is not patchable at all.
 PluginApi.patch.instead("CustomFields", (...args: unknown[]) => {
   const props = args[0] as { values?: CustomFieldsMap; fullWidth?: boolean };
   const Original = originalFrom(args);
@@ -1498,19 +1957,38 @@ PluginApi.patch.instead("CustomFields", (...args: unknown[]) => {
   const values = props.values;
   if (!values || typeof values !== "object") return <Original {...props} />;
 
-  let key: string | null = null;
-  Object.keys(values).forEach((k) => {
-    if (key === null && k.toLowerCase() === FIELD_KEY) key = k;
-  });
-  if (key === null) return <Original {...props} />;
+  const rest = Object.assign({}, values) as CustomFieldsMap;
+  let languageKey: string | null = null;
+  let censorshipKey: string | null = null;
 
-  const rest = Object.assign({}, values);
-  delete rest[key];
+  Object.keys(values).forEach((k) => {
+    if (!isOwnField(k)) return;
+    if (k.toLowerCase() === FIELD_KEY) languageKey = k;
+    else censorshipKey = k;
+    delete rest[k];
+  });
+
+  if (languageKey === null && censorshipKey === null) {
+    return <Original {...props} />;
+  }
+
+  // Empty on every entity's page but a gallery's, which is what keeps the
+  // button off a scene's or a performer's detail page.
+  const galleryId = currentGalleryId();
 
   return (
     <>
       <Original {...props} values={rest} />
-      <DetailLanguageRow value={values[key]} />
+      {languageKey === null ? null : (
+        <DetailLanguageRow value={values[languageKey]} />
+      )}
+      {censorshipKey === null || !galleryId || !CAN_WRITE_CENSORSHIP ? null : (
+        <CensorshipToolbarButton
+          galleryId={galleryId}
+          value={censorshipOf(values)}
+          fieldKey={censorshipKey}
+        />
+      )}
     </>
   );
 });

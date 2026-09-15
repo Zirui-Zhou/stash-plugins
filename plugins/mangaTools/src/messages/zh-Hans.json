@@ -9,5 +9,12 @@
   "mangaTools.settings.showFlags.description": "在语言名称旁画出国旗。关掉后只显示名称。",
 
   "mangaTools.settings.showCoverBadge.heading": "在封面显示语言",
-  "mangaTools.settings.showCoverBadge.description": "画廊封面右下角的徽章。关掉国旗时显示语言名称而不是国旗。"
+  "mangaTools.settings.showCoverBadge.description": "画廊封面右下角的徽章。关掉国旗时显示语言名称而不是国旗。",
+
+  "mangaTools.censorship.censored": "有修正",
+  "mangaTools.censorship.uncensored": "无修正",
+  "mangaTools.censorship.unset": "未标注",
+  "mangaTools.censorship.markCensored": "标为有修正",
+  "mangaTools.censorship.markUncensored": "标为无修正",
+  "mangaTools.censorship.clear": "清除修正标注"
 }

@@ -9,6 +9,7 @@ upgrades never produce merge conflicts.
 | Feature | What it adds |
 |---|---|
 | **Language** | A language attribute on galleries, surfaced as a flag badge, an edit-page dropdown, a bulk-edit row and a localised detail row |
+| **Censorship** | Whether a gallery is censored or not, surfaced as a mark on the gallery card and a cycling button in the detail page's toolbar |
 | **Language filter** | A "language" section in the gallery list's sidebar that narrows the list to one language |
 | **Settings** | Which languages the dropdown offers, whether flags are drawn, and whether the cover badge is drawn |
 
@@ -253,6 +254,60 @@ opposed to "all of them". A custom-field `EQUALS` has no "all" form: its values
 are always a union, so both entries would mean the same thing as selecting the
 languages directly.
 
+### Censorship
+
+Whether a gallery is censored. A separate field from the language rather than a
+flag on it, because the two are independent: an uncensored Japanese volume is a
+perfectly ordinary thing.
+
+Three states, and the third is the absence of the field rather than a value:
+
+| State | Stored | Card | Toolbar |
+|---|---|---|---|
+| Not marked | no field | nothing | a question mark, dimmed |
+| Censored | `censored` | a knight | a knight |
+| Uncensored | `uncensored` | a pawn | a pawn |
+
+**Why a knight and a pawn.** 骑兵, "cavalry", is what a censored release is, and
+步兵, "infantry", is what it is not — the mosaic a censor lays over the page has
+had that name in Chinese for long enough that the joke needs no explaining to
+the reader it is aimed at. The icons carry it and nothing on screen spells it
+out: a tooltip about a word rather than about the gallery would be worse than no
+tooltip. If the pun wears off, `censorshipIcon` in `src/mangaTools.tsx` is the
+one place to change it.
+
+| Where | Effect |
+|---|---|
+| Gallery list / card | The state's icon **at the end of the popover row** — the row that appears on hover with the image count, the tag count and the organized box. An unmarked gallery adds nothing there, since most galleries are unmarked |
+| Gallery detail page | A **button in the toolbar**, between Stash's organized button and the operation menu, cycling not marked → censored → uncensored. The tooltip names what the **next** click does, which is the whole of how a three-state button explains itself |
+
+**The card's mark is spliced into Stash's own row, and that row is a flex
+container** — rendering a second `.card-popovers` beside it would put the mark on
+a line of its own instead of at the end of this one. So the mark renders an
+anchor carrying the gallery id, and portals its button into the last child of the
+row it finds from that anchor. A card Stash draws no row for at all — no images,
+tags, performers, scenes or organized mark — gets one made for it with the same
+classes, so nothing about it looks unlike the real thing. See `ensurePopoverSlot`.
+
+**The toolbar button is the same trick, for the same reason.** `Gallery` is not a
+registered component, so there is no patch to hang a React child off; a span is
+inserted after the one holding `.organized-button`, anchored on that button
+rather than on a position, because the group's other span is the operation menu
+and its contents vary. See `ensureToolbarHost`.
+
+**Both look their mount point up during render, which on a page's first pass is
+too early** — React has not committed the page yet, so the lookup finds the
+previous page's markup, which on a load is nothing. `useAfterMount` asks for one
+more render once the component has mounted, and that render is the one that can
+see it. One extra render, not a loop.
+
+The write goes through Stash's own `useGalleryUpdate`, the mutation its organized
+button uses, so the cache eviction that makes the rest of the page notice is
+Stash's rather than something re-derived here. Clearing removes the key rather
+than writing an empty value, and removes it *by the spelling the gallery
+actually carries* — so a key that drifted in case is removed rather than left
+behind holding the old mark.
+
 ### Settings
 
 Three settings under **Settings → Plugins → Manga Tools**:
@@ -309,9 +364,11 @@ never filtered, while only the option *list* is filtered.
 ```
 mangaTools/
 ├── src/
-│   ├── mangaTools.tsx        Badge, dropdown, bulk row, settings, patches
+│   ├── mangaTools.tsx        Badge, dropdown, bulk row, censorship, settings, patches
 │   ├── language-filter.tsx   The gallery list's language filter section
 │   ├── languages.ts          Codes, flags, and the name lookup (pure, no DOM)
+│   ├── fields.ts             The custom fields this plugin owns, and how to
+│   │                         read and write one (pure, no DOM)
 │   ├── i18n.ts               The plugin's own strings, per locale
 │   ├── messages/             One JSON catalog per language
 │   └── plugin-api.ts         Types for PluginApi and the namespace above
@@ -329,9 +386,11 @@ with everything it imports into `build/mangaTools.js`, loaded by Stash through a
 plain `<script>` tag — hence `format: "iife"` in `tools/build.mjs`. The source
 files talk to each other by importing, not through the window.
 
-`languages.ts` still publishes itself at `window.MangaTools` as well, because that
-is the handle `tests/smoke.js` uses to call the pure functions directly; the
-plugin itself never reads it.
+`languages.ts` and `fields.ts` still publish themselves at `window.MangaTools` as
+well, because that is the handle `tests/smoke.js` uses to call the pure functions
+directly; the plugin itself never reads it. They share one namespace object, each
+adding its own members — which is why `fields.ts` holds the field *names* while
+`languages.ts` holds the table of language codes they can point at.
 
 `tsc` plays no part in producing that file — it only type-checks, and esbuild
 strips types without reading them. That is why `npm test` runs both; see
@@ -379,10 +438,12 @@ error does not — esbuild strips types without reading them — which is why
 `npm test` runs `tsc` first rather than relying on the bundler.
 
 They cover value normalisation, the unknown-value fallback, route scoping,
-write/clear semantics, badge rendering, settings parse/serialise and the settings
-UI's write path, the filter's read/merge/replace/clear rules and the sidebar
-section it renders, the shape of the bundle (one file, no module syntax, JSX
-really transformed), and the string/CSS surface of every patched component.
+write/clear semantics, badge rendering, the generic field read/write rules, the
+censorship mark's placement in Stash's own popover row and the toolbar button's
+cycle and mutation, settings parse/serialise and the settings UI's write path,
+the filter's read/merge/replace/clear rules and the sidebar section it renders,
+the shape of the bundle (one file, no module syntax, JSX really transformed), and
+the string/CSS surface of every patched component.
 
 Against a real Stash:
 
@@ -402,6 +463,20 @@ Against a real Stash:
    should still be the native text box
 6. **Check the scope**: open any scene or performer edit page — there should be
    **no** language dropdown (the plugin only acts on gallery pages)
+6b. **Check censorship**: on that gallery's **detail** page, the toolbar should
+   have a dimmed question-mark button between the organized box and the `⋮`
+   menu. Its tooltip should read "mark as censored".
+   - Click it: the icon becomes a knight, the tooltip "mark as uncensored", and
+     the mark should appear on the gallery's card in the list behind — at the
+     **end of the row** that shows the image count and tags, not on a line of
+     its own.
+   - Click again: a pawn. Again: back to the question mark, and the mark is gone
+     from the card.
+   - **Check it really cleared**: `/graphql` again — the
+     `plugin.mangaTools.censorship` key should be **absent**, not empty.
+   - **Check the unmarked case is quiet**: most galleries carry no mark, and
+     their cards should look exactly as they did before the plugin was enabled —
+     no empty row, no gap.
 7. **Check filtering**: gallery list → the sidebar should have a **语言** section
    with a search box, **(任意)** and **(无)** first, then every language.
    - **Include**: click a language → it moves above the fold-away list with a
@@ -459,8 +534,8 @@ Open the browser console (F12) first. The plugin logs three kinds of line, and
 
 | Log | Meaning |
 |---|---|
-| `[mangaTools] loaded language tags for N gallery(ies)` | Fetching worked. **N is the number of galleries that will show a badge** — if N is lower than expected, the problem is the data, not the plugin |
-| `[mangaTools] failed to fetch language data, badges will not show. Raw error: …` | The query failed; read the error that follows |
+| `[mangaTools] loaded custom fields for N gallery(ies)` | Fetching worked. **N is the number of galleries carrying either field** — if N is lower than expected, the problem is the data, not the plugin |
+| `[mangaTools] failed to fetch custom fields, marks will not show. Raw error: …` | One of the two queries failed; read the error that follows. Both go out together, so one failing costs both |
 | `[mangaTools] patch active: <component>` | That patch ran for the first time. Fires once per target |
 | `[mangaTools] bulk update: sending the language with the dialog's own update` | The Apollo link merged a bulk edit's language into the outgoing mutation |
 
@@ -498,17 +573,18 @@ leaves a trace:
 Both are fixed, and the smoke test guards against them (it checks the query shape
 and the patch target list).
 
-**The field name is one exact spelling: `plugin.mangaTools.language`.** The query
-filter hard-codes it, so a gallery whose key is spelled differently is not
-*found* by the query and gets no badge, no detail row and no place in the list.
-Reads and writes are both tolerant of case — `pickLanguage` matches any variant,
-and `setLanguage` replaces every variant with the canonical spelling — so a key
-that drifted in case is corrected the first time the plugin writes the gallery.
-Only the *query* is strict, because matching the variants there is impossible:
-GraphQL's `OR` is singular so it cannot be written as an array, and multiple
-criteria inside a `custom_fields` array are ANDed. Entering values through the
-plugin's dropdown never hits any of this, since the dropdown writes the canonical
-spelling.
+**Each field name is one exact spelling: `plugin.mangaTools.language`,
+`plugin.mangaTools.censorship`.** The queries hard-code them, so a gallery whose
+key is spelled differently is not *found* by the query for that field — it gets
+no badge, no card mark, no detail row, and no place in the language list. Reads
+and writes are both tolerant of case — `NS.pickField` matches any variant, and
+`NS.setField` replaces every variant with the canonical spelling — so a key that
+drifted in case is still read, and is corrected the first time the plugin writes
+that gallery. Only the *query* is strict, because matching the variants there is
+impossible: GraphQL's `OR` is singular so it cannot be written as an array, and
+multiple criteria inside a `custom_fields` array are ANDed. Entering values
+through the plugin's own controls never hits any of this, since they write the
+canonical spelling.
 
 ## Known limitations
 
@@ -530,14 +606,20 @@ spelling.
   so that is covered too.
 - **A new field still has to be typed once.** If you create a
   `plugin.mangaTools.language` field by hand instead of using the dropdown, you
-  type the value yourself; with the
-  dropdown there is no field to create — picking a value writes it.
+  type the value yourself; with the dropdown there is no field to create — picking
+  a value writes it. The censorship field has no such problem, since its button
+  only ever appears once a value is already there.
 - **Changes can take up to 60 seconds to appear.** After saving, badges refresh
   from a poll rather than instantly. Changing route (navigating) refreshes
-  immediately.
+  immediately, and a write from the censorship button updates the store directly.
 - **Grid view only.** Of the gallery list's three display modes, only Grid goes
   through `GalleryCard`. List is a table, and Wall uses a different component, so
-  neither shows a badge.
+  neither shows a badge or a censorship mark.
+- **A gallery with no censorship mark is invisible on the card, by design.** The
+  row it would go in belongs to Stash and holds the image count, the tag count
+  and the organized box; adding a fourth button that says "not set" would make
+  every card noisier to say nothing about most of them. The state is still
+  readable on the detail page, one click away.
 - **Every insertion point touches the DOM**, because Stash leaves no React
   insertion point at those positions (see above). Each mount point is an empty
   `<div>` that the plugin finds/creates and repositions while rendering; a React
@@ -548,6 +630,13 @@ spelling.
   anchored differently: the card's list goes inside Stash's own `.criterion-editor`
   box, which exists only while the card is open, and a tag drawn for the card joins
   Stash's tag row, or a row the plugin makes when Stash has none.
+
+  The censorship mark adds one more of each kind: a span next to the gallery
+  card's `.card-popovers` row, named by the gallery id so the right card's row is
+  the one found, and a span after the toolbar's `.organized-button` — see
+  [Censorship](#censorship). Those two go further than the others: the mark is
+  portalled *into Stash's own row* rather than beside it, because the row is a
+  flex container and a sibling would be a line of its own.
 
   **The correction runs in a *layout* effect.** Most of them need a second pass,
   because the anchor's element does not exist while the tree is still being built.
@@ -692,19 +781,30 @@ the `displayName`/`description` in `mangaTools.yml`, which Stash's own settings 
 would render — the plugin replaces that UI with its own, so what is on screen comes
 from the catalogs.
 
-**Changing the field name**: edit `NS.FIELD_NAME` at the end of
-`src/languages.ts`. Everything else reads it from there, including the GraphQL
-query in `getQuery`.
+**Changing a field name**: edit it in `src/fields.ts`. Everything else reads it
+from there, including the GraphQL query in `getQuery`.
 
-**Adding another field** (scanlation group, uncensored, …): the design is
-single-field right now. `pickLanguage` / `setLanguage` are generic read/write
-helpers that can be lifted out, but the badge and the dropdown both assume one
-value.
+**Adding another field** (scanlation group, …): the reading and writing are
+already generic — `NS.pickField(map, name)` and `NS.setField(map, name, value)`,
+used by both fields and by nothing else. What a third field would need is:
+
+1. a name and its values in `src/fields.ts`, plus a `normalize…` if it is not
+   free-form
+2. whatever new mount point it needs — a card mark and a toolbar button are the
+   two shapes that exist, and `ensurePopoverSlot` / `ensureToolbarHost` are the
+   two ways this plugin finds a place to put one
+3. a message id per string and state in `src/messages/*.json`
+4. a line in `refresh()`'s field list, so a gallery carrying only that field is
+   still found by the query that feeds the store
+
+Step 4 is the one that is easy to miss: the store is filled by one query per
+field, and a field not in that list exists in the data and nowhere on screen.
 
 ### Translating
 
-The plugin's own strings are the eight in `src/messages/en.json` — the edit-page
-placeholder and the three settings blocks. Everything else it puts on screen comes
+The plugin's own strings are the fourteen in `src/messages/en.json` — the edit-page
+placeholder, the three settings blocks, and the six names a censorship state has
+(current, and what a click would make it). Everything else it puts on screen comes
 from Stash's messages, which Stash already translates.
 
 **Adding a language** is two lines and a file:
@@ -735,6 +835,14 @@ own, and what it draws comes from the catalogs.
 
 - A dedicated "language" section on the detail page — the value is only shown,
   localised, within the custom fields area
-- Splitting `src/mangaTools.tsx` into several files — it is ~1600 lines, and imports
+- **A censorship filter, bulk-edit row or settings.** The mark exists to be read
+  and set per gallery; a filter for it is the obvious next step, but the language
+  filter is enough machinery to prove the approach first. There is no setting for
+  it either — with two values and a per-gallery control, a switch would be a
+  preference about someone else's library.
+- **Explaining the chess icons anywhere on screen.** See [Censorship](#censorship):
+  the pun is the point for the reader it is aimed at, and a tooltip about a word
+  rather than about the gallery would be worse than none.
+- Splitting `src/mangaTools.tsx` into several files — it is ~2000 lines, and imports
   would now make that possible, but splitting it would be a separate change from
   adding a feature, and keeping them apart makes a regression easy to attribute

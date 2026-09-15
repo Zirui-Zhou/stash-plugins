@@ -273,3 +273,26 @@
      is to beat a utility class that is itself important. */
   display: none !important;
 }
+
+/*
+ * ───────────────────────── Censorship button ─────────────────────────
+ *
+ * The toolbar button's three states. Mirroring Stash's own `.organized-button`
+ * pair (components/Scenes/styles.scss): dimmed when it is not set, brown when it
+ * is. The colours are repeated rather than shared because those rules are
+ * written against Stash's class names — borrowing one would tie this button's
+ * colour to any future change in that rule, which is more coupling than two hex
+ * values are worth.
+ *
+ * Both set states get the same colour on purpose: which of the two you are in is
+ * the icon's job, and colouring them differently would make one of them read as
+ * "less set" than the other.
+ */
+.manga-tools-censorship {
+  color: rgba(191, 204, 214, 0.5);
+}
+
+.manga-tools-censorship.is-censored,
+.manga-tools-censorship.is-uncensored {
+  color: #664c3f;
+}
