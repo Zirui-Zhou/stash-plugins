@@ -999,10 +999,43 @@ export function DialogLanguageFilter(props: {
   var applyPending = React.useRef(false);
 
   /**
-   * Opening the card is Stash's own state change, inside the dialog, so this
-   * component does not re-render with it. The moments that matter — opening the
-   * card, or choosing it from a tag above — are both clicks inside the dialog.
+   * The card's own open state, held only so a change in it can be noticed.
+   *
+   * The card is opened and closed by Stash, inside its own dialog, and React
+   * never tells this component about it. Watching for clicks is not enough: the
+   * click that opens it is not always ours to catch, and there is one route where
+   * there is no click for it at all — the tag above opens the dialog *onto* this
+   * card (`editingCriterion`), and the card body is mounted by an effect inside
+   * the dialog, after the render that mounted this component. Without this the
+   * mount point could be there with nothing drawn into it: a card that opens
+   * empty, with no search box and no languages.
+   *
+   * So the mount point is watched rather than predicted. A mutation callback is a
+   * microtask, which is before the browser paints, and React renders a state
+   * change made outside an event handler synchronously — so the list is in place
+   * before the card is ever on screen.
    */
+  var cardOpen = React.useRef(false);
+  React.useEffect(function () {
+    if (typeof MutationObserver !== "function") return;
+
+    var observer = new MutationObserver(function () {
+      var open = !!dialogEditorBox();
+      if (open === cardOpen.current) return;
+
+      cardOpen.current = open;
+      bump(function (v) {
+        return v + 1;
+      });
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+    return function () {
+      observer.disconnect();
+    };
+  }, []);
+
+  /** Apply, and the two ways Stash itself takes the criterion away */
   React.useEffect(function () {
     function onClick(event: Event) {
       var clicked = event.target as Element | null;
@@ -1039,12 +1072,6 @@ export function DialogLanguageFilter(props: {
         setChoice(EMPTY_SELECTION);
         setQuery("");
       }
-
-      window.setTimeout(function () {
-        bump(function (v) {
-          return v + 1;
-        });
-      }, 0);
     }
 
     document.addEventListener("click", onClick, true);

@@ -378,6 +378,21 @@ global.window = {
   // as it would be on a touch device.
   matchMedia: () => ({ matches: false }),
 };
+// The plugin watches the DOM for the filter dialog's card, because opening it is
+// Stash's state change and React never reports it — see the observer in
+// language-filter.tsx. There are no mutations to observe here, and the state
+// setters below are inert, so this records the wiring and nothing more: which
+// node is watched, and whether the callback survives being called.
+const observed = [];
+global.MutationObserver = function MutationObserver(callback) {
+  this.callback = callback;
+  this.observe = (target, options) => observed.push({ target, options });
+  this.disconnect = () => {};
+};
+
+/** Clicks the plugin listens for, captured the way a real document would */
+const capturedClicks = [];
+
 global.document = {
   visibilityState: "visible",
   body: documentRoot,
@@ -387,6 +402,8 @@ global.document = {
   // understands, so a test sets the tags this should return and asserts on what
   // the plugin did with them. Defaults to none, so every other render is inert.
   querySelectorAll: (sel) => tagQuery(sel),
+  addEventListener: (name, fn, capture) => capturedClicks.push({ name, fn, capture }),
+  removeEventListener: () => {},
 };
 let tagQuery = () => [];
 
@@ -1748,6 +1765,44 @@ NS.languageFilterQuery(dialogModel, { modifier: "", included: ["ja"], excluded: 
 assert.strictEqual(encodedCriteria[0][0].criterionOption.type, "language",
   "the sidebar should create the criterion the dialog's card represents");
 console.log("✓ filter dialog card (registered once / usable criterion / stored as a custom field)");
+
+// ── 10h. The card component itself ─────────────────────────────────
+// Nothing else renders it, and everything it does happens through DOM Stash
+// owns, so this is where the two watchers it installs are pinned down: the click
+// listener that catches Apply and Stash's own remove buttons, and the observer
+// that notices the card opening — the latter being the only route by which this
+// component can draw into a card Stash expanded *after* the render that mounted
+// it. Which is what a click on the tag does, and what left the card empty.
+//
+// The list it draws cannot be asserted here: the fake DOM runs no selectors
+// beyond the handful querySelector understands, so the card's box is never
+// found, and the stub's state setters are inert, so nothing re-renders anyway.
+const renderDialogCard = (conditions) => {
+  const el = call("GalleryList", {
+    filter: makeFilterModel(conditions ? [customFieldsCriterion(conditions)] : []),
+    selectedIds: new Set(),
+  }).props.children[1];
+  return el.type(el.props);
+};
+renderDialogCard([{ field: "language", modifier: "EQUALS", value: ["ja"] }]);
+
+assert.strictEqual(observed.length, 1, "the card should watch the DOM once");
+assert.strictEqual(observed[0].target, global.document.body,
+  "…on the document, because Stash mounts the dialog outside the list");
+assert.strictEqual(observed[0].options.subtree, true,
+  "…and into what is inside the dialog, not just the dialog itself");
+
+const clicks = capturedClicks.filter((l) => l.name === "click");
+assert.strictEqual(clicks.length, 1, "and listen for clicks, once");
+assert.strictEqual(clicks[0].capture, true,
+  "…on the capture phase, which is what makes Apply run before React's own render");
+
+// The listener has to survive whatever the document hands it
+assert.doesNotThrow(() => {
+  clicks[0].fn({ target: null });
+  clicks[0].fn({ target: {} });
+});
+console.log("✓ dialog card component (click listener / DOM watcher)");
 
 // ── 10g. What Stash does with the criterion, and with its tag ──────
 // The criterion is stored as a custom field (see 10e), which left Stash treating
