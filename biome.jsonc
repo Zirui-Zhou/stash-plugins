@@ -23,11 +23,6 @@
     }
   },
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
-  "files": {
-    // The two example*.html files are reference material — DOM pasted out of a
-    // running Stash to work against — not code that ships or is maintained.
-    "includes": ["**", "!plugins/*/example*.html"]
-  },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",

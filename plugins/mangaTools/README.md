@@ -197,14 +197,16 @@ language picked into a dialog that had none when it opened (see
 wired together, so the ✗ on Stash's tag means the same thing as the ✗ on this
 plugin's.
 
-**Applying merges into what Apply committed, not into the list's model.** Stash
-commits the dialog's *copy*, and the model the plugin is handed is the list's, which
-only catches up a commit later — Stash's own hook re-reads the query string on the
-navigation Apply causes. Merging into the model as it stands would therefore merge
-into the filter as it was *before the dialog was opened*, quietly undoing the rest
-of what the dialog did: a criterion removed there would come back, and one added
-there would be lost. So the merge re-reads the query string Stash has just written,
-through the same public decode Stash's hook uses (see `filterFromQuery`).
+**Applying waits for Apply to reach the list's filter.** Stash commits the dialog's
+*copy*, and the model the plugin is handed is the list's, which only becomes that
+copy a commit later, when Stash's own hook re-reads the query string Apply wrote.
+So the merge waits for the model to change and merges into the new one. That is what
+keeps the rest of the dialog: by then the filter holds everything the dialog did, so
+a criterion removed there stays removed.
+
+The wait has a deadline, because pressing Apply does not necessarily commit anything
+at all — choosing a language and nothing else leaves Stash's own filter untouched,
+so nothing arrives to wait for. See [Known limitations](#known-limitations).
 
 **It works by rewriting the URL.** Stash keeps its filter in the `c` query
 parameter, and its list hook re-reads that on every navigation. So a filter change
@@ -506,9 +508,13 @@ values through the plugin's dropdown never hits this, since that writes lowercas
   field into that dialog, since the dialog is not patchable and keeps its pending
   values in private state. If a future Stash makes `EditGalleriesDialog` a
   `PatchComponent`, this should be replaced with a normal patch.
-- **The filter UI is still plain text**, with no dropdown. Stash's
-  `CustomFieldCriterionEditor` is not a patchable component, so the plugin cannot
-  replace it without changing core code.
+- **The dialog's language card is a replacement built around Stash, not inside it.**
+  `CustomFieldCriterionEditor` is not a patchable component, so the card cannot be
+  handed to Stash as an editor: the plugin draws its own list into the card and
+  hides Stash's, by CSS, on the one card whose `data-type` is ours. The criterion
+  it edits is still an ordinary custom field, so the two stay consistent — and if
+  Stash ever renames that attribute, its editor simply shows up again beside the
+  list rather than anything breaking.
 - **The language dropdown only appears on gallery pages.** `CustomFieldsInput` is
   shared by every entity's edit panel, so the plugin scopes itself by URL path
   (`/galleries`). The bulk gallery edit dialog opens over the gallery list page,
@@ -522,20 +528,23 @@ values through the plugin's dropdown never hits this, since that writes lowercas
 - **Grid view only.** Of the gallery list's three display modes, only Grid goes
   through `GalleryCard`. List is a table, and Wall uses a different component, so
   neither shows a badge.
-- **All four insertion points touch the DOM**, because Stash leaves no React
+- **Every insertion point touches the DOM**, because Stash leaves no React
   insertion point at those positions (see above). Each mount point is an empty
   `<div>` that the plugin finds/creates and repositions while rendering; a React
   re-render that displaces it gets corrected automatically. The anchors are
   `.gallery-details` (detail page), `.form-group[data-field="studio_id"]` (edit
   page — confirmed to exist on v0.31.1), `[data-field="studio"]` (bulk dialog) and
-  `.sidebar-saved-filters` (filter sidebar).
+  `.sidebar-saved-filters` (filter sidebar). The filter dialog adds two more,
+  anchored differently: the card's list goes inside Stash's own `.criterion-editor`
+  box, which exists only while the card is open, and a tag drawn for the card joins
+  Stash's tag row, or a row the plugin makes when Stash has none.
 
-  **The correction runs in a *layout* effect.** Three of the four need a second
-  pass, because the anchor's element does not exist while the tree is still being
-  built. A plain effect is flushed after the browser has painted, so the row or
-  section would be missing for a frame and everything below it would jump. Layout
-  effects run after React writes the DOM but before paint, which is the only
-  window where the correction is invisible.
+  **The correction runs in a *layout* effect.** Most of them need a second pass,
+  because the anchor's element does not exist while the tree is still being built.
+  A plain effect is flushed after the browser has painted, so the row or section
+  would be missing for a frame and everything below it would jump. Layout effects
+  run after React writes the DOM but before paint, which is the only window where
+  the correction is invisible.
 - **The sidebar filter could not be moved off its anchor.** Stash registers
   `FilteredGalleryList.SidebarSections` — a patchable wrapper around its own
   sidebar filter sections — which looks like the natural place to render this
@@ -566,11 +575,11 @@ values through the plugin's dropdown never hits this, since that writes lowercas
   the gallery list has rendered, so the tag shows Stash's own wording
   (`language (custom field) is ja`) for as long as the first query takes. See
   [Filtering](#filtering).
-- **The dialog's tag is one plugin state behind nothing, but it is a mirror.** The
-  row inside the dialog is worded from the card rather than from Stash's copy, and
-  the ✗ on it clears the card — so a click on either is applied on **Apply**, and
-  Cancel discards both. That is deliberate: Stash's copy cannot be written to from
-  a plugin, so the card is the one that has to be the truth.
+- **The dialog's tag mirrors the card, not Stash's copy.** The row inside the dialog
+  is worded from the card, and the ✗ on it clears the card — so a click on either is
+  applied on **Apply**, and Cancel discards both. That is deliberate: Stash's copy
+  cannot be written to from a plugin, so the card is the one that has to be the
+  truth.
 - **A language chosen in the dialog is applied on an Apply that changed something
   of Stash's, and not otherwise.** The merge that carries the card's selection runs
   once the list's filter has become what Apply committed — and Apply commits the
@@ -607,11 +616,11 @@ it is one-to-many only one can be picked:
 - `en` uses the UK flag (`gb`), changeable to `us`
 - Easy mistakes: Vietnam is `vn`, not `vi` (that one is the US Virgin Islands)
 
-**Chinese has only two entries, simplified and traditional.** Anything that does
-not specify (`zh` / `中文` / `chinese` / `汉化`…) is treated as `zh-Hans`. A
+**Chinese has only two entries, simplified and traditional.** A
 "Chinese (unspecified)" entry existed briefly, but it shared the same flag as
-simplified and was indistinguishable in both icon and name, adding ambiguity
-rather than removing it, so it was dropped.
+simplified and was indistinguishable in both icon and name, adding ambiguity rather
+than removing it, so it was dropped — and a bare `zh` is not mapped onto `zh-Hans`
+either, for the same reason: the plugin does not guess which one a value meant.
 
 **Flags are not emoji.** Windows' Segoe UI Emoji has no flag glyphs, so a flag
 emoji degrades into a pair of boxed letters there. This is why the plugin uses
@@ -658,8 +667,8 @@ the settings headings and descriptions — remain hard-coded English, so the
 surrounding UI does not follow the language the names do.
 
 **Changing the field name**: edit `NS.FIELD_NAME` at the end of
-`src/languages.ts`. Note the GraphQL query in `getQuery`
-(`src/mangaTools.tsx`) hard-codes `"language"`, so that has to change too.
+`src/languages.ts`. Everything else reads it from there, including the GraphQL
+query in `getQuery`.
 
 **Adding another field** (scanlation group, uncensored, …): the design is
 single-field right now. `pickLanguage` / `setLanguage` are generic read/write
@@ -670,6 +679,6 @@ value.
 
 - A dedicated "language" section on the detail page — the value is only shown,
   localised, within the custom fields area
-- Splitting `src/mangaTools.tsx` into several files — it is ~800 lines, and imports
+- Splitting `src/mangaTools.tsx` into several files — it is ~1600 lines, and imports
   would now make that possible, but splitting it would be a separate change from
   adding a feature, and keeping them apart makes a regression easy to attribute
