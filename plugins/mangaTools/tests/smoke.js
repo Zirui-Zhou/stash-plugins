@@ -250,6 +250,62 @@ global.document = {
   querySelector: (sel) => documentRoot.querySelector(sel),
 };
 
+// ── Intl.DisplayNames stub ─────────────────────────────────────────
+// The plugin takes language names from the platform instead of carrying a
+// table, so this is where the names come from. It is a stub rather than the
+// real thing — Node has one — for three reasons: the expected strings would
+// otherwise drift with the Node version, the absent-API and throwing paths
+// cannot be provoked from a working implementation, and, most importantly,
+// only a stub can show *which locale list* the plugin asked for. That last one
+// is the guarantee that names follow Stash's language setting and never the
+// browser's, so it is worth being able to assert it.
+const FAKE_NAMES = {
+  ja: {
+    "en-US": "Japanese", en: "Japanese", "zh-CN": "日语", "zh-TW": "日文",
+    "ja-JP": "日本語", "de-DE": "Japanisch",
+  },
+  "zh-Hans": {
+    "en-US": "Simplified Chinese", en: "Simplified Chinese", "zh-CN": "简体中文",
+    "zh-TW": "簡體中文", "ja-JP": "簡体中国語", "de-DE": "Chinesisch (vereinfacht)",
+  },
+  "zh-Hant": {
+    "en-US": "Traditional Chinese", en: "Traditional Chinese", "zh-CN": "繁体中文",
+    "zh-TW": "繁體中文", "ja-JP": "繁体中国語", "de-DE": "Chinesisch (traditionell)",
+  },
+  en: { "en-US": "English", en: "English", "zh-CN": "英语", "ja-JP": "英語" },
+  id: { "en-US": "Indonesian", en: "Indonesian", "zh-CN": "印度尼西亚语" },
+};
+
+/** Every locale the stub has any data for, so "unsupported" can be modelled */
+const FAKE_LOCALES = new Set();
+Object.keys(FAKE_NAMES).forEach((code) =>
+  Object.keys(FAKE_NAMES[code]).forEach((loc) => FAKE_LOCALES.add(loc))
+);
+
+/** Every construction the plugin performed: { locales, options } */
+const displayNamesCalls = [];
+/** Set by a test to make every construction throw, as a malformed tag would */
+let displayNamesThrows = false;
+
+function FakeDisplayNames(locales, options) {
+  if (displayNamesThrows) throw new RangeError("malformed language tag");
+  this.locales = locales;
+  this.options = options;
+  this.resolvedLocale =
+    locales.find((l) => FAKE_LOCALES.has(l)) || locales[locales.length - 1];
+  displayNamesCalls.push({ locales: locales.slice(), options });
+}
+// of() echoes a code it cannot resolve, exactly as the real implementation does
+FakeDisplayNames.prototype.of = function (code) {
+  const perLocale = FAKE_NAMES[code];
+  return (perLocale && perLocale[this.resolvedLocale]) || code;
+};
+
+/** The genuine article, kept so the "engine has no DisplayNames" path can be
+ *  tested by removing it and then putting it back. */
+const realDisplayNames = global.Intl.DisplayNames;
+global.Intl.DisplayNames = FakeDisplayNames;
+
 // ── Load the plugin ────────────────────────────────────────────────
 // One file, not two: the bundle has languages.ts inlined into it. PluginApi has
 // to be on the window first, because the bundle reads it as it loads — the same
@@ -330,27 +386,77 @@ cases.forEach(([input, want]) =>
 );
 console.log(`✓ normalisation: all ${cases.length} cases pass`);
 
-// ── 2. UI locale parsing (aligned with Stash's getLocaleCode) ──────
-assert.strictEqual(NS.localeCode("zh-CN"), "zh");
-assert.strictEqual(NS.localeCode("zh-TW"), "tw");
-assert.strictEqual(NS.localeCode("en-US"), "en");
-assert.strictEqual(NS.localeCode("ja-JP"), "ja");
-assert.strictEqual(NS.localeCode("ko-KR"), "ko");
-assert.strictEqual(NS.localeCode(""), "en", "empty locale should fall back to English");
-assert.strictEqual(NS.localeCode(undefined), "en");
-console.log("✓ localeCode");
+// ── 2. The locale handed to Intl.DisplayNames ──────────────────────
+// Names come from the platform now, so what this plugin is responsible for is
+// *which locale it asks for*. It must be Stash's UI locale (react-intl's,
+// which Stash sets from Configuration.interface.language) and it must be sent
+// with English beside it: given a locale on its own, an engine that does not
+// know it resolves against the runtime's default locale — the browser's —
+// silently, which would quietly break "names follow the Stash language".
+/** The most recent construction the plugin performed */
+const lastDisplayNames = () => displayNamesCalls[displayNamesCalls.length - 1];
 
-// ── 3. Localised names (the expected strings are data, not prose) ──
 assert.strictEqual(NS.name("ja", "zh-CN"), "日语");
-assert.strictEqual(NS.name("ja", "zh-TW"), "日語");
+assert.deepStrictEqual(lastDisplayNames().locales, ["zh-CN", "en"],
+  "Stash's locale first, English second — never the locale alone");
+assert.strictEqual(lastDisplayNames().options.type, "language");
+
+// A different UI locale reaches the platform, and changes the answer with it
+assert.strictEqual(NS.name("ja", "ja-JP"), "日本語");
+assert.deepStrictEqual(lastDisplayNames().locales, ["ja-JP", "en"]);
+
+// One formatter per locale, not per lookup: the dropdown asks for all 14 names
+// on every render, so rebuilding per call would construct 14 of them per render.
+const callsBefore = displayNamesCalls.length;
+NS.name("ja", "zh-CN");
+NS.name("zh-Hant", "zh-CN");
+NS.name("en", "zh-CN");
+assert.strictEqual(displayNamesCalls.length, callsBefore,
+  "a warm locale must reuse its formatter");
+console.log("✓ Intl.DisplayNames is asked for [Stash locale, English], once per locale");
+
+// ── 3. Localised names ─────────────────────────────────────────────
+// Still "canonical code → name looked up when rendering → raw value otherwise",
+// but the names are the platform's, so the expected strings here are the
+// stub's — they describe the handoff, not a table this plugin maintains.
+assert.strictEqual(NS.name("ja", "zh-CN"), "日语");
+assert.strictEqual(NS.name("ja", "zh-TW"), "日文", "the Taiwan wording, which the old table got wrong");
 assert.strictEqual(NS.name("ja", "en-US"), "Japanese");
 assert.strictEqual(NS.name("ja", "ja-JP"), "日本語");
 assert.strictEqual(NS.name("zh-Hant", "zh-CN"), "繁体中文");
 assert.strictEqual(NS.name("ZH-HANS", "zh-CN"), "简体中文", "non-canonical case still resolves");
 assert.strictEqual(NS.name("chs", "zh-CN"), "chs", "non-canonical spelling returned as-is, never guessed");
-assert.strictEqual(NS.name("ja", "de-DE"), "Japanese", "uncovered UI language falls back to English");
+assert.strictEqual(NS.name("ja", "de-DE"), "Japanisch",
+  "a UI language the old four-locale table had no entry for now resolves");
 assert.strictEqual(NS.name("klingon", "zh-CN"), "klingon", "unknown code returned as-is");
-console.log("✓ localised names (zh / tw / en / ja + fallback)");
+
+// Recognition stays ours. DisplayNames would happily name "chi" and "jpn"
+// (ISO 639-2), and those must keep reading as unrecognised data.
+assert.strictEqual(NS.name("chi", "zh-CN"), "chi", "alpha-3 is not one of our codes");
+assert.strictEqual(NS.name("jpn", "ja-JP"), "jpn", "…even in its own UI language");
+
+// Falsy locale: ask for the fallback rather than for "" (which throws)
+assert.strictEqual(NS.name("ja", ""), "Japanese");
+assert.strictEqual(NS.name("ja"), "Japanese", "no locale at all still yields a name");
+console.log("✓ localised names (any UI language, canonical recognition, unknown echoed)");
+
+// ── 3b. Degrading when the platform cannot help ────────────────────
+// Two ways, both of which must leave the raw code rather than throwing or
+// inventing English. Each uses a UI locale no earlier test has asked for, so
+// the plugin's per-locale cache cannot mask the failure.
+displayNamesThrows = true;
+assert.strictEqual(NS.name("ja", "pl-PL"), "ja", "a rejected locale degrades to the code");
+displayNamesThrows = false;
+
+global.Intl.DisplayNames = undefined;
+assert.strictEqual(NS.name("ja", "nl-NL"), "ja", "no DisplayNames at all degrades to the code");
+assert.strictEqual(NS.describe("zh-Hant", "nl-NL").name, "zh-Hant",
+  "…and the rest of the description still renders");
+global.Intl.DisplayNames = FakeDisplayNames;
+
+assert.strictEqual(typeof realDisplayNames, "function",
+  "precondition: the runtime has a real DisplayNames, so the stub is the only difference");
+console.log("✓ degraded paths (rejected locale / absent API) fall back to the code");
 
 // ── 4. describe: code + flag + name ────────────────────────────────
 let d = NS.describe("zh-Hans", "zh-CN");
@@ -387,15 +493,26 @@ assert.strictEqual(NS.describe("", "zh-CN"), null);
 assert.strictEqual(NS.describe(null, "zh-CN"), null);
 console.log("✓ describe (flag mapping, case tolerance, unknown values)");
 
-// ── 5. Every language has a flag and names in all four UI locales ──
+// ── 5. Every language has a flag, and every code is offered exactly once ──
+// The table is only codes and flags now; there is nothing to check for names,
+// because the plugin no longer holds any. What is worth checking is that the
+// dropdown's order and the table agree — a code in ORDER with no entry is
+// silently dropped by languageOptions, and an entry missing from ORDER is
+// silently hidden from the dropdown.
 Object.keys(NS.LANGUAGES).forEach((code) => {
   const entry = NS.LANGUAGES[code];
   assert.ok(entry.flag && entry.flag.length === 2, `${code} is missing a flag code`);
-  ["zh", "tw", "en", "ja"].forEach((loc) => {
-    assert.ok(entry.names[loc], `${code} is missing the ${loc} name`);
-  });
+  assert.ok(NS.ORDER.includes(code), `${code} has a flag but is missing from ORDER`);
 });
-console.log(`✓ language table complete (${Object.keys(NS.LANGUAGES).length} languages × 4 UI locales)`);
+NS.ORDER.forEach((code) => {
+  assert.ok(NS.LANGUAGES[code], `${code} is in ORDER but has no table entry`);
+});
+assert.strictEqual(
+  NS.ORDER.length,
+  Object.keys(NS.LANGUAGES).length,
+  "ORDER and the table should list the same languages"
+);
+console.log(`✓ language table complete (${Object.keys(NS.LANGUAGES).length} codes × flag, ORDER in step)`);
 
 // ── 6. Patch registration ──────────────────────────────────────────
 // Note it is CustomFields (plural, the container), not CustomField — the latter
@@ -864,9 +981,11 @@ setTimeout(() => {
   assert.strictEqual(unknown.props.children, "klingon");
   assert.strictEqual(flagOf("3"), null, "an unknown value must not render a flag");
 
-  // Follows the UI language
+  // Follows the UI language, which is Stash's setting rather than the browser's,
+  // so the name changes when that changes. (The locale list itself is pinned in
+  // section 2; here it is only the visible consequence that matters.)
   currentLocale = "ja-JP";
-  assert.strictEqual(badgeOf("1").props["aria-label"], "中国語（簡体）", "should follow the UI language");
+  assert.strictEqual(badgeOf("1").props["aria-label"], "簡体中国語", "should follow the UI language");
   currentLocale = "zh-CN";
   console.log("✓ badges (flag / case tolerance / unknown / no field / UI language)");
 

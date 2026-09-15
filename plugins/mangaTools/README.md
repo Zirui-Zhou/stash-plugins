@@ -73,6 +73,10 @@ takes for performer nationality (store `US`, display `United States`).
 The semantic meaning is **the language of the comic itself**, not whether it is
 raw or translated.
 
+The name to display for that code is looked up through `Intl.DisplayNames` at
+render time, so it follows Stash's UI language rather than being stored or
+shipped — see [Extending](#extending) for why, and for what that costs.
+
 #### Bulk edit
 
 Setting one language across a whole selection is the reason this row exists, and
@@ -190,7 +194,7 @@ never filtered, while only the option *list* is filtered.
 mangaTools/
 ├── src/
 │   ├── mangaTools.tsx     Badge, dropdown, bulk row, settings, patches
-│   ├── languages.ts       Language table (pure data, swappable on its own)
+│   ├── languages.ts       Codes, flags, and the name lookup (pure, no DOM)
 │   └── plugin-api.ts      Types for PluginApi and the namespace above
 ├── tests/
 │   └── smoke.js           Smoke test, run by `npm test` from the repo root
@@ -379,10 +383,11 @@ values through the plugin's dropdown never hits this, since that writes lowercas
 
 ## Extending
 
-**Adding a language**: edit `NS.LANGUAGES` in `src/languages.ts`. Each entry needs
-two fields — `flag` (a flag-icons alpha-2 **country** code) and `names` (names
-grouped by UI language; zh / tw / en / ja are covered today). Add to `NS.ORDER` if
-you want a different sort position.
+**Adding a language**: add one line to `NS.LANGUAGES` in `src/languages.ts` — a
+canonical code and a `flag` (a flag-icons alpha-2 **country** code) — and add the
+code to `NS.ORDER` for its sort position. That is the whole change: the name comes
+from `Intl.DisplayNames`, so there is nothing to translate. A code `ORDER` and the
+table disagree on is caught by the smoke test.
 
 **Only canonical codes are recognised.** There is no alias mapping: values only
 ever come from this plugin's own dropdown, so they are canonical by construction.
@@ -409,19 +414,37 @@ rather than removing it, so it was dropped.
 emoji degrades into a pair of boxed letters there. This is why the plugin uses
 `flag-icons` CSS.
 
-**i18n coverage for names is limited.** Stash itself gets its nationality names
-from `i18n-iso-countries`, covering ~40 UI languages; this table is hand-written
-and covers 4, falling back to English. Full coverage would mean pulling in
-`i18n-iso-languages` and serving its locale files through `ui.assets` at
-`/plugin/{id}/assets/`, fetched at runtime — or, now that the plugin is bundled,
-importing them and letting them be inlined into `build/mangaTools.js`.
+**Language names come from the platform, not from this plugin.** `NS.name` asks
+`Intl.DisplayNames` for the name in the current UI locale, so all ~90 locales the
+engine's CLDR knows are covered rather than the four that used to be listed here,
+and adding a language needs no translation. Three consequences worth knowing:
 
-The bundler is what removed the blocker here: while Stash loaded the source files
-as plain scripts, an `import` compiled and then failed in the browser, so no npm
-package could be used at all. It is also why full i18n has not been done yet: the
-plugin's own strings (`Select language…`, the settings headings and descriptions)
-are still hard-coded English, and localising the language *names* while leaving
-the surrounding UI in English would be half a feature.
+- **The wording is CLDR's, not ours.** Where it differs from what the old
+  hand-written table said, CLDR wins — `id` in Chinese is 印度尼西亚语 rather than
+  our shorter 印尼语. It can also shift when a browser updates its CLDR data.
+- **The locale is Stash's, never the browser's.** The plugin passes react-intl's
+  locale, which Stash sets from `Configuration.interface.language`. It also passes
+  English as a second entry in the locale list, because an engine that does not
+  know a locale would otherwise resolve against the *runtime's* default — the
+  browser's — silently. The smoke test pins that pair.
+- **Recognition stays this plugin's job.** `Intl.DisplayNames` would happily name
+  `chi`, `jpn` and `zh-TW`; those must keep reading as unrecognised data, so only
+  codes in `NS.LANGUAGES` are ever looked up.
+
+An engine without `DisplayNames` (older than Chrome 81 / Firefox 86 / Safari
+14.1) is not a crash: names degrade to the raw code, which is what an unrecognised
+value shows anyway.
+
+A library was considered and rejected. `@cospired/i18n-iso-languages` is the
+maintained option — MIT, zero dependencies — but it does not understand BCP 47
+script subtags, so `zh-Hans` and `zh-Hant` return `undefined`, exactly the two
+languages the script-subtag design exists for. It also ships no `zh-TW` locale,
+and its ~4.8 KB per locale × 32 locales would be ~140 KB against a 31 KB bundle,
+to cover fewer locales than the platform already provides for nothing.
+
+**This is still only half of i18n.** The plugin's own strings — `Select language…`,
+the settings headings and descriptions — remain hard-coded English, so the
+surrounding UI does not follow the language the names do.
 
 **Changing the field name**: edit `NS.FIELD_NAME` at the end of
 `src/languages.ts`. Note the GraphQL query in `getQuery`

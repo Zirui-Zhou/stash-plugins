@@ -20,8 +20,28 @@ import type { ComponentType, ReactNode, ReactPortal } from "react";
 export interface MangaToolsLanguage {
   /** flag-icons alpha-2 *country* code, not a language code */
   flag: string;
-  /** Localised names, keyed by Stash UI locale (see localeCode) */
-  names: { [locale: string]: string };
+}
+
+/**
+ * The slice of Intl.DisplayNames this plugin uses.
+ *
+ * Declared here rather than taken from lib.dom because DisplayNames is ES2021
+ * and this project compiles against ES2019 — raising the target to reach it
+ * would remove the downleveling safety net for the rest of the bundle. See
+ * displayNamesFor in languages.ts, which looks the constructor up at runtime
+ * and treats its absence as a normal case.
+ */
+export interface MangaToolsDisplayNames {
+  /** Echoes the code back when it cannot resolve it */
+  of(code: string): string | undefined;
+}
+
+/** Its constructor. The locale list is ordered by preference. */
+export interface MangaToolsDisplayNamesCtor {
+  new (
+    locales: string[],
+    options: { type: "language" }
+  ): MangaToolsDisplayNames;
 }
 
 /** Result of MangaTools.describe() */
@@ -47,7 +67,6 @@ export interface MangaToolsNamespace {
   FALLBACK_LOCALE: string;
   FIELD_NAME: string;
 
-  localeCode(locale?: string | null): string;
   findCanonical(code?: string | null): string;
   normalize(raw: unknown): string;
   name(code: unknown, locale?: string | null): string;

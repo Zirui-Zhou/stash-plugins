@@ -29,6 +29,8 @@
  */
 import type {
   MangaToolsDescription,
+  MangaToolsDisplayNames,
+  MangaToolsDisplayNamesCtor,
   MangaToolsNamespace,
   MangaToolsOption,
 } from "./plugin-api";
@@ -38,92 +40,39 @@ import type {
 var NS = (window.MangaTools = window.MangaTools || ({} as MangaToolsNamespace));
 
 /**
- * Canonical code → { flag, names }
+ * Canonical code → { flag }
  *
  * Codes follow ISO 639-1. Chinese needs a simplified/traditional distinction,
  * so it uses BCP 47 script subtags (zh-Hans / zh-Hant) — ISO 639-1 alone
  * cannot express that, which is the other way this differs from nationality.
+ *
+ * This object is the plugin's entire opinionated vocabulary, and it is short on
+ * purpose: which languages the dropdown offers, and nothing else. The names are
+ * not here — they come from Intl.DisplayNames, so they follow Stash's UI
+ * language and cover every locale the engine knows rather than the four this
+ * table used to carry. See NS.name.
  *
  * `flag` is an alpha-2 **country** code for flag-icons, not a language code.
  * The language-to-country relation is many-to-one; each entry picks the most
  * common country and that one line can be changed if you disagree. Watch out
  * for the easy mistakes: Vietnam is `vn`, not `vi` (that one is the US Virgin
  * Islands).
- *
- * `names` is keyed by Stash's UI locale (see NS.localeCode) and falls back to
- * English. Only the common UI languages are covered here — Stash ships around
- * 40, and this is a hand-written table, so matching them all is not realistic.
- * Add more keys to this object if you need them.
  */
 NS.LANGUAGES = {
-  ja: {
-    flag: "jp",
-    names: { zh: "日语", tw: "日語", en: "Japanese", ja: "日本語" },
-  },
-  "zh-Hans": {
-    flag: "cn",
-    names: {
-      zh: "简体中文",
-      tw: "簡體中文",
-      en: "Chinese (Simplified)",
-      ja: "中国語（簡体）",
-    },
-  },
-  "zh-Hant": {
-    // Traditional Chinese is used in Taiwan, Hong Kong and Macau. This picks
-    // the Taiwan flag; change the one line to "hk" if you prefer.
-    flag: "tw",
-    names: {
-      zh: "繁体中文",
-      tw: "繁體中文",
-      en: "Chinese (Traditional)",
-      ja: "中国語（繁体）",
-    },
-  },
-  en: {
-    flag: "gb",
-    names: { zh: "英语", tw: "英語", en: "English", ja: "英語" },
-  },
-  ko: {
-    flag: "kr",
-    names: { zh: "韩语", tw: "韓語", en: "Korean", ja: "韓国語" },
-  },
-  es: {
-    flag: "es",
-    names: { zh: "西班牙语", tw: "西班牙語", en: "Spanish", ja: "スペイン語" },
-  },
-  fr: {
-    flag: "fr",
-    names: { zh: "法语", tw: "法語", en: "French", ja: "フランス語" },
-  },
-  de: {
-    flag: "de",
-    names: { zh: "德语", tw: "德語", en: "German", ja: "ドイツ語" },
-  },
-  it: {
-    flag: "it",
-    names: { zh: "意大利语", tw: "義大利語", en: "Italian", ja: "イタリア語" },
-  },
-  pt: {
-    flag: "pt",
-    names: { zh: "葡萄牙语", tw: "葡萄牙語", en: "Portuguese", ja: "ポルトガル語" },
-  },
-  ru: {
-    flag: "ru",
-    names: { zh: "俄语", tw: "俄語", en: "Russian", ja: "ロシア語" },
-  },
-  th: {
-    flag: "th",
-    names: { zh: "泰语", tw: "泰語", en: "Thai", ja: "タイ語" },
-  },
-  vi: {
-    flag: "vn",
-    names: { zh: "越南语", tw: "越南語", en: "Vietnamese", ja: "ベトナム語" },
-  },
-  id: {
-    flag: "id",
-    names: { zh: "印尼语", tw: "印尼語", en: "Indonesian", ja: "インドネシア語" },
-  },
+  ja: { flag: "jp" },
+  "zh-Hans": { flag: "cn" },
+  "zh-Hant": { flag: "tw" },
+  en: { flag: "gb" },
+  ko: { flag: "kr" },
+  es: { flag: "es" },
+  fr: { flag: "fr" },
+  de: { flag: "de" },
+  it: { flag: "it" },
+  pt: { flag: "pt" },
+  ru: { flag: "ru" },
+  th: { flag: "th" },
+  vi: { flag: "vn" },
+  id: { flag: "id" },
 };
 
 /**
@@ -147,27 +96,74 @@ NS.ORDER = [
 ];
 
 /**
- * UI language to fall back to when an entry has no name for the current one.
+ * UI language to fall back to when a name is not available in the requested one.
+ *
+ * It is no longer a key into a table of ours — there is no name table any more.
+ * It is the second entry in the locale list handed to Intl.DisplayNames, which
+ * is what keeps the fallback honest: given only the requested locale, an engine
+ * that does not know it resolves silently against the *runtime's* default
+ * locale, i.e. the browser's, which is a different thing from Stash's UI
+ * language and would be invisible if it happened.
+ *
  * The grey background used for unrecognised values lives in mangaTools.css
  * under .is-unknown, not here.
  */
 NS.FALLBACK_LOCALE = "en";
 
 /**
- * Normalises a react-intl locale — "zh-CN" / "zh-TW" / "en-US" / "ja-JP" — into
- * a key of `names`.
+ * One constructed Intl.DisplayNames per locale.
  *
- * Deliberately matches Stash's getLocaleCode (src/locales/index.ts):
- * zh-CN → zh, zh-TW → tw, otherwise the first two characters. Keeping them
- * aligned means this table can follow Stash's own locale files.
+ * Held at module scope because the dropdown asks for all 14 names on every
+ * render, and constructing a formatter is by far the expensive part of that.
  */
-NS.localeCode = function (locale?: string | null): string {
-  if (!locale) return NS.FALLBACK_LOCALE;
-  var code = String(locale);
-  if (code === "zh-CN") return "zh";
-  if (code === "zh-TW") return "tw";
-  return code.slice(0, 2);
-};
+var displayNamesCache: { [locale: string]: MangaToolsDisplayNames | null } = {};
+
+/**
+ * Builds an Intl.DisplayNames, or returns null if the engine rejects the list.
+ *
+ * Any malformed entry makes the whole list invalid — a valid fallback beside it
+ * does not rescue it — so the fallback has to be requested on its own. That is
+ * what the second call is for. Stash supports user-supplied custom locales
+ * (App.tsx fetches "customlocales"), and one of those could carry a tag the
+ * engine does not accept.
+ */
+function buildDisplayNames(
+  ctor: MangaToolsDisplayNamesCtor,
+  locales: string[]
+): MangaToolsDisplayNames | null {
+  try {
+    return new ctor(locales, { type: "language" });
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Intl.DisplayNames for a UI locale, or null when the engine has none.
+ *
+ * The constructor is looked up through a cast rather than read off a lib type:
+ * DisplayNames landed in ES2021 and this project compiles against ES2019, and
+ * raising the target to get it would drop the downleveling safety net for
+ * everything else in the bundle. Declaring the shape we use is the same
+ * approach taken for ApolloLink in plugin-api.ts.
+ *
+ * Absent before Chrome 81 / Firefox 86 / Safari 14.1. Old enough to ignore, but
+ * not old enough to crash on: NS.name degrades to the raw code instead.
+ */
+function displayNamesFor(locale: string): MangaToolsDisplayNames | null {
+  if (!(locale in displayNamesCache)) {
+    var ctor = (Intl as unknown as { DisplayNames?: MangaToolsDisplayNamesCtor })
+      .DisplayNames;
+
+    displayNamesCache[locale] =
+      typeof ctor === "function"
+        ? buildDisplayNames(ctor, [locale, NS.FALLBACK_LOCALE]) ||
+          buildDisplayNames(ctor, [NS.FALLBACK_LOCALE])
+        : null;
+  }
+
+  return displayNamesCache[locale];
+}
 
 /**
  * Case-insensitive lookup in LANGUAGES. Returns the canonical key, or "" if
@@ -208,9 +204,25 @@ NS.normalize = function (raw: unknown): string {
 /**
  * Localised name for a language, given a code in any spelling normalize accepts.
  *
- * Mirrors Stash's getCountryByISO: look the name up by UI locale, fall back to
- * English, and if the code is not recognised at all return it unchanged
- * (the equivalent of CountryLabel.tsx's `fromISO ?? country`).
+ * Still mirrors Stash's getCountryByISO — look the name up by UI locale, fall
+ * back to English, return the code unchanged if it is not recognised — but the
+ * names now come from Intl.DisplayNames rather than from a table here, so the
+ * coverage is every locale the engine's CLDR has instead of the four this file
+ * used to list. The locale is react-intl's, which Stash sets from
+ * Configuration.interface.language, so the names follow the Stash UI language
+ * and never the browser's.
+ *
+ * Three things it deliberately does not do:
+ *
+ *   - It does not let the engine choose the language. displayNamesFor explains
+ *     why the fallback locale is passed explicitly.
+ *   - It does not use DisplayNames to decide whether a value is *known*.
+ *     Recognition is findCanonical's job and only codes in our own list count;
+ *     the platform happily resolves alpha-3 spellings like "chi" and "jpn" that
+ *     this plugin treats as unrecognised data.
+ *   - It does not invent a name for an unknown value, or hide a failure behind
+ *     English: an engine without DisplayNames yields the raw code, which is the
+ *     same thing the plugin shows for a value no table recognises.
  */
 NS.name = function (code: unknown, locale?: string | null): string {
   // Go through normalize rather than findCanonical directly, so that
@@ -222,10 +234,12 @@ NS.name = function (code: unknown, locale?: string | null): string {
     return normalized;
   }
 
-  var names = NS.LANGUAGES[canonical].names;
-  return (
-    names[NS.localeCode(locale)] || names[NS.FALLBACK_LOCALE] || canonical
-  );
+  var names = displayNamesFor(locale || NS.FALLBACK_LOCALE);
+  if (!names) return canonical;
+
+  // of() echoes a code it cannot resolve, so the fallback here covers
+  // implementations that return undefined instead of echoing.
+  return names.of(canonical) || canonical;
 };
 
 /**
