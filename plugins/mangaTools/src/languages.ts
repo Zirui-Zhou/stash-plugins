@@ -400,11 +400,16 @@ NS.parseFlag = (raw: unknown, fallback: boolean): boolean => {
 };
 
 /**
- * Name of the custom field this plugin reads and writes. Changing it here is
- * all that is needed to use a different field (e.g. splitting into
- * original_language / translated_language later). Both reads and writes treat
- * it case-insensitively.
+ * Name of the custom field this plugin reads and writes.
+ *
+ * Prefixed, because a gallery's custom fields are a shared namespace: `language`
+ * on its own is a name any other plugin, or the reader, might reasonably want,
+ * and nothing on the field says who put it there. This one names its owner — and
+ * leaves room for the fields this plugin may add later (see the README's
+ * "Adding another field") without a second naming decision.
+ *
+ * Both reads and writes treat it case-insensitively.
  */
-NS.FIELD_NAME = "language";
+NS.FIELD_NAME = "plugin.mangaTools.language";
 
 export { NS };

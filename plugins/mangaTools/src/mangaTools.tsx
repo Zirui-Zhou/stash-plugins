@@ -4,8 +4,8 @@
  * Everything goes through the UI plugin API; no Stash core code is modified, so
  * Stash upgrades never produce merge conflicts.
  *
- * The language attribute lives in the Gallery's custom fields
- * (custom_fields.language). What is stored is the canonical code, not the
+ * The language attribute lives in one of the Gallery's custom fields,
+ * `plugin.mangaTools.language`. What is stored is the canonical code, not the
  * display name, and the name is looked up only when rendering — the same
  * approach Stash takes for performer nationality. It surfaces in five places:
  *
@@ -54,6 +54,12 @@ const PluginApi = requirePluginApi();
 const React = PluginApi.React;
 
 const FIELD_NAME = NS.FIELD_NAME;
+
+// The same name lowercased. Every read compares case-insensitively, so the
+// left-hand side is lowercased and this is what it is compared against.
+// Derived rather than written out, so the two can never drift apart.
+const FIELD_KEY = FIELD_NAME.toLowerCase();
+
 const PLUGIN_ID = "mangaTools";
 
 /**
@@ -161,7 +167,7 @@ function useGlobalVersion(): number {
  * Only show the language dropdown on gallery edit panels.
  *
  * CustomFieldsInput is shared by the scene, performer, studio, tag and image
- * edit panels. Without this check the "language" field would show up on every
+ * edit panels. Without this check the language field would show up on every
  * one of them. A gallery detail page is /galleries/{id}, and the bulk edit
  * dialog opens over the gallery list at /galleries.
  */
@@ -182,7 +188,7 @@ function pickLanguage(customFields: unknown): string {
   const map = customFields as CustomFieldsMap;
   const keys = Object.keys(map);
   for (let i = 0; i < keys.length; i++) {
-    if (keys[i].toLowerCase() === FIELD_NAME) {
+    if (keys[i].toLowerCase() === FIELD_KEY) {
       const v = map[keys[i]];
       if (v === null || v === undefined) return "";
       return String(v);
@@ -199,7 +205,7 @@ function pickLanguage(customFields: unknown): string {
 function setLanguage(customFields: unknown, code: string): CustomFieldsMap {
   const next = Object.assign({}, customFields || {}) as CustomFieldsMap;
   Object.keys(next).forEach((k) => {
-    if (k.toLowerCase() === FIELD_NAME) delete next[k];
+    if (k.toLowerCase() === FIELD_KEY) delete next[k];
   });
   if (code) next[FIELD_NAME] = code;
   return next;
@@ -209,15 +215,18 @@ function setLanguage(customFields: unknown, code: string): CustomFieldsMap {
 
 /**
  * A Gallery's custom_fields is the GraphQL Map scalar, and a single key cannot
- * be projected out of it. So we filter for galleries that have a `language`
+ * be projected out of it. So we filter for galleries that have the language
  * field and fetch the whole map, then keep it in memory.
  *
- * The field name must be lowercase `language` — that is what this plugin
- * writes. Matching both `language` and `Language` in one query is impossible:
+ * The query spells the field name exactly as FIELD_NAME does. Asking for the
+ * case variants in the same query is impossible:
  *   - OR is singular in the schema (OR: GalleryFilterType), not an array
  *   - multiple criteria inside the custom_fields array are ANDed, not ORed
- * So lowercase is a hard constraint, guaranteed by the dropdown. Reads remain
- * case-insensitive, so a capitalised key already in the library still renders.
+ * So one spelling is a hard constraint, guaranteed by the dropdown. Reads and
+ * writes remain case-insensitive (pickLanguage, setLanguage), so a key in the
+ * library that has drifted in case is still found and corrected on the next
+ * write — but a gallery whose key drifted is not matched by *this* query, and
+ * so is missing from the badge map until it is written once.
  */
 let QUERY: unknown = null;
 
@@ -1280,7 +1289,7 @@ PluginApi.patch.instead("CustomFieldsInput", (...args: unknown[]) => {
 //    original component, so the plugin has zero effect on them.
 //
 //    isNew must pass through: that is the "new field" row, and the user may be
-//    in the middle of typing "language" as the field name. Returning null would
+//    in the middle of typing a name that will turn out to be ours. Returning null would
 //    make the whole row vanish mid-keystroke.
 PluginApi.patch.instead("CustomFieldInput", (...args: unknown[]) => {
   const props = args[0] as { field?: string; isNew?: boolean };
@@ -1288,7 +1297,7 @@ PluginApi.patch.instead("CustomFieldInput", (...args: unknown[]) => {
   noteFired("CustomFieldInput");
 
   const isLanguageField =
-    !!props.field && String(props.field).toLowerCase() === FIELD_NAME;
+    !!props.field && String(props.field).toLowerCase() === FIELD_KEY;
 
   if (!props.isNew && isLanguageField) {
     return null;
@@ -1491,7 +1500,7 @@ PluginApi.patch.instead("CustomFields", (...args: unknown[]) => {
 
   let key: string | null = null;
   Object.keys(values).forEach((k) => {
-    if (key === null && k.toLowerCase() === FIELD_NAME) key = k;
+    if (key === null && k.toLowerCase() === FIELD_KEY) key = k;
   });
   if (key === null) return <Original {...props} />;
 

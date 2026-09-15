@@ -146,12 +146,27 @@ const fakeClient = {
         findGalleries: {
           count: 4,
           galleries: [
-            { id: "1", custom_fields: { language: "zh-Hans" } },
-            { id: "2", custom_fields: { Language: "zh-Hant" } }, // capitalised key, canonical value
-            { id: "3", custom_fields: { language: "klingon" } }, // unknown value
+            {
+              id: "1",
+              custom_fields: { "plugin.mangaTools.language": "zh-Hans" },
+            },
+            {
+              id: "2",
+              custom_fields: { "plugin.mangaTools.Language": "zh-Hant" },
+            }, // capitalised key, canonical value
+            {
+              id: "3",
+              custom_fields: { "plugin.mangaTools.language": "klingon" },
+            }, // unknown value
             { id: "4", custom_fields: { other: "x" } }, // no language, must be ignored
-            { id: "5", custom_fields: { language: "ZH-HANS" } }, // non-canonical case
-            { id: "6", custom_fields: { language: "zh-Hans" } }, // same as 1, for bulk aggregation
+            {
+              id: "5",
+              custom_fields: { "plugin.mangaTools.language": "ZH-HANS" },
+            }, // non-canonical case
+            {
+              id: "6",
+              custom_fields: { "plugin.mangaTools.language": "zh-Hans" },
+            }, // same as 1, for bulk aggregation
           ],
         },
       },
@@ -932,7 +947,7 @@ assert.ok(
   "OR is singular in the schema; an array fails validation"
 );
 assert.ok(
-  /custom_fields:\s*\[\{\s*field:\s*"language",\s*modifier:\s*NOT_NULL\s*\}\]/.test(
+  /custom_fields:\s*\[\{\s*field:\s*"plugin\.mangaTools\.language",\s*modifier:\s*NOT_NULL\s*\}\]/.test(
     galleryQuery
   ),
   "the query should filter on language with NOT_NULL"
@@ -1213,17 +1228,21 @@ console.log(
 
 // ── 8. CustomFieldInput isolation ──────────────────────────────────
 assert.strictEqual(
-  call("CustomFieldInput", { field: "language", value: "zh-Hans" }),
+  call("CustomFieldInput", {
+    field: "plugin.mangaTools.language",
+    value: "zh-Hans",
+  }),
   null,
   "an existing language row should render null"
 );
 assert.strictEqual(
-  call("CustomFieldInput", { field: "Language", value: "x" }),
+  call("CustomFieldInput", { field: "plugin.mangaTools.Language", value: "x" }),
   null,
   "a capitalised field name should be recognised too"
 );
 assert.strictEqual(
-  call("CustomFieldInput", { field: "language", isNew: true }).type,
+  call("CustomFieldInput", { field: "plugin.mangaTools.language", isNew: true })
+    .type,
   original,
   "the isNew row must pass through, or it vanishes while the name is being typed"
 );
@@ -1255,7 +1274,7 @@ const detail = (values) => {
   return { rest, portal: rowEl.type(rowEl.props) };
 };
 
-let r9 = detail({ language: "zh-Hant", author: "x" });
+let r9 = detail({ "plugin.mangaTools.language": "zh-Hant", author: "x" });
 assert.deepStrictEqual(
   r9.rest,
   { author: "x" },
@@ -1301,7 +1320,7 @@ assert.strictEqual(
   "h6",
   "precondition: the mount point was displaced"
 );
-detail({ language: "ja" });
+detail({ "plugin.mangaTools.language": "ja" });
 assert.strictEqual(
   galleryPanel.lastElementChild,
   host,
@@ -1319,7 +1338,7 @@ assert.strictEqual(hosts[0], host, "the same mount point should be reused");
 
 // A capitalised key should be lifted out too (field names are case-insensitive;
 // the value itself must still be canonical).
-r9 = detail({ Language: "zh-Hant" });
+r9 = detail({ "plugin.mangaTools.Language": "zh-Hant" });
 assert.deepStrictEqual(
   r9.rest,
   {},
@@ -1328,7 +1347,7 @@ assert.deepStrictEqual(
 assert.ok(hasText(r9.portal.node, "繁体中文"));
 
 // Unknown value: no flag, text only — and no stray extra space
-r9 = detail({ language: "klingon" });
+r9 = detail({ "plugin.mangaTools.language": "klingon" });
 assert.strictEqual(
   find(r9.portal.node, (n) => /fi fi-/.test(n.props.className || "")),
   null,
@@ -1344,12 +1363,15 @@ assert.deepStrictEqual(
 // Label i18n: follows the UI language, falls back to English
 currentLocale = "ja-JP";
 assert.ok(
-  hasText(detail({ language: "ja" }).portal.node, "言語: "),
+  hasText(detail({ "plugin.mangaTools.language": "ja" }).portal.node, "言語: "),
   "should follow the UI language"
 );
 currentLocale = "de-DE";
 assert.ok(
-  hasText(detail({ language: "ja" }).portal.node, "Language: "),
+  hasText(
+    detail({ "plugin.mangaTools.language": "ja" }).portal.node,
+    "Language: "
+  ),
   "should fall back to English for a locale without the key"
 );
 currentLocale = "zh-CN";
@@ -1370,7 +1392,7 @@ galleryPanel.parentNode.children.splice(
   1
 );
 assert.strictEqual(
-  detail({ language: "ja" }).portal,
+  detail({ "plugin.mangaTools.language": "ja" }).portal,
   null,
   "with no mount point it should safely return null"
 );
@@ -1410,7 +1432,7 @@ const editField = (values, onChange) => {
   return el.type(el.props);
 };
 
-const fieldPortal = editField({ language: "ja" });
+const fieldPortal = editField({ "plugin.mangaTools.language": "ja" });
 assert.strictEqual(
   fieldPortal.__portal,
   true,
@@ -1467,7 +1489,7 @@ assert.strictEqual(
 // When the native field changes width, follow it
 studioLabel.className = "form-label col-form-label col-xl-12 col-sm-3";
 studioControl.className = "col-xl-12 col-sm-9";
-const followed = editField({ language: "ja" }).node;
+const followed = editField({ "plugin.mangaTools.language": "ja" }).node;
 assert.strictEqual(
   followed.props.children[0].props.className,
   "form-label col-form-label col-xl-12 col-sm-3",
@@ -1484,7 +1506,8 @@ studioControl.className = "col-sm-9";
 studioRow.detach(studioLabel);
 studioRow.detach(studioControl);
 assert.strictEqual(
-  editField({ language: "ja" }).node.props.children[1].props.className,
+  editField({ "plugin.mangaTools.language": "ja" }).node.props.children[1].props
+    .className,
   "col-sm-9",
   "should fall back to the default when the native classes cannot be read"
 );
@@ -1522,7 +1545,7 @@ assert.strictEqual(
 
 // When a React re-render displaces the mount point, pull it back after studio
 editForm.insertBefore(makeEl("div"), performerRow);
-editField({ language: "ja" });
+editField({ "plugin.mangaTools.language": "ja" });
 assert.strictEqual(
   fieldHostEl.previousElementSibling,
   studioRow,
@@ -1542,7 +1565,7 @@ globalListeners["stash:location"]({
   detail: { data: { location: { pathname: "/scenes/5" } } },
 });
 assert.strictEqual(
-  editField({ language: "ja" }),
+  editField({ "plugin.mangaTools.language": "ja" }),
   null,
   "no language field on a scene page"
 );
@@ -1550,7 +1573,7 @@ globalListeners["stash:location"]({
   detail: { data: { location: { pathname: "/galleries/1" } } },
 });
 assert.notStrictEqual(
-  editField({ language: "ja" }),
+  editField({ "plugin.mangaTools.language": "ja" }),
   null,
   "restored when back on a gallery page"
 );
@@ -1559,7 +1582,7 @@ assert.notStrictEqual(
 const firstChild = editForm.children[0];
 editForm.detach(studioRow);
 assert.strictEqual(
-  editField({ language: "ja" }),
+  editField({ "plugin.mangaTools.language": "ja" }),
   null,
   "with no studio field it should safely return null"
 );
@@ -1688,7 +1711,7 @@ const sel = (modifier, included, excluded) => ({
   excluded: excluded || [],
 });
 const conditionsOf = (modifier, value) => {
-  const c = { field: "language", modifier };
+  const c = { field: "plugin.mangaTools.language", modifier };
   if (value !== undefined) c.value = value;
   return c;
 };
@@ -1757,7 +1780,11 @@ assert.deepStrictEqual(
   NS.readLanguageFilter(
     makeFilterModel([
       customFieldsCriterion([
-        { field: "Language", modifier: "EQUALS", value: ["ja"] },
+        {
+          field: "plugin.mangaTools.Language",
+          modifier: "EQUALS",
+          value: ["ja"],
+        },
       ]),
     ])
   ),
@@ -1863,7 +1890,7 @@ assert.deepStrictEqual(
 
 // A case variant of the field name is dropped, for the same reason.
 w = writeFilter(sel("", ["ja"]), [
-  { field: "Language", modifier: "EQUALS", value: ["ko"] },
+  { field: "plugin.mangaTools.Language", modifier: "EQUALS", value: ["ko"] },
 ]);
 assert.deepStrictEqual(
   languageConditions(w.criteria),
@@ -2132,7 +2159,7 @@ assert.strictEqual(
   "on the same page"
 );
 assert.ok(
-  /"field":"language","modifier":"EQUALS","value":\["ja"\]/.test(
+  /"field":"plugin\.mangaTools\.language","modifier":"EQUALS","value":\["ja"\]/.test(
     historyReplaces[0].search
   ),
   "and the URL should carry an EQUALS condition for that language"
@@ -2341,7 +2368,7 @@ assert.ok(oneSearchBox, "precondition: the search box is rendered");
 historyReplaces.length = 0;
 oneSearchBox.props.onKeyDown({ key: "Enter" });
 assert.ok(
-  /"field":"language","modifier":"EQUALS","value":\["ja"\]/.test(
+  /"field":"plugin\.mangaTools\.language","modifier":"EQUALS","value":\["ja"\]/.test(
     historyReplaces[0].search
   ),
   "Enter should take the only candidate on offer"
@@ -2516,10 +2543,12 @@ assert.deepStrictEqual(
 // cloneDeep before committing it — the copy keeps this method but is a different
 // object — so a closure over the original would serialise a stale value.
 const cloned = Object.assign({}, madeCriterion);
-cloned.value = [{ field: "language", modifier: "EQUALS", value: ["ja"] }];
+cloned.value = [
+  { field: "plugin.mangaTools.language", modifier: "EQUALS", value: ["ja"] },
+];
 assert.deepStrictEqual(
   cloned.toQueryParams().value,
-  [{ field: "language", modifier: "EQUALS", value: ["ja"] }],
+  [{ field: "plugin.mangaTools.language", modifier: "EQUALS", value: ["ja"] }],
   "toQueryParams must use `this`, not the object it was defined on"
 );
 
@@ -2530,7 +2559,13 @@ assert.deepStrictEqual(
     makeFilterModel([
       {
         criterionOption: { type: "language" },
-        value: [{ field: "language", modifier: "EQUALS", value: ["ja"] }],
+        value: [
+          {
+            field: "plugin.mangaTools.language",
+            modifier: "EQUALS",
+            value: ["ja"],
+          },
+        ],
       },
     ])
   ),
@@ -2575,7 +2610,9 @@ const renderDialogCard = (conditions) => {
   }).props.children[1];
   return el.type(el.props);
 };
-renderDialogCard([{ field: "language", modifier: "EQUALS", value: ["ja"] }]);
+renderDialogCard([
+  { field: "plugin.mangaTools.language", modifier: "EQUALS", value: ["ja"] },
+]);
 
 assert.strictEqual(observed.length, 1, "the card should watch the DOM once");
 assert.strictEqual(
@@ -2616,7 +2653,7 @@ const adoptModel = (conditions) => {
   return model;
 };
 
-const languageCondition = (field = "language") => [
+const languageCondition = (field = "plugin.mangaTools.language") => [
   { field, modifier: "EQUALS", value: ["ja"] },
 ];
 
@@ -2675,7 +2712,7 @@ assert.strictEqual(adopt.criteria[0].criterionOption.type, "language");
 assert.strictEqual(typeof adopt.criteria[0].toQueryParams, "function");
 
 // The field name is matched case-insensitively, as everywhere else
-adopt = adoptModel(languageCondition("Language"));
+adopt = adoptModel(languageCondition("plugin.mangaTools.Language"));
 NS.adoptLanguageCriterion(adopt);
 assert.strictEqual(
   adopt.criteria[0].criterionOption.type,
@@ -2692,7 +2729,7 @@ assert.strictEqual(
 );
 
 adopt = adoptModel([
-  { field: "language", modifier: "EQUALS", value: ["ja"] },
+  { field: "plugin.mangaTools.language", modifier: "EQUALS", value: ["ja"] },
   { field: "artist", modifier: "EQUALS", value: ["x"] },
 ]);
 NS.adoptLanguageCriterion(adopt);
@@ -2739,11 +2776,16 @@ const tagWithText = (value, ancestors = []) => {
   };
   return tag;
 };
-const ourTag = tagWithText("language (custom field) is ja, en");
+const ourTag = tagWithText(
+  "plugin.mangaTools.language (custom field) is ja, en"
+);
 const studioTag = tagWithText("Studio is J-Model");
-// The field is called "language", so a longer name that merely starts with it
+// The field is called "plugin.mangaTools.language", so a longer name that merely starts
+// with it
 // must not be mistaken for ours.
-const similarFieldTag = tagWithText("languageNotes (custom field) is x");
+const similarFieldTag = tagWithText(
+  "plugin.mangaTools.languageNotes (custom field) is x"
+);
 const emptyTag = tagWithText(null);
 tagQuery = () => [studioTag, ourTag, similarFieldTag, emptyTag];
 NS.relabelTags(["语言 是 日语, 英语"]);
@@ -2760,7 +2802,7 @@ assert.strictEqual(
 );
 assert.strictEqual(
   similarFieldTag.firstChild.nodeValue,
-  "languageNotes (custom field) is x",
+  "plugin.mangaTools.languageNotes (custom field) is x",
   "a field whose name merely starts with the language field's must be left alone"
 );
 assert.strictEqual(
@@ -2784,8 +2826,12 @@ assert.strictEqual(
 
 // One label per tag, in the order Stash draws them — which is the order of the
 // criterion's conditions. A filter with an exclusion is two tags, not one.
-const includedTag = tagWithText("language (custom field) is ja");
-const excludedTag = tagWithText("language (custom field) is not ko");
+const includedTag = tagWithText(
+  "plugin.mangaTools.language (custom field) is ja"
+);
+const excludedTag = tagWithText(
+  "plugin.mangaTools.language (custom field) is not ko"
+);
 tagQuery = () => [studioTag, includedTag, excludedTag];
 NS.relabelTags(["语言 是 日语", "语言 不是 韩语"]);
 tagQuery = () => [];
@@ -2803,20 +2849,24 @@ assert.strictEqual(
 
 // A tag for a modifier rather than values — "(None)", and "(Any)" likewise —
 // still opens with the field name, which is all a tag is recognised by.
-const nullTag = tagWithText("language (custom field) is null");
+const nullTag = tagWithText(
+  "plugin.mangaTools.language (custom field) is null"
+);
 tagQuery = () => [nullTag];
 NS.relabelTags(["语言 为空"]);
 tagQuery = () => [];
 assert.strictEqual(nullTag.firstChild.nodeValue, "语言 为空");
 
 // Nothing to say, or nothing to say it to, must both be no-ops
-const untouchedTag = tagWithText("language (custom field) is ja");
+const untouchedTag = tagWithText(
+  "plugin.mangaTools.language (custom field) is ja"
+);
 tagQuery = () => [untouchedTag];
 NS.relabelTags([]);
 tagQuery = () => [];
 assert.strictEqual(
   untouchedTag.firstChild.nodeValue,
-  "language (custom field) is ja",
+  "plugin.mangaTools.language (custom field) is ja",
   "an empty list of labels must leave the tags alone"
 );
 console.log(
@@ -2839,7 +2889,9 @@ const dialogTagWithText = (value) =>
   tagWithText(value, [".edit-filter-dialog"]);
 
 // One tag, one label: Stash's tag is written into, and stays shown
-let dialogTag = dialogTagWithText("language (custom field) is ja");
+let dialogTag = dialogTagWithText(
+  "plugin.mangaTools.language (custom field) is ja"
+);
 tagQuery = () => [dialogTag];
 NS.manageDialogTags(["语言 是 日语"]);
 tagQuery = () => [];
@@ -2871,7 +2923,9 @@ assert.strictEqual(
 
 // More labels than tags: the extra conditions have nowhere to go, so the card
 // draws them — this is the dialog that had no language at all when it opened
-dialogTag = dialogTagWithText("language (custom field) is ja");
+dialogTag = dialogTagWithText(
+  "plugin.mangaTools.language (custom field) is ja"
+);
 tagQuery = () => [dialogTag];
 NS.manageDialogTags(["语言 是 日语", "语言 不是 韩语"]);
 tagQuery = () => [];
@@ -2890,7 +2944,9 @@ tagQuery = () => [];
 
 // Fewer labels than tags — an emptied card, or exclusions just taken off: the
 // tags with nothing to say step aside rather than repeat the last label
-const secondTag = dialogTagWithText("language (custom field) is not ko");
+const secondTag = dialogTagWithText(
+  "plugin.mangaTools.language (custom field) is not ko"
+);
 tagQuery = () => [dialogTag, secondTag];
 NS.manageDialogTags(["语言 是 日语"]);
 tagQuery = () => [];
@@ -2940,7 +2996,9 @@ const clickInside = (where) => ({
   closest: (sel) => (sel in where ? where[sel] : null),
 });
 const tagInDialog = () =>
-  tagWithText("language (custom field) is ja", [".edit-filter-dialog"]);
+  tagWithText("plugin.mangaTools.language (custom field) is ja", [
+    ".edit-filter-dialog",
+  ]);
 const removeClick = (tag, extra = {}) =>
   clickInside(
     Object.assign(
@@ -2968,7 +3026,7 @@ assert.strictEqual(
 assert.strictEqual(
   NS.clickedTagRemove(
     removeClick(
-      tagWithText("language (custom field) is ja", [
+      tagWithText("plugin.mangaTools.language (custom field) is ja", [
         ".edit-filter-dialog",
         ".criterion-list",
       ])
@@ -3074,7 +3132,11 @@ console.log(
 // how a filter with exclusions comes out as two sentences rather than one.
 // biome-ignore lint/correctness/useHookAtTopLevel: the stub named useIntl is not a React hook — the tests call the plugin's helpers directly.
 const intl = PluginApi.libraries.Intl.useIntl();
-const condition = (modifier, value) => ({ field: "language", modifier, value });
+const condition = (modifier, value) => ({
+  field: "plugin.mangaTools.language",
+  modifier,
+  value,
+});
 assert.strictEqual(
   NS.conditionLabel(intl, condition("EQUALS", ["ja", "en"])),
   "语言 是 日语, 英语",
@@ -3230,25 +3292,25 @@ setTimeout(() => {
 
   nav("/scenes/5");
   assert.strictEqual(
-    renderRow({ language: "zh-Hans" }),
+    renderRow({ "plugin.mangaTools.language": "zh-Hans" }),
     null,
     "no language dropdown on a scene page"
   );
   nav("/performers/3");
   assert.strictEqual(
-    renderRow({ language: "zh-Hans" }),
+    renderRow({ "plugin.mangaTools.language": "zh-Hans" }),
     null,
     "no language dropdown on a performer page"
   );
   nav("/galleries/12");
   assert.notStrictEqual(
-    renderRow({ language: "zh-Hans" }),
+    renderRow({ "plugin.mangaTools.language": "zh-Hans" }),
     null,
     "the dropdown should appear on a gallery detail page"
   );
   nav("/galleries");
   assert.notStrictEqual(
-    renderRow({ language: "zh-Hans" }),
+    renderRow({ "plugin.mangaTools.language": "zh-Hans" }),
     null,
     "and on the gallery list page (bulk edit)"
   );
@@ -3261,7 +3323,10 @@ setTimeout(() => {
   const setter = (v) => {
     captured = v;
   };
-  const row = renderRow({ author: "x", Language: "ja" }, setter);
+  const row = renderRow(
+    { author: "x", "plugin.mangaTools.Language": "ja" },
+    setter
+  );
   const select = find(
     row,
     (n) => n.props && typeof n.props.onChange === "function" && n.props.options
@@ -3270,7 +3335,7 @@ setTimeout(() => {
   select.props.onChange({ value: "zh-Hant" });
   assert.deepStrictEqual(
     captured,
-    { author: "x", language: "zh-Hant" },
+    { author: "x", "plugin.mangaTools.language": "zh-Hant" },
     "writing should drop case variants and canonicalise the field name to lowercase"
   );
 
@@ -3302,7 +3367,10 @@ setTimeout(() => {
   // but the currently-selected value still echoes even if it is outside the set
   // (display is unaffected — only the option list is filtered).
   NS.enabledLanguages = new Set(["ja", "en"]);
-  const filtered = find(renderRow({ language: "vi" }), (n) => n.props?.options);
+  const filtered = find(
+    renderRow({ "plugin.mangaTools.language": "vi" }),
+    (n) => n.props?.options
+  );
   assert.deepStrictEqual(
     filtered.props.options.map((o) => o.value),
     ["ja", "en"],
@@ -3317,7 +3385,10 @@ setTimeout(() => {
   NS.enabledLanguages = null; // restore
 
   // Selected value echo: a canonical code in the wrong case echoes back canonical
-  const sel = find(renderRow({ language: "ZH-HANT" }), (n) => n.props?.options);
+  const sel = find(
+    renderRow({ "plugin.mangaTools.language": "ZH-HANT" }),
+    (n) => n.props?.options
+  );
   assert.strictEqual(
     sel.props.value.label,
     "繁体中文",
@@ -3334,7 +3405,7 @@ setTimeout(() => {
   // now: they appear in the list as-is, otherwise picking something else would
   // make them unreachable.
   const selUnknown = find(
-    renderRow({ language: "chs" }),
+    renderRow({ "plugin.mangaTools.language": "chs" }),
     (n) => n.props?.options
   );
   assert.strictEqual(selUnknown.props.options[0].value, "chs");
@@ -3392,7 +3463,7 @@ setTimeout(() => {
   assert.ok(hasText(formattedFlat, "日语"), "the name must still be there");
 
   // The space in the detail row belongs to the flag, so it has to go with it.
-  const flatDetail = detail({ language: "zh-Hant" });
+  const flatDetail = detail({ "plugin.mangaTools.language": "zh-Hant" });
   assert.strictEqual(
     find(flatDetail.portal.node, (n) => /fi fi-/.test(n.props.className || "")),
     null,
@@ -3681,7 +3752,7 @@ setTimeout(() => {
   r14 = runLink(bulkVars());
   assert.deepStrictEqual(
     r14.forwarded.variables.input.custom_fields,
-    { partial: { language: "zh-Hant" } },
+    { partial: { "plugin.mangaTools.language": "zh-Hant" } },
     "the picked language should ride along with the dialog's own update"
   );
   assert.deepStrictEqual(
@@ -3716,7 +3787,7 @@ setTimeout(() => {
   // ...and the value survives that, so it is still applied to the right operation.
   r14 = runLink(bulkVars());
   assert.deepStrictEqual(r14.forwarded.variables.input.custom_fields, {
-    partial: { language: "ja" },
+    partial: { "plugin.mangaTools.language": "ja" },
   });
 
   // Clearing the x means "leave the language alone", exactly as clearing the
@@ -3736,7 +3807,7 @@ setTimeout(() => {
   r14 = runLink(bulkVars());
   assert.deepStrictEqual(
     r14.forwarded.variables.input.custom_fields,
-    { partial: { language: "ko" } },
+    { partial: { "plugin.mangaTools.language": "ko" } },
     "precondition: it does apply while on a gallery page"
   );
 

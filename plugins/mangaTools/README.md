@@ -73,7 +73,7 @@ Flags use `flag-icons`, which Stash already loads globally in `index.scss`, so t
 plugin emits `<span class="fi fi-jp">` and ships **no extra assets**. They look
 identical to the nationality flags on performer pages.
 
-The data lives in the Gallery's **custom fields**: `custom_fields.language`. What
+The data lives in one of the Gallery's **custom fields**: `plugin.mangaTools.language`. What
 is stored is the canonical code, not the display name — the same approach Stash
 takes for performer nationality (store `US`, display `United States`).
 
@@ -108,7 +108,7 @@ instead:
   chain after the client exists. The existing chain is passed through untouched,
   so nothing else about the client changes.
 - that link rewrites `input.custom_fields` on `bulkGalleryUpdate` **only**, as
-  `{ partial: { language: "ja" } }`. It is matched on the schema's root field
+  `{ partial: { "plugin.mangaTools.language": "ja" } }`. It is matched on the schema's root field
   name, not on an operation name, and scene/image bulk updates are deliberately
   left alone. A bulk edit that has nothing to do with language goes out byte for
   byte as Stash built it.
@@ -176,8 +176,8 @@ things in the two places.
 be stored as one: Stash decodes the query string before a plugin's filter option
 exists, so a stored type of `language` would not resolve on a reload. That leaves
 Stash treating it as a custom field, which shows up in two places — its tag would
-open the custom-fields card, and that tag would read `language (custom field) is
-ja`. Both are repaired without changing what is stored: the criterion is handed
+open the custom-fields card, and that tag would read `plugin.mangaTools.language
+(custom field) is ja`. Both are repaired without changing what is stored: the criterion is handed
 Stash's Language option, so its tag opens our card and its ✗ clears the filter,
 and the tag's wording is replaced in the DOM with the same sentence the sidebar
 would use. The repair is in the DOM because Stash draws its tag row *before* this
@@ -392,7 +392,7 @@ Against a real Stash:
    ```graphql
    { findGalleries(ids: ["<gallery id>"]) { galleries { id custom_fields } } }
    ```
-   Expect `custom_fields.language === "zh-Hans"`
+   Expect `plugin.mangaTools.language === "zh-Hans"`
 3. **Check the badge**: back on the gallery list, the card's cover should show the
    China flag in the bottom-right
 4. **Check the tolerance**: hand-edit a gallery's value to `chs`; after a refresh
@@ -417,9 +417,10 @@ Against a real Stash:
    - **Check it composes**: include one language and exclude another; both
      conditions are sent, and including and excluding the *same* language should
      return nothing at all.
-   - **Check the tag**: it should read `语言 是 日语`, not `language (用户字段) 是
-     ja` — the wording is the plugin's. Clicking it should open the **Language**
-     card in the filter dialog, and its ✗ should clear the filter. With an
+   - **Check the tag**: it should read `语言 是 日语`, not `plugin.mangaTools.
+     language (用户字段) 是 ja` — the wording is the plugin's. Clicking it should
+     open the **Language** card in the filter dialog, and its ✗ should clear the
+     filter. With an
      exclusion there are two tags, one per condition, and the second should read
      `语言 不是 韩语`.
    - **Check the dialog's tag**: with the dialog open, change the language in the
@@ -432,7 +433,7 @@ Against a real Stash:
      language, then press Apply — the removed criterion must stay removed, and one
      added there must stay added.
    - The same conditions are reachable by hand: filter panel → Custom Fields →
-     field `language`. Both routes write the same thing, so a filter set through
+     field `plugin.mangaTools.language`. Both routes write the same thing, so a filter set through
      one should show up in the other.
 8. **Check the settings**: Settings → Plugins → Manga Tools, tick only e.g.
    `日本語` and `English`, save, then open a gallery edit page — the dropdown
@@ -472,8 +473,9 @@ Reading them together:
 - **No logs at all** → the plugin did not load. Check that Manga Tools is
   enabled under Settings → Plugins, hit Reload Plugins, then **hard-refresh the
   browser (Ctrl+F5)**.
-- **"loaded N" with N=0** → the query worked but no gallery carries a `language`
-  custom field. Tag a few from the edit page dropdown.
+- **"loaded N" with N=0** → the query worked but no gallery carries a
+  `plugin.mangaTools.language` custom field. Tag a few from the edit page
+  dropdown.
 - **"loaded N" with N>0, but no "patch active: GalleryCard.Overlays"** → this page
   is not in grid view. Only Grid mode uses `GalleryCard`.
 - **A missing "patch active" line** → that component name does not exist in your
@@ -496,12 +498,17 @@ leaves a trace:
 Both are fixed, and the smoke test guards against them (it checks the query shape
 and the patch target list).
 
-**The field name must be lowercase `language`.** The query filter hard-codes the
-lowercase spelling. Matching both `language` and `Language` in one query is
-impossible: GraphQL's `OR` is singular so it cannot be written as an array, and
-multiple criteria inside a `custom_fields` array are ANDed. Reads are
-case-insensitive, but **only a lowercase key is found by the query**. Entering
-values through the plugin's dropdown never hits this, since that writes lowercase.
+**The field name is one exact spelling: `plugin.mangaTools.language`.** The query
+filter hard-codes it, so a gallery whose key is spelled differently is not
+*found* by the query and gets no badge, no detail row and no place in the list.
+Reads and writes are both tolerant of case — `pickLanguage` matches any variant,
+and `setLanguage` replaces every variant with the canonical spelling — so a key
+that drifted in case is corrected the first time the plugin writes the gallery.
+Only the *query* is strict, because matching the variants there is impossible:
+GraphQL's `OR` is singular so it cannot be written as an array, and multiple
+criteria inside a `custom_fields` array are ANDed. Entering values through the
+plugin's dropdown never hits any of this, since the dropdown writes the canonical
+spelling.
 
 ## Known limitations
 
@@ -521,8 +528,9 @@ values through the plugin's dropdown never hits this, since that writes lowercas
   shared by every entity's edit panel, so the plugin scopes itself by URL path
   (`/galleries`). The bulk gallery edit dialog opens over the gallery list page,
   so that is covered too.
-- **A new field still has to be typed once.** If you create a `language` field by
-  hand instead of using the dropdown, you type the value yourself; with the
+- **A new field still has to be typed once.** If you create a
+  `plugin.mangaTools.language` field by hand instead of using the dropdown, you
+  type the value yourself; with the
   dropdown there is no field to create — picking a value writes it.
 - **Changes can take up to 60 seconds to appear.** After saving, badges refresh
   from a poll rather than instantly. Changing route (navigating) refreshes
@@ -575,7 +583,8 @@ values through the plugin's dropdown never hits this, since that writes lowercas
   filter — but the wording is replaced after Stash has rendered it. On a page
   *load* with a language filter already in the URL, that replacement happens once
   the gallery list has rendered, so the tag shows Stash's own wording
-  (`language (custom field) is ja`) for as long as the first query takes. See
+  (`plugin.mangaTools.language (custom field) is ja`) for as long as the first
+  query takes. See
   [Filtering](#filtering).
 - **The dialog's tag mirrors the card, not Stash's copy.** The row inside the dialog
   is worded from the card, and the ✗ on it clears the card — so a click on either is

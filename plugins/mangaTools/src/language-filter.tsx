@@ -190,7 +190,10 @@ function customFieldsCriterion(
 function isLanguageCondition(
   condition: MangaToolsCustomFieldCondition
 ): boolean {
-  return !!condition && String(condition.field).toLowerCase() === NS.FIELD_NAME;
+  return (
+    !!condition &&
+    String(condition.field).toLowerCase() === NS.FIELD_NAME.toLowerCase()
+  );
 }
 
 /** The values of a condition, as codes */
@@ -539,8 +542,9 @@ function selectionConditions(
  *
  * Every language condition is replaced and the rest are kept, so this composes
  * with a hand-made custom-field filter instead of discarding it. Case variants
- * of the field name go too, so a criterion a user typed as "Language" cannot end
- * up holding two conditions for one field.
+ * of the field name go too, so a criterion a user typed as
+ * "plugin.mangaTools.Language" cannot end up holding two conditions for one
+ * field.
  *
  * The model is cloned because it is Stash's live state object; mutating it in
  * place would change the filter without telling anything to re-render.
@@ -897,9 +901,9 @@ const OWN_TAG_MARK = "data-manga-tools-own-tag";
  * Recognised by its text, there being no attribute on a tag saying which criterion
  * it came from. Every one of Stash's formats opens with the field name and then a
  * space — "{criterion} (custom field) …" for a criterion's own tag, "{criterion} …"
- * for the pills beside the editor — so that much is matched, and not the bare
- * name: the field is called "language", which another field called "languageNotes"
- * would otherwise start with too. See TAG_MARK for the tag that has already been
+ * for the pills beside the editor — so that much is matched. The trailing space
+ * is what makes a bare prefix safe, since no other field can begin with the same
+ * run of characters *and* a space. See TAG_MARK for the tag that has already been
  * re-worded and so no longer says that.
  */
 function isLanguageTag(tag: Element): boolean {
@@ -979,7 +983,8 @@ function writeTagLabels(tags: Element[], labels: string[]): void {
  *
  * Stash draws a tag per criterion out of `criterion.getLabel`, and this criterion
  * gets the generic custom-field sentence with the raw field name in it —
- * "language (custom field) is ja, en". Everything else about the tag is right: it
+ * "plugin.mangaTools.language (custom field) is ja, en". Everything else about
+ * the tag is right: it
  * opens our card, its ✗ removes the filter (see adoptLanguageCriterion). Only the
  * words are wrong, so only the words are replaced.
  *
