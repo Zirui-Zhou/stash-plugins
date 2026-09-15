@@ -764,21 +764,21 @@ function LanguageTag(props: { label: string; onRemove: () => void }) {
   var Icon = PluginApi.components.Icon;
   var Bootstrap = PluginApi.libraries.Bootstrap;
 
+  // Deliberately no row around this. When it joins Stash's own row, a wrapper
+  // would nest a second flex row inside it, and its margin would inflate the
+  // height of the row Stash drew — which stretches the native badges sitting in
+  // it and makes them look bigger. Only the fallback row, made below, is a row.
   return (
-    <div className="d-flex justify-content-center mb-2 wrap-tags filter-tags">
-      <span className="tag-item badge badge-secondary">
-        {props.label}
-        {Bootstrap ? (
-          <Bootstrap.Button
-            variant="secondary"
-            className="btn btn-secondary"
-            onClick={props.onRemove}
-          >
-            <Icon icon={Solid.faXmark || Solid.faTimes} />
-          </Bootstrap.Button>
-        ) : null}
-      </span>
-    </div>
+    <span className="tag-item badge badge-secondary">
+      {props.label}
+      {Bootstrap ? (
+        // `variant` alone: adding the class names as well is how this came out
+        // as `btn btn-secondary btn btn-secondary`.
+        <Bootstrap.Button variant="secondary" onClick={props.onRemove}>
+          <Icon icon={Solid.faXmark || Solid.faTimes} />
+        </Bootstrap.Button>
+      ) : null}
+    </span>
   );
 }
 
@@ -832,8 +832,10 @@ function dialogTagsRow(): Element | null {
 
   if (!dialogTagsFallback) {
     dialogTagsFallback = document.createElement("div");
-    dialogTagsFallback.className =
-      "d-flex justify-content-center mb-2 wrap-tags filter-tags";
+    // The classes Stash's own tag row carries — not the pill row's
+    // (`d-flex justify-content-center mb-2`), which is a different element
+    // inside a card and would space this one differently.
+    dialogTagsFallback.className = "wrap-tags filter-tags";
   }
 
   if (dialogTagsFallback.parentNode !== content) {
