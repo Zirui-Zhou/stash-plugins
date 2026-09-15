@@ -29,6 +29,7 @@
  * mangaTools.yml and there is no load order left to get wrong.
  */
 import { NS } from "./languages";
+import { t } from "./i18n";
 import { requirePluginApi } from "./plugin-api";
 import {
   DialogLanguageFilter,
@@ -694,7 +695,7 @@ function LanguageRow(props: {
           inputId="manga_tools_language"
           isClearable
           isSearchable={false}
-          placeholder="Select language…"
+          placeholder={t(intl, "mangaTools.select.placeholder")}
           value={selected}
           options={options}
           // react-select draws a vertical rule between the clear and expand
@@ -819,11 +820,9 @@ function MangaToolsSettings(props: { pluginID: string }) {
     <>
       <div className="setting manga-tools-settings">
         <div className="manga-tools-settings-block">
-          <h3>Enabled languages</h3>
+          <h3>{t(intl, "mangaTools.settings.enabledLanguages.heading")}</h3>
           <div className="sub-heading">
-            Only these languages appear in the edit-page dropdown. Display
-            (badge and detail row) is unaffected. Leave empty to show every
-            language.
+            {t(intl, "mangaTools.settings.enabledLanguages.description")}
           </div>
           <div className="manga-tools-settings-control">
             <Select
@@ -834,7 +833,10 @@ function MangaToolsSettings(props: { pluginID: string }) {
               // Flip the menu above the control when there is not enough room
               // below (the plugin is usually the last entry on the page).
               menuPlacement="auto"
-              placeholder="All languages"
+              placeholder={t(
+                intl,
+                "mangaTools.settings.enabledLanguages.placeholder"
+              )}
               value={value}
               options={options}
               formatOptionLabel={formatLanguageOption}
@@ -857,8 +859,8 @@ function MangaToolsSettings(props: { pluginID: string }) {
 
       <BooleanSetting
         id="mangaTools-showFlags"
-        heading="Show flags"
-        subHeading="Draw the flag beside the language name. Turn this off to show the name on its own."
+        heading={t(intl, "mangaTools.settings.showFlags.heading")}
+        subHeading={t(intl, "mangaTools.settings.showFlags.description")}
         checked={NS.showFlags}
         onChange={(next) => {
           NS.showFlags = next;
@@ -869,8 +871,8 @@ function MangaToolsSettings(props: { pluginID: string }) {
 
       <BooleanSetting
         id="mangaTools-showCoverBadge"
-        heading="Show the language on gallery covers"
-        subHeading="The badge in the bottom-right of a gallery's cover. With flags turned off it shows the language name instead of a flag."
+        heading={t(intl, "mangaTools.settings.showCoverBadge.heading")}
+        subHeading={t(intl, "mangaTools.settings.showCoverBadge.description")}
         checked={NS.showCoverBadge}
         onChange={(next) => {
           NS.showCoverBadge = next;
@@ -1200,7 +1202,7 @@ function BulkLanguageRow() {
           isSearchable={false}
           // The dialog is a scrolling modal, so the menu has to escape it.
           menuPortalTarget={document.body}
-          placeholder="Select language…"
+          placeholder={t(intl, "mangaTools.select.placeholder")}
           value={selected}
           options={options}
           formatOptionLabel={formatLanguageOption}

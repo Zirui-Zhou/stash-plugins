@@ -36,6 +36,10 @@
     "types": ["react"],
     "jsx": "react",
     "isolatedModules": true,
+    // The plugin carries its own message catalogs as JSON (src/messages/*.json);
+    // esbuild imports JSON natively, and this is what lets tsc and the editor
+    // read the same files.
+    "resolveJsonModule": true,
     "noFallthroughCasesInSwitch": true,
     "useDefineForClassFields": true
   }

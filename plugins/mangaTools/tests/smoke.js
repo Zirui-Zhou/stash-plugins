@@ -1011,6 +1011,11 @@ console.log("✓ settings parse/serialise (including the booleans)");
 // ── 7c. Settings UI: the multiselect writes the setting back ───────
 // The patched PluginSettings swaps the stock input for MangaToolsSettings only
 // for this plugin; other plugins fall back to the original component.
+//
+// Rendered in English explicitly: the assertions below read the plugin's own
+// strings, which are translated (see 7d), so leaving the locale to whatever ran
+// last would make them say something different for reasons that are not the point.
+currentLocale = "en-US";
 const settingsEl = call("PluginSettings", { pluginID: "mangaTools" });
 assert.notStrictEqual(
   settingsEl.type,
@@ -1052,8 +1057,11 @@ const settingsSelect = find(
   (n) => n.props && Array.isArray(n.props.options) && n.props.isMulti
 );
 assert.deepStrictEqual(
-  settingsSelect.props.value.map((o) => o.value),
-  ["ja", "en"],
+  settingsSelect.props.value.map((o) => o.value).sort(),
+  ["en", "ja"],
+  // Sorted: the value is drawn in the order the options are listed in, and those
+  // are ordered by displayed name in the reader's collation — a display detail,
+  // not something this assertion is about.
   "the current value should be the enabled set"
 );
 
@@ -1117,6 +1125,90 @@ assert.deepStrictEqual(capturedConfigWrite, {
 NS.showFlags = true;
 console.log(
   "✓ settings UI (multiselect + switches write configurePlugin, update shared state)"
+);
+
+// ── 7d. The plugin's own strings follow Stash's UI language ────────
+// Only the strings this plugin writes itself have catalogs: the headings, the
+// descriptions and the placeholders. Everything else on screen comes from Stash's
+// messages, which its own provider resolves.
+const headingIn = (locale) => {
+  currentLocale = locale;
+  const el = call("PluginSettings", { pluginID: "mangaTools" });
+  return find(el, (n) => n.type === "h3").props.children;
+};
+const placeholderIn = (locale) => {
+  currentLocale = locale;
+  const el = call("PluginSettings", { pluginID: "mangaTools" });
+  return find(
+    el,
+    (n) => n.props && Array.isArray(n.props.options) && n.props.isMulti
+  ).props.placeholder;
+};
+
+assert.strictEqual(headingIn("en-US"), "Enabled languages");
+assert.strictEqual(
+  headingIn("zh-CN"),
+  "启用的语言",
+  "a Stash set to Simplified Chinese should read the Chinese heading"
+);
+assert.strictEqual(
+  placeholderIn("zh-CN"),
+  "全部语言",
+  "…including the multiselect's placeholder"
+);
+assert.strictEqual(
+  headingIn("zh-Hant"),
+  "啟用的語言",
+  "Traditional Chinese has its own catalog"
+);
+
+// The locale chain: an exact tag, then subtags dropped one at a time, then
+// English. A regional variant reads its language's catalog.
+assert.strictEqual(
+  headingIn("zh-Hant-HK"),
+  "啟用的語言",
+  "zh-Hant-HK should fall back to the zh-Hant catalog"
+);
+assert.strictEqual(headingIn("en-GB"), "Enabled languages");
+assert.strictEqual(
+  headingIn("de-DE"),
+  "Enabled languages",
+  "a language with no catalog of its own reads English rather than showing ids"
+);
+
+// And the lookup itself, including the reading a bare `zh` gets
+assert.strictEqual(
+  NS.t({ locale: "zh" }, "mangaTools.select.placeholder"),
+  "选择语言…",
+  "a bare zh means Simplified, as it does in the language field"
+);
+assert.strictEqual(
+  NS.t({ locale: "ja-JP" }, "mangaTools.select.placeholder"),
+  "Select language…"
+);
+assert.strictEqual(
+  NS.t({ locale: "zh-CN" }, "mangaTools.nope"),
+  "mangaTools.nope",
+  "an id no catalog has should show as itself, so it is obvious in the UI"
+);
+const catalogs = NS.catalogs();
+const englishIds = Object.keys(catalogs.en).sort();
+assert.ok(
+  Object.keys(catalogs).length > 1,
+  "there should be catalogs to compare"
+);
+for (const locale of Object.keys(catalogs)) {
+  assert.deepStrictEqual(
+    Object.keys(catalogs[locale]).sort(),
+    englishIds,
+    `the ${locale} catalog must cover exactly the ids en.json has — a missing one ` +
+      "would read English in the middle of a translated screen, a stray one would " +
+      "never be shown"
+  );
+}
+currentLocale = "zh-CN";
+console.log(
+  "✓ plugin strings (catalogs by Stash locale, subtag fallback, English last)"
 );
 
 // ── 8. CustomFieldInput isolation ──────────────────────────────────
@@ -3494,7 +3586,11 @@ setTimeout(() => {
     null,
     "a mixed selection must not prefill"
   );
-  assert.strictEqual(bulkSelectOf().props.placeholder, "Select language…");
+  assert.strictEqual(
+    bulkSelectOf().props.placeholder,
+    "选择语言…",
+    "the placeholder is this plugin's own string, so it follows the UI language too"
+  );
 
   selectGalleries(["1", "4"]);
   assert.strictEqual(

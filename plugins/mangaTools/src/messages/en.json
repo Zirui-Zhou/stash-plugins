@@ -1,0 +1,13 @@
+{
+  "mangaTools.select.placeholder": "Select language…",
+
+  "mangaTools.settings.enabledLanguages.heading": "Enabled languages",
+  "mangaTools.settings.enabledLanguages.description": "Only these languages appear in the edit-page dropdown. Display (badge and detail row) is unaffected. Leave empty to show every language.",
+  "mangaTools.settings.enabledLanguages.placeholder": "All languages",
+
+  "mangaTools.settings.showFlags.heading": "Show flags",
+  "mangaTools.settings.showFlags.description": "Draw the flag beside the language name. Turn this off to show the name on its own.",
+
+  "mangaTools.settings.showCoverBadge.heading": "Show the language on gallery covers",
+  "mangaTools.settings.showCoverBadge.description": "The badge in the bottom-right of a gallery's cover. With flags turned off it shows the language name instead of a flag."
+}

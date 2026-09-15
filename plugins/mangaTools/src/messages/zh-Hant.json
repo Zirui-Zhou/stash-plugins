@@ -1,0 +1,13 @@
+{
+  "mangaTools.select.placeholder": "選擇語言…",
+
+  "mangaTools.settings.enabledLanguages.heading": "啟用的語言",
+  "mangaTools.settings.enabledLanguages.description": "只有這些語言會出現在編輯頁的下拉選單裡。顯示方式（封面徽章和詳細頁那一行）不受影響。留空表示顯示全部語言。",
+  "mangaTools.settings.enabledLanguages.placeholder": "全部語言",
+
+  "mangaTools.settings.showFlags.heading": "顯示國旗",
+  "mangaTools.settings.showFlags.description": "在語言名稱旁畫出國旗。關掉後只顯示名稱。",
+
+  "mangaTools.settings.showCoverBadge.heading": "在封面顯示語言",
+  "mangaTools.settings.showCoverBadge.description": "畫廊封面右下角的徽章。關掉國旗時顯示語言名稱而不是國旗。"
+}

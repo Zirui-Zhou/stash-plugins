@@ -312,6 +312,8 @@ mangaTools/
 │   ├── mangaTools.tsx        Badge, dropdown, bulk row, settings, patches
 │   ├── language-filter.tsx   The gallery list's language filter section
 │   ├── languages.ts          Codes, flags, and the name lookup (pure, no DOM)
+│   ├── i18n.ts               The plugin's own strings, per locale
+│   ├── messages/             One JSON catalog per language
 │   └── plugin-api.ts         Types for PluginApi and the namespace above
 ├── tests/
 │   └── smoke.js              Smoke test, run by `npm test` from the repo root
@@ -662,9 +664,24 @@ languages the script-subtag design exists for. It also ships no `zh-TW` locale,
 and its ~4.8 KB per locale × 32 locales would be ~140 KB against a 31 KB bundle,
 to cover fewer locales than the platform already provides for nothing.
 
-**This is still only half of i18n.** The plugin's own strings — `Select language…`,
-the settings headings and descriptions — remain hard-coded English, so the
-surrounding UI does not follow the language the names do.
+**The plugin's own strings are translated too.** The headings, descriptions and
+placeholders it writes itself — `Select language…`, the three settings — live in
+`src/messages/*.json`, and `t(intl, id)` reads them from the catalog for Stash's UI
+language. Everything else on screen comes from Stash's own messages and follows the
+language for free.
+
+A locale is chosen by its tag, dropping subtags one at a time, so `zh-Hant-HK` reads
+the `zh-Hant` catalog; a bare `zh` reads the Simplified one, matching how a bare
+value in the language field is read. A locale with no catalog of its own — or one
+that has not translated a particular string — reads English, per key, so a
+half-finished translation shows translated sentences rather than ids. See
+[Translating](#translating).
+
+Two things stay English, and neither is this plugin's to translate: the label
+`exclude` on a sidebar row, which is a literal in Stash's own sidebar filter, and
+the `displayName`/`description` in `mangaTools.yml`, which Stash's own settings UI
+would render — the plugin replaces that UI with its own, so what is on screen comes
+from the catalogs.
 
 **Changing the field name**: edit `NS.FIELD_NAME` at the end of
 `src/languages.ts`. Everything else reads it from there, including the GraphQL
@@ -674,6 +691,36 @@ query in `getQuery`.
 single-field right now. `pickLanguage` / `setLanguage` are generic read/write
 helpers that can be lifted out, but the badge and the dropdown both assume one
 value.
+
+### Translating
+
+The plugin's own strings are the eight in `src/messages/en.json` — the edit-page
+placeholder and the three settings blocks. Everything else it puts on screen comes
+from Stash's messages, which Stash already translates.
+
+**Adding a language** is two lines and a file:
+
+1. copy `en.json` to a file named after the tag Stash uses — `de.json`,
+   `pt-BR.json`, `zh-Hant.json`
+2. import it in `src/i18n.ts` and add it to `CATALOGS` there
+
+The list is written out by hand, deliberately: esbuild has no equivalent of Vite's
+`import.meta.glob`, so a catalog has to be imported by name, and a file the build
+cannot see would simply never load. The smoke test fails if the catalogs disagree
+about which ids exist, which is the mistake that would otherwise only show up as a
+sentence in the wrong language.
+
+Keys are not translated, only their values. A locale that has not translated a
+string reads the English one for that string, so a half-finished catalog shows
+translated sentences rather than ids.
+
+Locales are matched by tag, dropping subtags one at a time — `zh-Hant-HK` reads the
+`zh-Hant` catalog — and a bare `zh` reads the Simplified one, matching how a bare
+value in the language field is read. Anything with no catalog reads English.
+
+`mangaTools.yml` is not translated, and cannot be: its `displayName`/`description`
+are what Stash's own settings UI would render. The plugin replaces that UI with its
+own, and what it draws comes from the catalogs.
 
 ### Deliberately not done
 

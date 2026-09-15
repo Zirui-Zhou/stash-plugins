@@ -164,6 +164,13 @@ export interface MangaToolsNamespace {
     intl: MangaToolsIntl,
     criterion: MangaToolsFilterCriterion
   ): string[] | null;
+
+  /** One of this plugin's own strings, in the reader's Stash language. */
+  t(intl: MangaToolsIntl, id: string): string;
+  /** The message catalog a locale reads from — see i18n.ts for the chain. */
+  catalogFor(locale: string): { [id: string]: string };
+  /** Every catalog, by tag */
+  catalogs(): { [locale: string]: { [id: string]: string } };
 }
 
 /**
