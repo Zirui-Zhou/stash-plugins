@@ -850,7 +850,7 @@ function MangaToolsSettings(props: { pluginID: string }) {
       <BooleanSetting
         id="mangaTools-showFlags"
         heading="Show flags"
-        subHeading="Draw the flag beside the language name — on the cover badge, in the dropdowns and on the detail page. Turn this off to show the name on its own."
+        subHeading="Draw the flag beside the language name. Turn this off to show the name on its own."
         checked={NS.showFlags}
         onChange={function (next) {
           NS.showFlags = next;

@@ -32,7 +32,7 @@ settings:
     type: STRING
   showFlags:
     displayName: Show flags
-    description: Draw the flag beside the language name, everywhere it appears. Turn this off to show the name on its own.
+    description: Draw the flag beside the language name. Turn this off to show the name on its own.
     type: BOOLEAN
   showCoverBadge:
     displayName: Show the language on gallery covers
