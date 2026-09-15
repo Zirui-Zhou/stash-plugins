@@ -63,7 +63,6 @@ export interface MangaToolsOption {
 /** The namespace languages.ts publishes on window.MangaTools */
 export interface MangaToolsNamespace {
   LANGUAGES: { [code: string]: MangaToolsLanguage };
-  ORDER: string[];
   FALLBACK_LOCALE: string;
   FIELD_NAME: string;
 

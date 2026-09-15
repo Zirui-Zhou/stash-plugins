@@ -76,26 +76,6 @@ NS.LANGUAGES = {
 };
 
 /**
- * Order used by the dropdown (common languages first). Does not affect the badge.
- */
-NS.ORDER = [
-  "ja",
-  "zh-Hans",
-  "zh-Hant",
-  "en",
-  "ko",
-  "es",
-  "fr",
-  "de",
-  "it",
-  "pt",
-  "ru",
-  "th",
-  "vi",
-  "id",
-];
-
-/**
  * UI language to fall back to when a name is not available in the requested one.
  *
  * It is no longer a key into a table of ours — there is no name table any more.
@@ -117,6 +97,33 @@ NS.FALLBACK_LOCALE = "en";
  * render, and constructing a formatter is by far the expensive part of that.
  */
 var displayNamesCache: { [locale: string]: MangaToolsDisplayNames | null } = {};
+
+/**
+ * One collator per locale, kept for the same reason as the formatters above:
+ * these are built per render, not once.
+ */
+var collatorCache: { [locale: string]: Intl.Collator } = {};
+
+/**
+ * A collator for a UI locale, for ordering the dropdown's options.
+ *
+ * Unlike Intl.DisplayNames this needs no availability check — Collator predates
+ * ES5 and every engine Stash runs in has it. The only way it can fail is a tag
+ * the engine considers malformed, which the try/catch turns into the fallback
+ * locale rather than an exception in the middle of a render. Stash supports
+ * user-supplied custom locales, so an unusual tag is not hypothetical.
+ */
+function collatorFor(locale: string): Intl.Collator {
+  if (!(locale in collatorCache)) {
+    try {
+      collatorCache[locale] = new Intl.Collator(locale);
+    } catch (e) {
+      collatorCache[locale] = new Intl.Collator(NS.FALLBACK_LOCALE);
+    }
+  }
+
+  return collatorCache[locale];
+}
 
 /**
  * Builds an Intl.DisplayNames, or returns null if the engine rejects the list.
@@ -272,22 +279,38 @@ NS.describe = function (
 };
 
 /**
- * Options for the dropdown.
+ * Options for the dropdown, ordered by the name the reader will actually see.
+ *
+ * There used to be a hand-written order here — ja, zh-Hans, zh-Hant, en, ko, …
+ * th, vi, id — which is the author's languages first, then European ones, then
+ * the rest. That is a judgement about which languages matter, and nothing needs
+ * one: the dropdown is searchable, and the enabled-languages setting usually
+ * shortens it anyway.
+ *
+ * Sorting by the displayed name needs a collator rather than the default
+ * comparison. Ordering by code point is arbitrary for Thai, Chinese and
+ * Japanese, and would look like no order at all to those readers. The cost is
+ * that the order follows the UI language, which is the intent.
  *
  * `label` is the localised name; the flag is rendered separately by the caller
  * from `option.flag` (flag-icons draws with CSS, so it cannot go inside a
  * plain-text label).
  */
 NS.languageOptions = function (locale?: string | null): MangaToolsOption[] {
-  return NS.ORDER.filter(function (code) {
-    return !!NS.LANGUAGES[code];
-  }).map(function (code) {
-    return {
-      value: code,
-      label: NS.name(code, locale),
-      flag: NS.LANGUAGES[code].flag,
-    };
-  });
+  var uiLocale = locale || NS.FALLBACK_LOCALE;
+  var collator = collatorFor(uiLocale);
+
+  return Object.keys(NS.LANGUAGES)
+    .map(function (code) {
+      return {
+        value: code,
+        label: NS.name(code, uiLocale),
+        flag: NS.LANGUAGES[code].flag,
+      };
+    })
+    .sort(function (a, b) {
+      return collator.compare(a.label, b.label);
+    });
 };
 
 /**
@@ -327,16 +350,16 @@ NS.parseEnabledLanguages = function (raw: unknown): Set<string> | null {
 
 /**
  * Serialises a set of enabled codes back into the stored string form — the
- * inverse of parseEnabledLanguages. An empty set serialises to "", which
- * parses back to null ("all"). The codes are ordered by NS.ORDER, so the
- * stored value is stable and readable regardless of the selection order.
+ * inverse of parseEnabledLanguages. An empty set serialises to "", which parses
+ * back to null ("all").
+ *
+ * Ordered by code, deliberately not by the name the reader sees: the stored
+ * value has to come out the same whoever writes it, and languageOptions' order
+ * follows the UI language now. Code order is stable and still readable
+ * ("de,en,ja").
  */
 NS.serializeEnabledLanguages = function (codes: Iterable<string>): string {
-  return Array.from(codes)
-    .sort(function (a, b) {
-      return NS.ORDER.indexOf(a) - NS.ORDER.indexOf(b);
-    })
-    .join(",");
+  return Array.from(codes).sort().join(",");
 };
 
 /**

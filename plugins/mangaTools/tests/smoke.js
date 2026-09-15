@@ -273,6 +273,18 @@ const FAKE_NAMES = {
     "zh-TW": "繁體中文", "ja-JP": "繁体中国語", "de-DE": "Chinesisch (traditionell)",
   },
   en: { "en-US": "English", en: "English", "zh-CN": "英语", "ja-JP": "英語" },
+  // Two complete sets, English and Chinese, so the ordering tests have real
+  // names to sort in both. The Chinese strings are the ones Intl.DisplayNames
+  // actually returns, so a failure here means this plugin broke, not the data.
+  ko: { "en-US": "Korean", "zh-CN": "韩语" },
+  es: { "en-US": "Spanish", "zh-CN": "西班牙语" },
+  fr: { "en-US": "French", "zh-CN": "法语" },
+  de: { "en-US": "German", "zh-CN": "德语" },
+  it: { "en-US": "Italian", "zh-CN": "意大利语" },
+  pt: { "en-US": "Portuguese", "zh-CN": "葡萄牙语" },
+  ru: { "en-US": "Russian", "zh-CN": "俄语" },
+  th: { "en-US": "Thai", "zh-CN": "泰语" },
+  vi: { "en-US": "Vietnamese", "zh-CN": "越南语" },
   id: { "en-US": "Indonesian", en: "Indonesian", "zh-CN": "印度尼西亚语" },
 };
 
@@ -493,26 +505,56 @@ assert.strictEqual(NS.describe("", "zh-CN"), null);
 assert.strictEqual(NS.describe(null, "zh-CN"), null);
 console.log("✓ describe (flag mapping, case tolerance, unknown values)");
 
-// ── 5. Every language has a flag, and every code is offered exactly once ──
+// ── 5. Every language has a flag, and every one is offered ────────
 // The table is only codes and flags now; there is nothing to check for names,
-// because the plugin no longer holds any. What is worth checking is that the
-// dropdown's order and the table agree — a code in ORDER with no entry is
-// silently dropped by languageOptions, and an entry missing from ORDER is
-// silently hidden from the dropdown.
+// because the plugin no longer holds any. What is worth checking is that every
+// entry reaches the dropdown — languageOptions is built from the table itself,
+// so a code can no longer be dropped by a list somewhere else disagreeing with
+// it, and that is the property to hold on to.
 Object.keys(NS.LANGUAGES).forEach((code) => {
   const entry = NS.LANGUAGES[code];
   assert.ok(entry.flag && entry.flag.length === 2, `${code} is missing a flag code`);
-  assert.ok(NS.ORDER.includes(code), `${code} has a flag but is missing from ORDER`);
 });
-NS.ORDER.forEach((code) => {
-  assert.ok(NS.LANGUAGES[code], `${code} is in ORDER but has no table entry`);
-});
-assert.strictEqual(
-  NS.ORDER.length,
-  Object.keys(NS.LANGUAGES).length,
-  "ORDER and the table should list the same languages"
+const offered = NS.languageOptions("en-US").map((o) => o.value);
+assert.deepStrictEqual(
+  offered.slice().sort(),
+  Object.keys(NS.LANGUAGES).sort(),
+  "every language in the table should be offered, and nothing else"
 );
-console.log(`✓ language table complete (${Object.keys(NS.LANGUAGES).length} codes × flag, ORDER in step)`);
+assert.strictEqual(new Set(offered).size, offered.length, "no language should be offered twice");
+console.log(`✓ language table complete (${Object.keys(NS.LANGUAGES).length} codes × flag, all offered)`);
+
+// ── 5b. The dropdown is ordered by the name the reader sees ────────
+// There is no hand-written order any more — the old one was the author's
+// languages first, then European, then the rest. Read off the English names,
+// where the expected sequence is verifiable by eye.
+assert.deepStrictEqual(
+  NS.languageOptions("en-US").map((o) => o.label),
+  ["English", "French", "German", "Indonesian", "Italian", "Japanese", "Korean",
+   "Portuguese", "Russian", "Simplified Chinese", "Spanish", "Thai",
+   "Traditional Chinese", "Vietnamese"],
+  "options should be ordered by the displayed name"
+);
+
+// …and it is a *collated* order rather than code-point order. For Chinese the
+// two genuinely disagree, so this fails if the collator is ever dropped for a
+// plain .sort() — which would put Thai and Chinese in an order no reader of
+// those scripts would recognise.
+const zhOptions = NS.languageOptions("zh-CN");
+const zhLabels = zhOptions.map((o) => o.label);
+assert.deepStrictEqual(
+  zhLabels,
+  zhLabels.slice().sort(new Intl.Collator("zh-CN").compare),
+  "Chinese names should be in pinyin order, not code-point order"
+);
+
+// And the order follows the UI language — that is the point of sorting by name.
+const enValues = NS.languageOptions("en-US").map((o) => o.value);
+assert.notDeepStrictEqual(zhOptions.map((o) => o.value), enValues,
+  "a different UI language should order the same languages differently");
+assert.deepStrictEqual(zhOptions.map((o) => o.value).sort(), enValues.slice().sort(),
+  "…without changing which languages are offered");
+console.log("✓ dropdown order (by displayed name, in the reader's collation)");
 
 // ── 6. Patch registration ──────────────────────────────────────────
 // Note it is CustomFields (plural, the container), not CustomField — the latter
@@ -571,9 +613,15 @@ assert.deepStrictEqual(
 assert.strictEqual(NS.parseEnabledLanguages("klingon"), null,
   "a value with only unknown codes parses to null (no restriction)");
 
-assert.strictEqual(NS.serializeEnabledLanguages(["en", "ja"]), "ja,en",
-  "serialise should order by NS.ORDER, not insertion order");
+// Ordered by code, never by the name the reader sees: the stored value has to
+// come out the same for every user, and languageOptions' order now follows the
+// UI language.
+assert.strictEqual(NS.serializeEnabledLanguages(["ja", "en"]), "en,ja",
+  "serialise should order by code, not insertion order");
 assert.strictEqual(NS.serializeEnabledLanguages(new Set(["zh-Hans", "ja"])), "ja,zh-Hans");
+assert.strictEqual(NS.serializeEnabledLanguages(["en", "ja"]),
+  NS.serializeEnabledLanguages(["ja", "en"]),
+  "the same selection must serialise the same way whatever order it arrives in");
 assert.strictEqual(NS.serializeEnabledLanguages([]), "", "an empty set serialises to the empty string");
 
 // The boolean settings. Absent means "not configured", so the default — on — is
@@ -853,7 +901,8 @@ studioRow.appendChild(studioControl);
 const editSelect = find(fg, (n) => n.props && n.props.options);
 assert.strictEqual(editSelect.props.value.value, "ja");
 assert.strictEqual(editSelect.props.value.flag, "jp");
-assert.strictEqual(editSelect.props.options[0].label, "日语");
+// The order is asserted in 5b; here it is only the selected value echoing back.
+assert.strictEqual(editSelect.props.options.find((o) => o.value === "ja").label, "日语");
 
 // Appearance must match Stash's own dropdowns: no default separator rule, and
 // the same theme prefix
@@ -1023,11 +1072,12 @@ setTimeout(() => {
   select.props.onChange(null);
   assert.deepStrictEqual(captured, { author: "x" }, "clearing should remove the field entirely");
 
-  // Options: flag + localised name
+  // Options: flag + localised name. The order is asserted in 5b; what matters
+  // here is that each option carries both halves of the display.
   const opts = select.props.options;
-  assert.strictEqual(opts[0].value, "ja", "common languages should come first");
-  assert.strictEqual(opts[0].label, "日语");
-  assert.strictEqual(opts[0].flag, "jp");
+  const jaOption = opts.find((o) => o.value === "ja");
+  assert.strictEqual(jaOption.label, "日语");
+  assert.strictEqual(jaOption.flag, "jp");
   assert.strictEqual(opts.some((o) => o.flag === "vn"), true, "the Vietnam flag should be vn");
   assert.strictEqual(opts.every((o) => o.flag && o.flag.length === 2), true, "every option should have a flag");
 

@@ -53,6 +53,11 @@ patch.** Stash leaves no insertion point at either one:
   the vertical rule react-select draws between the clear and expand icons —
   which is exactly what Stash's own `Select.tsx` does in its default props.
 
+  Its options are **ordered by the name shown**, in the reader's own collation,
+  so the list reads naturally in whatever language the Stash UI is set to. There
+  is no hand-written priority order — see [Extending](#extending) for why that
+  one was removed.
+
 Both positions only insert an **empty div**; the content is rendered by a React
 portal, so a UI language change or a value change updates automatically. No HTML
 is written into the DOM by hand.
@@ -384,10 +389,10 @@ values through the plugin's dropdown never hits this, since that writes lowercas
 ## Extending
 
 **Adding a language**: add one line to `NS.LANGUAGES` in `src/languages.ts` — a
-canonical code and a `flag` (a flag-icons alpha-2 **country** code) — and add the
-code to `NS.ORDER` for its sort position. That is the whole change: the name comes
-from `Intl.DisplayNames`, so there is nothing to translate. A code `ORDER` and the
-table disagree on is caught by the smoke test.
+canonical code and a `flag` (a flag-icons alpha-2 **country** code). That is the
+whole change. The name comes from `Intl.DisplayNames`, so there is nothing to
+translate, and the dropdown's position comes from that name, so there is no order
+to maintain either.
 
 **Only canonical codes are recognised.** There is no alias mapping: values only
 ever come from this plugin's own dropdown, so they are canonical by construction.
@@ -430,6 +435,14 @@ and adding a language needs no translation. Three consequences worth knowing:
 - **Recognition stays this plugin's job.** `Intl.DisplayNames` would happily name
   `chi`, `jpn` and `zh-TW`; those must keep reading as unrecognised data, so only
   codes in `NS.LANGUAGES` are ever looked up.
+- **The dropdown's order is the reader's, not ours.** Options are sorted by the
+  displayed name through `Intl.Collator`, so they come out in the reader's own
+  alphabet. The order that used to be here ran `ja, zh-Hans, zh-Hant, en, ko, …`
+  then European languages then `th, vi, id` — the author's languages first, then
+  the West, then the rest. That is a judgement about which languages matter, and
+  nothing needs one: the list is searchable and the setting above usually
+  shortens it. Note the *stored* `enabledLanguages` string is still sorted by
+  code, so it does not depend on who wrote it.
 
 An engine without `DisplayNames` (older than Chrome 81 / Firefox 86 / Safari
 14.1) is not a crash: names degrade to the raw code, which is what an unrecognised
