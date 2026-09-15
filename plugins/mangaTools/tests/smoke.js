@@ -4008,6 +4008,21 @@ setTimeout(() => {
     "标为有修正",
     "an unmarked gallery cycles back to censored"
   );
+  assert.strictEqual(
+    unmarked.drawn.node.props.className,
+    "minimal manga-tools-censorship btn btn-secondary is-unmarked",
+    "and carries the one state class the CSS has a rule for, so an unmarked " +
+      "gallery's button reads as an offer rather than as a value"
+  );
+  assert.ok(
+    /\.manga-tools-censorship\.is-unmarked\s*\{/.test(css),
+    "…and that rule exists"
+  );
+  assert.ok(
+    !/#664c3f/.test(css.slice(css.indexOf("manga-tools-censorship"))),
+    "the marked states keep the button's own colour — no brown, which is " +
+      "Stash's accent for organized and means something else"
+  );
   unmarked.drawn.node.props.onClick();
   assert.deepStrictEqual(
     galleryWrites[galleryWrites.length - 1].input.custom_fields,

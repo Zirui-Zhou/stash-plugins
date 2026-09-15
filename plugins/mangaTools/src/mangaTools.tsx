@@ -960,9 +960,11 @@ function CensorshipToolbarButton(props: {
     <button
       type="button"
       title={censorshipAction(intl, mark)}
+      // The state is carried in the class for the tests and for anyone reading
+      // the DOM; only "not marked" has a rule of its own — see the CSS.
       className={
         "minimal manga-tools-censorship btn btn-secondary" +
-        (mark ? " is-" + mark : "")
+        (mark ? " is-" + mark : " is-unmarked")
       }
       disabled={busy}
       onClick={onClick}

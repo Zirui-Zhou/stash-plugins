@@ -276,6 +276,13 @@ out: a tooltip about a word rather than about the gallery would be worse than no
 tooltip. If the pun wears off, `censorshipIcon` in `src/mangaTools.tsx` is the
 one place to change it.
 
+**Only "not marked" has a colour of its own** — it is dimmed, so the button reads
+as an offer rather than as a setting with a value. The two marked states keep the
+button's ordinary foreground colour and are told apart by the icon alone. Stash's
+organized button next door does the opposite, dimming one state and colouring the
+other brown; that brown is deliberately not copied, since it is Stash's accent for
+"organized" and would say that being censored is a kind of done-ness.
+
 | Where | Effect |
 |---|---|
 | Gallery list / card | The state's icon **at the end of the popover row** — the row that appears on hover with the image count, the tag count and the organized box. An unmarked gallery adds nothing there, since most galleries are unmarked |
