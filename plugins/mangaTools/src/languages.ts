@@ -154,14 +154,12 @@ NS.ORDER = [
 NS.FALLBACK_LOCALE = "en";
 
 /**
- * Normalises a react-intl locale into a key of `names`.
+ * Normalises a react-intl locale — "zh-CN" / "zh-TW" / "en-US" / "ja-JP" — into
+ * a key of `names`.
  *
  * Deliberately matches Stash's getLocaleCode (src/locales/index.ts):
  * zh-CN → zh, zh-TW → tw, otherwise the first two characters. Keeping them
  * aligned means this table can follow Stash's own locale files.
- *
- * @param {string} [locale] e.g. "zh-CN" / "zh-TW" / "en-US" / "ja-JP"
- * @returns {string}
  */
 NS.localeCode = function (locale?: string | null): string {
   if (!locale) return NS.FALLBACK_LOCALE;
@@ -174,8 +172,6 @@ NS.localeCode = function (locale?: string | null): string {
 /**
  * Case-insensitive lookup in LANGUAGES. Returns the canonical key, or "" if
  * nothing matches.
- * @param {string} code
- * @returns {string}
  */
 NS.findCanonical = function (code?: string | null): string {
   if (!code) return "";
@@ -195,9 +191,6 @@ NS.findCanonical = function (code?: string | null): string {
  * that matches no language is returned as-is (trimmed) and described as
  * unknown — the plugin does not guess intent, and does not quietly rewrite
  * your library.
- *
- * @param {*} raw
- * @returns {string}
  */
 NS.normalize = function (raw: unknown): string {
   if (raw === null || raw === undefined) return "";
@@ -213,15 +206,11 @@ NS.normalize = function (raw: unknown): string {
 };
 
 /**
- * Localised name for a language.
+ * Localised name for a language, given a code in any spelling normalize accepts.
  *
  * Mirrors Stash's getCountryByISO: look the name up by UI locale, fall back to
  * English, and if the code is not recognised at all return it unchanged
  * (the equivalent of CountryLabel.tsx's `fromISO ?? country`).
- *
- * @param {string} code language code, in any accepted spelling
- * @param {string} [locale] react-intl locale
- * @returns {string}
  */
 NS.name = function (code: unknown, locale?: string | null): string {
   // Go through normalize rather than findCanonical directly, so that
@@ -240,12 +229,12 @@ NS.name = function (code: unknown, locale?: string | null): string {
 };
 
 /**
- * Describes a language value for rendering.
+ * Describes a language value for rendering. Takes the raw value stored in the
+ * custom field.
  *
- * @param {*} raw the raw value stored in the custom field
- * @param {string} [locale] react-intl locale
- * @returns {{code: string, flag: string|null, name: string, known: boolean} | null}
- *          null for an empty value; `flag` is null for unknown values
+ * Returns null for an empty value, and a description whose `flag` is null for a
+ * value the table does not recognise — the shape itself is MangaToolsDescription
+ * in plugin-api.ts.
  */
 NS.describe = function (
   raw: unknown,
@@ -274,9 +263,6 @@ NS.describe = function (
  * `label` is the localised name; the flag is rendered separately by the caller
  * from `option.flag` (flag-icons draws with CSS, so it cannot go inside a
  * plain-text label).
- *
- * @param {string} [locale]
- * @returns {Array<{value: string, label: string, flag: string}>}
  */
 NS.languageOptions = function (locale?: string | null): MangaToolsOption[] {
   return NS.ORDER.filter(function (code) {
@@ -304,15 +290,12 @@ NS.enabledLanguages = null;
 
 /**
  * Parses the stored `enabledLanguages` setting — a comma-separated string of
- * canonical codes — into a Set. Returns null for an empty/unset value, which
- * means "no restriction".
+ * canonical codes, e.g. "ja,en,zh-Hans" — into a Set. Returns null for an
+ * empty/unset value, which means "no restriction".
  *
  * Only canonical codes survive: anything that does not resolve through
  * findCanonical is dropped, so a hand-edited value can never corrupt the list,
  * and duplicates collapse to one entry.
- *
- * @param {*} raw e.g. "ja,en,zh-Hans"
- * @returns {Set<string>|null}
  */
 NS.parseEnabledLanguages = function (raw: unknown): Set<string> | null {
   if (raw === null || raw === undefined) return null;
@@ -333,9 +316,6 @@ NS.parseEnabledLanguages = function (raw: unknown): Set<string> | null {
  * inverse of parseEnabledLanguages. An empty set serialises to "", which
  * parses back to null ("all"). The codes are ordered by NS.ORDER, so the
  * stored value is stable and readable regardless of the selection order.
- *
- * @param {Iterable<string>} codes
- * @returns {string}
  */
 NS.serializeEnabledLanguages = function (codes: Iterable<string>): string {
   return Array.from(codes)
@@ -372,10 +352,6 @@ NS.showCoverBadge = true;
  * fallback, i.e. the plugin's default. A real boolean is taken as-is, and a
  * string is understood too, so a value hand-edited in the config cannot
  * silently read as true when false was meant.
- *
- * @param {*} raw
- * @param {boolean} fallback used when the setting is absent or unreadable
- * @returns {boolean}
  */
 NS.parseFlag = function (raw: unknown, fallback: boolean): boolean {
   if (raw === null || raw === undefined || raw === "") return fallback;
