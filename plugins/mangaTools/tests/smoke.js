@@ -89,13 +89,23 @@ const CUSTOM_FIELDS_OPTION = {
   }),
 };
 
+/**
+ * The criteria a query string stands for, for the one test that needs Stash's
+ * decode. A real ListFilterModel decodes its own encoding; only the fact that
+ * decoding *replaces* the criteria matters here, so a test writes the answer
+ * down rather than the encoding being round-tripped.
+ */
+const criteriaByQuery = {};
+
 function makeFilterModel(criteria = []) {
   return {
     criteria,
     options: { criterionOptions: [CUSTOM_FIELDS_OPTION] },
     clone() {
+      // `this.criteria`, not the array it was built with: a model can be
+      // re-configured from a query string, and Stash clones its own state.
       return makeFilterModel(
-        criteria.map((c) => ({
+        this.criteria.map((c) => ({
           criterionOption: { ...c.criterionOption },
           value: (c.value || []).map((v) => ({
             ...v,
@@ -110,8 +120,17 @@ function makeFilterModel(criteria = []) {
       encodedCriteria.push(this.criteria);
       return "ENCODED(" + JSON.stringify(this.criteria) + ")";
     },
+    // Rebuilds the criteria from the query string, as Stash's does — including
+    // dropping the ones that were there before, which is the point of it.
+    configureFromQueryString(search) {
+      urlDecodes.push(search);
+      this.criteria = (criteriaByQuery[search] || []).slice();
+    },
   };
 }
+
+/** Query strings the model above was asked to decode */
+const urlDecodes = [];
 
 /** Criteria handed to makeQueryParameters by the most recent call */
 const encodedCriteria = [];
@@ -1396,6 +1415,56 @@ const noCustomFields = makeFilterModel([]);
 noCustomFields.options = { criterionOptions: [] };
 assert.strictEqual(NS.languageFilterQuery(noCustomFields, sel("", ["ja"])), null,
   "without the option there is nowhere to put the condition, and it says so");
+
+// What the dialog's Apply merges into. Apply commits the dialog's *copy*, and the
+// model the plugin holds is the list's, which catches up a commit later — so
+// merging into it would merge into the filter as it was before the dialog opened,
+// resurrecting whatever the dialog took away and losing whatever it added. The
+// URL Stash has just written is the copy, so that is what is merged into.
+const staleModel = makeFilterModel([
+  { criterionOption: { type: "studios" }, value: [] },
+  customFieldsCriterion([conditionsOf("EQUALS", ["ja"])]),
+]);
+criteriaByQuery["?c=organized"] = [
+  { criterionOption: { type: "organized" }, value: [] },
+  customFieldsCriterion([conditionsOf("EQUALS", ["ja"])]),
+];
+
+urlDecodes.length = 0;
+const fromUrl = NS.filterFromQuery(staleModel, "?c=organized");
+assert.deepStrictEqual(urlDecodes, ["?c=organized"],
+  "the model should be re-read from the query string");
+assert.deepStrictEqual(fromUrl.criteria.map((c) => c.criterionOption.type),
+  ["organized", "custom_fields"],
+  "…and be the filter the URL describes, not the one it was cloned off");
+assert.deepStrictEqual(staleModel.criteria.map((c) => c.criterionOption.type),
+  ["studios", "custom_fields"],
+  "…leaving the model it came from alone");
+
+encodedCriteria.length = 0;
+NS.languageFilterQuery(fromUrl, sel("", ["ko"]));
+assert.deepStrictEqual(encodedCriteria[0].map((c) => c.criterionOption.type),
+  ["organized", "custom_fields"],
+  "the merge should keep what the dialog committed — the studio it dropped is gone, "
+  + "and the organized criterion it kept is still there");
+assert.deepStrictEqual(encodedCriteria[0][1].value, [conditionsOf("EQUALS", ["ko"])],
+  "…replacing only the language");
+
+// A model that cannot decode — an older Stash, or one whose shape changed — is
+// merged into as it stands, rather than throwing
+const undecodable = {
+  criteria: [customFieldsCriterion([])],
+  options: { criterionOptions: [CUSTOM_FIELDS_OPTION] },
+  clone() {
+    return this;
+  },
+  makeQueryParameters: () => "ENCODED",
+};
+assert.deepStrictEqual(
+  NS.filterFromQuery(undecodable, "?c=x").criteria.map((c) => c.criterionOption.type),
+  ["custom_fields"],
+  "a model with no decode should be merged into as it stands"
+);
 console.log("✓ filter conditions (read any/none/include/exclude, write, merge, clear, not mutated)");
 
 // ── 10d. The sidebar section itself ────────────────────────────────

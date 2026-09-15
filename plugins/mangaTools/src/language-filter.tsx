@@ -619,6 +619,42 @@ function languageFilterQuery(
 }
 
 /**
+ * The filter as the URL has it.
+ *
+ * Used by the dialog's merge, and the reason it is needed is what Apply does:
+ * Stash commits the dialog's *copy*, and the model this plugin is handed is the
+ * list's, which only catches up a commit later — Stash's hook re-reads the query
+ * string on the navigation Apply causes. Merging into the model as it stands
+ * would therefore merge into the filter as it was *before the dialog was opened*,
+ * quietly undoing everything else the dialog did: a criterion removed there would
+ * come back, and one added there would be lost.
+ *
+ * The URL Stash has just written is that copy, so it is the thing to build on.
+ * Re-decoding it is the same route Stash's own hook takes, through the same
+ * public method, so nothing here guesses at the encoding.
+ *
+ * The clone is returned as it stands if the model cannot decode — a Stash that
+ * has changed shape degrades to merging into the older filter rather than
+ * breaking.
+ */
+function filterFromQuery(
+  filter: MangaToolsFilterModel,
+  search?: string
+): MangaToolsFilterModel {
+  // Checked rather than trusted, since it is Stash's object — the same guard
+  // languageFilterQuery makes.
+  if (!filter || typeof filter.clone !== "function") return filter;
+
+  var model = filter.clone();
+
+  if (typeof model.configureFromQueryString === "function") {
+    model.configureFromQueryString(search || "");
+  }
+
+  return model;
+}
+
+/**
  * Reports a filter change the way Stash does it: by replacing the URL.
  *
  * Stash's own list hook re-reads the query string on every location change, so
@@ -664,6 +700,7 @@ NS.adoptLanguageCriterion = adoptLanguageCriterion;
 NS.relabelTags = relabelTags;
 NS.manageDialogTags = manageDialogTags;
 NS.clickedTagRemove = clickedTagRemove;
+NS.filterFromQuery = filterFromQuery;
 
 /** The language table's own label, from Stash's locale files (see mangaTools.tsx
  *  for the longer note; this is the same message, duplicated so this module
@@ -1397,7 +1434,10 @@ export function DialogLanguageFilter(props: {
     // changed nothing cannot affect some later, unrelated render.
     applyPending.current = false;
 
-    var model = props.filter;
+    // The filter Stash has just committed, not the one this component was last
+    // rendered with — see filterFromQuery. Reading the stale one is what would
+    // resurrect a criterion the dialog took away.
+    var model = filterFromQuery(props.filter, history.location.search);
     var unchanged = sameSelection(choice, readLanguageFilter(model));
 
     // Every stage is reported, because this is the whole path that can only be

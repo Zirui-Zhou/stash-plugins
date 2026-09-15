@@ -195,6 +195,15 @@ draws for exactly that case (see `manageDialogTags`). Hiding the tag and clearin
 the card's selection are wired together, so the ✗ on Stash's tag means the same
 thing as the ✗ on this plugin's.
 
+**Applying merges into what Apply committed, not into the list's model.** Stash
+commits the dialog's *copy*, and the model the plugin is handed is the list's, which
+only catches up a commit later — Stash's own hook re-reads the query string on the
+navigation Apply causes. Merging into the model as it stands would therefore merge
+into the filter as it was *before the dialog was opened*, quietly undoing the rest
+of what the dialog did: a criterion removed there would come back, and one added
+there would be lost. So the merge re-reads the query string Stash has just written,
+through the same public decode Stash's hook uses (see `filterFromQuery`).
+
 **It works by rewriting the URL.** Stash keeps its filter in the `c` query
 parameter, and its list hook re-reads that on every navigation. So a filter change
 here is a URL change, and the filter tag, the result count, pagination,
@@ -412,6 +421,10 @@ Against a real Stash:
      no language applied when the dialog was opened, picking one should make a tag
      appear where Stash has none. Pressing the tag's ✗ should empty the card, and
      emptying the card should take the tag away.
+   - **Check that Apply keeps the rest of the dialog**: with the dialog open,
+     remove one of Stash's own criteria (say **Organized**) *and* change the
+     language, then press Apply — the removed criterion must stay removed, and one
+     added there must stay added.
    - The same conditions are reachable by hand: filter panel → Custom Fields →
      field `language`. Both routes write the same thing, so a filter set through
      one should show up in the other.
