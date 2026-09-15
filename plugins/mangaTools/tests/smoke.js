@@ -173,6 +173,12 @@ function makeEl(tag) {
       if (i >= 0) el.children.splice(i, 1);
       return i;
     },
+    // The plugin takes its own row away with removeChild; the fake tree carries
+    // detach for the stub's own use.
+    removeChild(child) {
+      el.detach(child);
+      return child;
+    },
     appendChild(child) {
       if (child.parentNode) child.parentNode.detach(child);
       el.children.push(child);
@@ -190,6 +196,10 @@ function makeEl(tag) {
     get lastElementChild() {
       return el.children[el.children.length - 1] || null;
     },
+    // The tag helpers ask a row which tags are inside it. This stub keeps no
+    // classes of its own, so it answers with nothing — and the plugin then makes
+    // the row it keeps for itself, which is what the assertions below reach for.
+    querySelectorAll: () => [],
     get nextElementSibling() {
       if (!el.parentNode) return null;
       const i = el.parentNode.children.indexOf(el);
@@ -200,11 +210,19 @@ function makeEl(tag) {
       const i = el.parentNode.children.indexOf(el);
       return i > 0 ? el.parentNode.children[i - 1] : null;
     },
-    // Only ".cls", ".cls[data-field=...]", "[data-field=...]" and a bare tag
-    // name are supported — which is all these tests need. The bare attribute
-    // form is what the bulk dialog's anchor uses: its rows are Bootstrap `.row`
-    // divs, with no class of Stash's own to match on.
+    // Only ".cls", ".cls[data-field=...]", "[data-field=...]", a bare tag name
+    // and ".cls .cls" are supported — which is all these tests need. The bare
+    // attribute form is what the bulk dialog's anchor uses: its rows are
+    // Bootstrap `.row` divs, with no class of Stash's own to match on. The
+    // two-token form is the one selector the filter dialog's tag row is found by,
+    // and it is two tokens rather than a selector engine on purpose.
     querySelector(sel) {
+      const mDesc = /^\.([\w-]+) \.([\w-]+)$/.exec(sel);
+      if (mDesc) {
+        const outer = el.querySelector("." + mDesc[1]);
+        return outer ? outer.querySelector("." + mDesc[2]) : null;
+      }
+
       const mAttr = /^\.([\w-]+)(?:\[data-field="([^"]+)"\])?$/.exec(sel);
       const mField = /^\[data-field="([^"]+)"\]$/.exec(sel);
       const mTag = /^([a-z]+)$/.exec(sel);
@@ -1887,13 +1905,32 @@ assert.strictEqual(adopt.criteria[0].criterionOption.type, "custom_fields",
 // Stash's tag for this criterion is the generic custom-field sentence with the
 // raw field name in it. The tag itself is Stash's — its click and its ✗ already
 // do the right thing — so only the text node is replaced.
-const tagWithText = (value) => ({ firstChild: { nodeType: 3, nodeValue: value } });
+//
+// A stand-in for a tag: the text node holding the label, the attributes the tag
+// helpers use, and `closest` answered from the list of selectors it sits inside.
+const tagWithText = (value, ancestors = []) => {
+  const attributes = {};
+  return {
+    firstChild:
+      value === null
+        ? { nodeType: 1, nodeValue: null }
+        : { nodeType: 3, nodeValue: value },
+    style: {},
+    closest: (sel) => (ancestors.indexOf(sel) === -1 ? null : {}),
+    getAttribute: (name) => (name in attributes ? attributes[name] : null),
+    setAttribute: (name, v) => {
+      attributes[name] = v;
+    },
+    hasAttribute: (name) => name in attributes,
+    attributes,
+  };
+};
 const ourTag = tagWithText("language (custom field) is ja, en");
 const studioTag = tagWithText("Studio is J-Model");
 // The field is called "language", so a longer name that merely starts with it
 // must not be mistaken for ours.
 const similarFieldTag = tagWithText("languageNotes (custom field) is x");
-const emptyTag = { firstChild: { nodeType: 1, nodeValue: null } };
+const emptyTag = tagWithText(null);
 tagQuery = () => [studioTag, ourTag, similarFieldTag, emptyTag];
 NS.relabelTags(["语言 是 日语, 英语"]);
 tagQuery = () => [];
@@ -1905,6 +1942,16 @@ assert.strictEqual(similarFieldTag.firstChild.nodeValue, "languageNotes (custom 
   "a field whose name merely starts with the language field's must be left alone");
 assert.strictEqual(emptyTag.firstChild.nodeValue, null,
   "a tag whose label is not a text node must be skipped, not crashed on");
+
+// …and the re-worded tag is still known to be the language one afterwards, which
+// is what the dialog needs: it has to find the tag again on later renders, to
+// hide and to show it. The attribute recording the wording is how, since the
+// wording itself ("语言 是 …") no longer opens with the raw field name.
+tagQuery = () => [ourTag];
+NS.relabelTags(["语言 是 日语"]);
+tagQuery = () => [];
+assert.strictEqual(ourTag.firstChild.nodeValue, "语言 是 日语",
+  "a tag whose wording this plugin wrote should be recognised again by its mark");
 
 // One label per tag, in the order Stash draws them — which is the order of the
 // criterion's conditions. A filter with an exclusion is two tags, not one.
@@ -1928,12 +1975,126 @@ tagQuery = () => [];
 assert.strictEqual(nullTag.firstChild.nodeValue, "语言 为空");
 
 // Nothing to say, or nothing to say it to, must both be no-ops
-tagQuery = () => [ourTag];
+const untouchedTag = tagWithText("language (custom field) is ja");
+tagQuery = () => [untouchedTag];
 NS.relabelTags([]);
 tagQuery = () => [];
-assert.strictEqual(ourTag.firstChild.nodeValue, "语言 是 日语, 英语",
+assert.strictEqual(untouchedTag.firstChild.nodeValue, "language (custom field) is ja",
   "an empty list of labels must leave the tags alone");
 console.log("✓ the criterion handed to Stash (identity, stored form, and its tags' wording)");
+
+// ── 10i. The dialog's tag row ──────────────────────────────────────
+// The list's row reports the filter the list is applied to; the dialog's reports
+// the dialog's working copy, which for a language lives in this plugin's card
+// rather than in Stash's copy. So the two are worded differently and this is the
+// one place the plugin writes to the dialog's row: Stash's tags while the card
+// agrees with the applied filter, and the card's own while it does not.
+const dialogHostEl = makeEl("div");
+dialogHostEl.className = "edit-filter-dialog";
+const dialogContentEl = makeEl("div");
+dialogContentEl.className = "dialog-content";
+dialogHostEl.appendChild(dialogContentEl);
+documentRoot.appendChild(dialogHostEl);
+
+const dialogTagWithText = (value) =>
+  tagWithText(value, [".edit-filter-dialog"]);
+
+// Agreeing: Stash's tag is shown and worded by us, and the card draws nothing
+let dialogTag = dialogTagWithText("language (custom field) is ja");
+tagQuery = () => [dialogTag];
+let tagPlan = NS.manageDialogTags(false, null, ["语言 是 日语"]);
+tagQuery = () => [];
+assert.strictEqual(dialogTag.style.display, "", "Stash's tag should be shown");
+assert.strictEqual(dialogTag.firstChild.nodeValue, "语言 是 日语",
+  "…worded the way this plugin words it");
+assert.deepStrictEqual(tagPlan.labels, [],
+  "…and the card should draw no tag of its own");
+assert.strictEqual(tagPlan.row, null);
+
+// Differing: Stash's tag describes the applied filter, which is not what the row
+// means while the card is mid-edit, so it steps aside
+dialogTag = dialogTagWithText("language (custom field) is ja");
+tagQuery = () => [dialogTag];
+tagPlan = NS.manageDialogTags(
+  true,
+  ["语言 是 日语", "语言 不是 韩语"],
+  ["语言 是 日语"]
+);
+tagQuery = () => [];
+assert.strictEqual(dialogTag.style.display, "none", "Stash's tag should step aside");
+assert.strictEqual(dialogTag.firstChild.nodeValue, "language (custom field) is ja",
+  "…left as Stash drew it, since hiding it is only for now");
+assert.deepStrictEqual(tagPlan.labels, ["语言 是 日语", "语言 不是 韩语"],
+  "the card's own labels should be drawn instead");
+assert.ok(tagPlan.row, "…into the dialog's row, made if Stash has none");
+assert.strictEqual(dialogContentEl.children.length, 1,
+  "…which is the row this plugin keeps for exactly that");
+
+// …and back again: the tags return, worded as the applied filter reads
+tagQuery = () => [dialogTag];
+NS.manageDialogTags(false, null, ["语言 是 日语"]);
+tagQuery = () => [];
+assert.strictEqual(dialogTag.style.display, "",
+  "reverting should bring Stash's tag back");
+assert.strictEqual(dialogTag.firstChild.nodeValue, "语言 是 日语");
+assert.strictEqual(dialogContentEl.children.length, 0,
+  "…and take this plugin's row away with it");
+
+// Card emptied: nothing for the row to say, and nothing to say it with
+dialogTag = dialogTagWithText("language (custom field) is ja");
+tagQuery = () => [dialogTag];
+tagPlan = NS.manageDialogTags(true, null, ["语言 是 日语"]);
+tagQuery = () => [];
+assert.strictEqual(dialogTag.style.display, "none");
+assert.deepStrictEqual(tagPlan.labels, [], "an empty card draws no tag of its own");
+
+documentRoot.detach(dialogHostEl);
+
+// The ✗ on Stash's tag takes the criterion out of the dialog's copy, and the card
+// has to follow it — otherwise the card goes on showing a language the dialog has
+// dropped. The tag's label is Stash's way into the card and must not be taken for
+// the ✗, nor another criterion's tag for ours.
+const clickInside = (where) => ({
+  closest: (sel) => (sel in where ? where[sel] : null),
+});
+const tagInDialog = () => tagWithText("language (custom field) is ja", [".edit-filter-dialog"]);
+const removeClick = (tag, extra = {}) =>
+  clickInside(
+    Object.assign(
+      {
+        ".filter-tags .tag-item button": tag,
+        ".edit-filter-dialog": {},
+        ".tag-item": tag,
+      },
+      extra
+    )
+  );
+
+assert.strictEqual(NS.clickedTagRemove(removeClick(tagInDialog())), true,
+  "the ✗ of the dialog's language tag is what the card follows");
+assert.strictEqual(
+  NS.clickedTagRemove(clickInside({ ".edit-filter-dialog": {}, ".tag-item": tagInDialog() })),
+  false,
+  "the tag itself is Stash's way into the card, not a removal"
+);
+assert.strictEqual(
+  NS.clickedTagRemove(
+    removeClick(tagWithText("language (custom field) is ja", [".edit-filter-dialog", ".criterion-list"]))
+  ),
+  false,
+  "the pills a card draws beside its editor are Stash's record, not the row"
+);
+assert.strictEqual(NS.clickedTagRemove(removeClick(tagWithText("Studio is J-Model"))), false,
+  "another criterion's ✗ is not this plugin's business");
+assert.strictEqual(
+  NS.clickedTagRemove(
+    clickInside({ ".filter-tags .tag-item button": tagInDialog(), ".tag-item": tagInDialog() })
+  ),
+  false,
+  "…and the list's own row is not the dialog's"
+);
+assert.strictEqual(NS.clickedTagRemove(null), false);
+console.log("✓ dialog tags (worded from the card / hidden while it differs / ✗ follows)");
 
 // ── 10f. The selection operations both surfaces share ──────────────
 // Pure functions, so they can be tested directly rather than through two

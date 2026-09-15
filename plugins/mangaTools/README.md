@@ -184,6 +184,17 @@ would use. The repair is in the DOM because Stash draws its tag row *before* thi
 plugin is mounted, so nothing attached at render time can reach it (see
 `relabelTags`).
 
+**The two tag rows say different things, so they are worded differently.** The row
+above the list reports the filter the list is *applied* to. The row inside the
+dialog reports the dialog's *working copy* — which is why Stash's own criteria
+update it the moment they are edited, several clicks before Apply. A language
+filter's working copy lives in this plugin's card rather than in Stash's copy, so
+the dialog's row is made to follow the card: Stash's tag is kept and re-worded
+while the two agree, hidden while they do not, and replaced by tags this plugin
+draws for exactly that case (see `manageDialogTags`). Hiding the tag and clearing
+the card's selection are wired together, so the ✗ on Stash's tag means the same
+thing as the ✗ on this plugin's.
+
 **It works by rewriting the URL.** Stash keeps its filter in the `c` query
 parameter, and its list hook re-reads that on every navigation. So a filter change
 here is a URL change, and the filter tag, the result count, pagination,
@@ -396,6 +407,11 @@ Against a real Stash:
      card in the filter dialog, and its ✗ should clear the filter. With an
      exclusion there are two tags, one per condition, and the second should read
      `语言 不是 韩语`.
+   - **Check the dialog's tag**: with the dialog open, change the language in the
+     card — the tag's wording should follow it straight away, without Apply. With
+     no language applied when the dialog was opened, picking one should make a tag
+     appear where Stash has none. Pressing the tag's ✗ should empty the card, and
+     emptying the card should take the tag away.
    - The same conditions are reachable by hand: filter panel → Custom Fields →
      field `language`. Both routes write the same thing, so a filter set through
      one should show up in the other.
@@ -530,6 +546,11 @@ values through the plugin's dropdown never hits this, since that writes lowercas
   the gallery list has rendered, so the tag shows Stash's own wording
   (`language (custom field) is ja`) for as long as the first query takes. See
   [Filtering](#filtering).
+- **The dialog's tag is one plugin state behind nothing, but it is a mirror.** The
+  row inside the dialog is worded from the card rather than from Stash's copy, and
+  the ✗ on it clears the card — so a click on either is applied on **Apply**, and
+  Cancel discards both. That is deliberate: Stash's copy cannot be written to from
+  a plugin, so the card is the one that has to be the truth.
 - **Fetch size scales with the number of tagged galleries**, not the library
   size. Verified working against a 1194-gallery library.
 

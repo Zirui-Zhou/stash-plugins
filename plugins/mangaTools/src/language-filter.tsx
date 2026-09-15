@@ -662,6 +662,8 @@ NS.languageFilterQuery = languageFilterQuery;
 NS.registerLanguageCriterionOption = registerLanguageCriterionOption;
 NS.adoptLanguageCriterion = adoptLanguageCriterion;
 NS.relabelTags = relabelTags;
+NS.manageDialogTags = manageDialogTags;
+NS.clickedTagRemove = clickedTagRemove;
 
 /** The language table's own label, from Stash's locale files (see mangaTools.tsx
  *  for the longer note; this is the same message, duplicated so this module
@@ -869,14 +871,115 @@ function LanguageRow(props: {
 var TAG_SELECTOR = ".filter-tags .tag-item";
 
 /**
- * Re-words Stash's tag for the language filter.
+ * Set on a Stash tag this plugin has worded, holding the wording it put there.
+ *
+ * Needed because a tag that has been re-worded is no longer recognisable by its
+ * text — in most UI languages the wording written here does not open with the raw
+ * field name — and the dialog's tags have to be found again on later renders: to
+ * be shown again when the card falls back into line with the applied filter, and
+ * to be hidden again after Stash has re-rendered them.
+ *
+ * Holding the label rather than being an empty marker is what makes it safe.
+ * React can reuse an element for another criterion's tag, where Stash's own tag
+ * keys collide; when it does, it rewrites the text and the attribute no longer
+ * matches it — so the tag is treated as whatever it now is.
+ */
+var TAG_MARK = "data-manga-tools-language";
+
+/** And this one, on the tags this plugin draws itself, so it never mistakes them for Stash's */
+var OWN_TAG_MARK = "data-manga-tools-own-tag";
+
+/**
+ * Is this tag Stash's tag for the language criterion?
+ *
+ * Recognised by its text, there being no attribute on a tag saying which criterion
+ * it came from. Every one of Stash's formats opens with the field name and then a
+ * space — "{criterion} (custom field) …" for a criterion's own tag, "{criterion} …"
+ * for the pills beside the editor — so that much is matched, and not the bare
+ * name: the field is called "language", which another field called "languageNotes"
+ * would otherwise start with too. See TAG_MARK for the tag that has already been
+ * re-worded and so no longer says that.
+ */
+function isLanguageTag(tag: Element): boolean {
+  // The label is the tag's first child — `{label}` ahead of the ✗ button.
+  var text = tag.firstChild;
+  if (!text || text.nodeType !== 3 /* TEXT_NODE */) return false;
+
+  var value = String(text.nodeValue).trim();
+  if (tag.getAttribute(TAG_MARK) === value) return true;
+
+  var prefix = NS.FIELD_NAME.toLowerCase() + " ";
+  return value.toLowerCase().indexOf(prefix) === 0;
+}
+
+/** The text node holding a language tag's label */
+function tagText(tag: Element): Node {
+  return tag.firstChild as Node;
+}
+
+/**
+ * The language tags in the list's own row — that is, everything outside the
+ * dialog.
+ *
+ * The dialog's row is excluded on purpose, because the two rows mean different
+ * things: this one reports the filter the list is *applied* to, which is what the
+ * labels this plugin builds describe, while the dialog's reports the dialog's
+ * working copy, which may be ahead of it. See manageDialogTags for that one.
+ */
+function listLanguageTags(): Element[] {
+  var all = document.querySelectorAll(TAG_SELECTOR);
+  var ours: Element[] = [];
+
+  for (var i = 0; i < all.length; i++) {
+    if (all[i].closest(".edit-filter-dialog")) continue;
+    if (isLanguageTag(all[i])) ours.push(all[i]);
+  }
+
+  return ours;
+}
+
+/**
+ * The language tags in the dialog's row.
+ *
+ * The pills a card draws beside its own editor are skipped: they are inside
+ * `.criterion-list`, hidden by CSS, and are Stash's record of what the criterion
+ * holds rather than part of the row that reports the filter.
+ */
+function dialogLanguageTags(): HTMLElement[] {
+  var all = document.querySelectorAll(TAG_SELECTOR);
+  var ours: HTMLElement[] = [];
+
+  for (var i = 0; i < all.length; i++) {
+    if (!all[i].closest(".edit-filter-dialog")) continue;
+    if (all[i].closest(".criterion-list")) continue;
+    // Never the tags this plugin draws: they are the ones that must stay visible
+    // when Stash's step aside, and in an English UI they look enough like Stash's
+    // to be mistaken for them.
+    if (all[i].hasAttribute(OWN_TAG_MARK)) continue;
+    // A tag is a span, so the element Stash makes is always an HTMLElement —
+    // which is what hiding one needs.
+    if (isLanguageTag(all[i])) ours.push(all[i] as HTMLElement);
+  }
+
+  return ours;
+}
+
+/** Writes labels into tags, in order, one per tag */
+function writeTagLabels(tags: Element[], labels: string[]): void {
+  for (var i = 0; i < tags.length && i < labels.length; i++) {
+    tagText(tags[i]).nodeValue = labels[i];
+    tags[i].setAttribute(TAG_MARK, labels[i]);
+  }
+}
+
+/**
+ * Re-words the tags in the list's row, which report the applied filter.
  *
  * Stash draws a tag per criterion out of `criterion.getLabel`, and this criterion
  * gets the generic custom-field sentence with the raw field name in it —
- * "language (custom field) is ja, en". Everything else about the tag is now
- * right: it opens our card, its ✗ removes the filter, and it shows up in both tag
- * rows (see adoptLanguageCriterion). Only the words are wrong, so only the words
- * are replaced.
+ * "language (custom field) is ja, en". Everything else about the tag is right: it
+ * opens our card, its ✗ removes the filter (see adoptLanguageCriterion). Only the
+ * words are wrong, so only the words are replaced.
  *
  * In the DOM rather than through getLabel, because of *when* each is read. Stash
  * renders its tag row before this plugin is mounted — that row belongs to the
@@ -895,33 +998,11 @@ var TAG_SELECTOR = ".filter-tags .tag-item";
  * the text node we rewrote; and when the label does change it writes its own
  * version, which the next layout effect repairs in the same commit.
  *
- * The tags are recognised by their text, there being no attribute on one saying
- * which criterion it came from. Every one of Stash's formats opens with the field
- * name and then a space — "{criterion} (custom field) …" for a criterion's own
- * tag, "{criterion} …" for the pills beside the editor — so that much is matched,
- * and not the bare name: the field is called "language", which another field
- * called "languageNotes" would otherwise start with too.
- *
- * Labels are taken in order, one per tag, because that is how Stash draws them:
- * a tag for each of the criterion's conditions, in their order. Re-running over
- * an already-re-worded row is harmless — in an English UI our own wording does
- * begin with the field name, and each tag is then handed the label it already
- * carries.
+ * Labels are taken in order, one per tag, because that is how Stash draws them: a
+ * tag for each of the criterion's conditions, in their order.
  */
 function relabelTags(labels: string[]): void {
-  var prefix = NS.FIELD_NAME.toLowerCase() + " ";
-  var tags = document.querySelectorAll(TAG_SELECTOR);
-  var next = 0;
-
-  for (var i = 0; i < tags.length && next < labels.length; i++) {
-    // The label is the tag's first child — `{label}` ahead of the ✗ button.
-    var text = tags[i].firstChild;
-    if (!text || text.nodeType !== 3 /* TEXT_NODE */) continue;
-    if (String(text.nodeValue).trim().toLowerCase().indexOf(prefix) !== 0) continue;
-
-    text.nodeValue = labels[next];
-    next += 1;
-  }
+  writeTagLabels(listLanguageTags(), labels);
 }
 
 /** Class of the box the dialog's card is drawn in, inside Stash's editor area */
@@ -935,6 +1016,215 @@ var DIALOG_HOST_CLASS = "manga-tools-dialog-host";
 function dialogEditorBox(): Element | null {
   return document.querySelector(
     '.criterion-list [data-type="' + LANGUAGE_TYPE + '"] .criterion-editor'
+  );
+}
+
+/** Our own row, held so the same node is reused and can be taken away again */
+var dialogTagsFallback: HTMLElement | null = null;
+
+/**
+ * The row Stash draws for the criteria it knows about, or null if there is none.
+ *
+ * Deliberately find-only: manageDialogTags needs to know whether Stash's row is
+ * there, and making one as a side effect of asking is how the plugin would end up
+ * with a row it does not need.
+ *
+ * Our own row is skipped by reference — it carries the same classes, so nothing
+ * else would tell the two apart, and taking it for Stash's is what would have
+ * this module remove the very row it is about to draw into.
+ */
+function stashDialogTagsRow(): Element | null {
+  var content = document.querySelector(".edit-filter-dialog .dialog-content");
+  if (!content) return null;
+
+  var rows = content.querySelectorAll(".filter-tags");
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i] === dialogTagsFallback) continue;
+    if (!rows[i].closest(".criterion-list")) return rows[i];
+  }
+
+  return null;
+}
+
+/**
+ * Where the dialog's tags go: Stash's row when it has one, and one of our own
+ * when it does not.
+ *
+ * That row is inside `.dialog-content` and outside `.criterion-list`, which is
+ * the point — it is not inside a card, so closing the card cannot take a tag away
+ * with it.
+ *
+ * Stash renders its row only while the dialog holds at least one criterion, and a
+ * dialog whose filter is empty has none: a language picked in that state would
+ * then have nowhere to be shown, which is the case this exists for.
+ */
+function dialogTagsRow(): Element | null {
+  var stash = stashDialogTagsRow();
+  if (stash) {
+    dropFallbackRow();
+    return stash;
+  }
+
+  var content = document.querySelector(".edit-filter-dialog .dialog-content");
+  if (!content) {
+    dropFallbackRow();
+    return null;
+  }
+
+  if (!dialogTagsFallback) {
+    dialogTagsFallback = document.createElement("div");
+    // The classes Stash's own tag row carries — not the pill row's
+    // (`d-flex justify-content-center mb-2`), which is a different element
+    // inside a card and would space this one differently.
+    dialogTagsFallback.className = "wrap-tags filter-tags";
+  }
+
+  if (dialogTagsFallback.parentNode !== content) {
+    content.appendChild(dialogTagsFallback);
+  }
+
+  return dialogTagsFallback;
+}
+
+/** Takes our row away again once Stash is drawing one of its own */
+function dropFallbackRow(): void {
+  if (dialogTagsFallback && dialogTagsFallback.parentNode) {
+    dialogTagsFallback.parentNode.removeChild(dialogTagsFallback);
+  }
+}
+
+/**
+ * Keeps the dialog's tag row saying what the card says.
+ *
+ * This is the one place the plugin writes to the dialog's row rather than the
+ * list's, and the reason is that the two rows mean different things. The list's
+ * row reports the filter the list is *applied* to. The dialog's reports the
+ * dialog's *working copy* — which is why Stash's own criteria update it the
+ * moment they are edited, several clicks before Apply. A language filter's
+ * working copy lives in this plugin's card rather than in Stash's copy, so this
+ * has to say for it what Stash says for its own criteria.
+ *
+ * Three states, and the middle one is the point:
+ *
+ *   the card agrees with the applied filter   Stash's tags are already saying it,
+ *                                             so they are shown, worded by us.
+ *   the card differs                          Stash's tags would describe the
+ *                                             applied filter, which is no longer
+ *                                             what the row means, so they step
+ *                                             aside and the card's own labels are
+ *                                             returned to be drawn instead.
+ *   the card holds nothing                    the tags go — the language is
+ *                                             about to be taken off on Apply.
+ *
+ * A hidden tag is hidden rather than removed: it is Stash's element, React is
+ * entitled to re-render it, and one it still owns is one it will not miss.
+ *
+ * @returns the row to draw the returned labels in, and the labels to draw —
+ *   empty when Stash's own tags are doing the job.
+ */
+function manageDialogTags(
+  pending: boolean,
+  labels: string[] | null,
+  appliedLabels: string[] | null
+): { row: Element | null; labels: string[] } {
+  var tags = dialogLanguageTags();
+  var none = { row: null, labels: [] as string[] };
+
+  for (var i = 0; i < tags.length; i++) {
+    tags[i].style.display = pending ? "none" : "";
+  }
+
+  // Nothing of the card's own to draw: Stash's tags are the whole story, either
+  // because they already say what the card says or because the card is empty and
+  // the language is about to be taken off on Apply. Our row goes with them.
+  if (!pending || !labels || !labels.length) {
+    dropFallbackRow();
+    if (!pending && appliedLabels) writeTagLabels(tags, appliedLabels);
+    return none;
+  }
+
+  // Stash's row when it has one — the dialog may hold no criteria at all, and
+  // then there is nowhere for the first language picked to be shown.
+  var row = dialogTagsRow();
+  return row ? { row: row, labels: labels } : none;
+}
+
+/**
+ * Was the ✗ of a language tag in the dialog's row just clicked?
+ *
+ * Stash's ✗ takes the criterion out of the dialog's working copy. The card is
+ * what Apply merges, and it would otherwise go on showing a language the dialog
+ * has dropped, so the two have to move together — which is what the listener
+ * using this does.
+ *
+ * Only the ✗: the tag's label is Stash's way into the card, and clicking it
+ * changes nothing.
+ */
+function clickedTagRemove(target: Element | null): boolean {
+  if (!target || typeof target.closest !== "function") return false;
+  if (!target.closest(".edit-filter-dialog")) return false;
+  if (!target.closest(".filter-tags .tag-item button")) return false;
+
+  var tag = target.closest(".tag-item");
+  return !!tag && !tag.closest(".criterion-list") && isLanguageTag(tag);
+}
+
+/**
+ * The tag the card draws itself, for a language Stash has no tag to show.
+ *
+ * The same markup as Stash's own down to the ✗ — a `tag-item badge` with a
+ * `btn-secondary` button — so one drawn here is indistinguishable from one of
+ * Stash's. That is not only for looks: it is why the dialog's row does not jump
+ * when a card edit turns Stash's tag into ours.
+ *
+ * It is not clickable, unlike Stash's. There is nowhere for it to go: it only
+ * appears while the dialog is open, with the card right beside it.
+ */
+function LanguageTag(props: { label: string; onRemove: () => void }) {
+  var Solid = PluginApi.libraries.FontAwesomeSolid || {};
+  var Icon = PluginApi.components.Icon;
+  var Bootstrap = PluginApi.libraries.Bootstrap;
+
+  // Deliberately no row around this. It joins Stash's own row, and a wrapper
+  // would nest a second flex row inside it, whose margin would inflate the height
+  // of the row Stash drew — which stretches the native badges sitting in it and
+  // makes them look bigger. Only the fallback row, made above, is a row.
+  return (
+    <span
+      className="tag-item badge badge-secondary"
+      // So that dialogLanguageTags never mistakes this for one of Stash's
+      data-manga-tools-own-tag=""
+    >
+      {props.label}
+      {Bootstrap ? (
+        // `variant` alone: adding the class names as well is how this came out
+        // as `btn btn-secondary btn btn-secondary`.
+        <Bootstrap.Button variant="secondary" onClick={props.onRemove}>
+          <Icon icon={Solid.faXmark || Solid.faTimes} />
+        </Bootstrap.Button>
+      ) : null}
+    </span>
+  );
+}
+
+/**
+ * What of the dialog's DOM this component draws into, as one comparable value.
+ *
+ * Three things, and each has to be noticed separately: the dialog appearing, the
+ * card's body being mounted or unmounted inside it, and the tag row coming and
+ * going — the last of which changes on its own, since Stash renders that row only
+ * while the dialog's copy holds a criterion. Any of the three appearing or
+ * disappearing means there is something (or nothing) to draw.
+ *
+ * The dialog is asked first because the other two cannot exist without it, which
+ * keeps the common case — no dialog open — to a single query on every mutation.
+ */
+function dialogDomState(): string {
+  var dialog = document.querySelector(".edit-filter-dialog");
+  if (!dialog) return "";
+
+  return (
+    (dialogEditorBox() ? "card " : "") + (stashDialogTagsRow() ? "tags" : "")
   );
 }
 
@@ -999,31 +1289,32 @@ export function DialogLanguageFilter(props: {
   var applyPending = React.useRef(false);
 
   /**
-   * The card's own open state, held only so a change in it can be noticed.
+   * What this component draws depends on DOM Stash owns and React never reports:
+   * the card's body, which is mounted by an effect inside the dialog rather than
+   * by the render that mounts this component, and the dialog's tag row, which is
+   * rendered by another component entirely.
    *
-   * The card is opened and closed by Stash, inside its own dialog, and React
-   * never tells this component about it. Watching for clicks is not enough: the
-   * click that opens it is not always ours to catch, and there is one route where
-   * there is no click for it at all — the tag above opens the dialog *onto* this
-   * card (`editingCriterion`), and the card body is mounted by an effect inside
-   * the dialog, after the render that mounted this component. Without this the
-   * mount point could be there with nothing drawn into it: a card that opens
-   * empty, with no search box and no languages.
+   * Watching for clicks is not enough. The click that opens the card is not always
+   * ours to catch — the tag above opens the dialog *onto* this card
+   * (`editingCriterion`) — and the row is rendered in the same commit as the
+   * dialog itself, so a render that runs before that commit cannot see it. Without
+   * this the card could open empty, with no search box and no languages, and the
+   * dialog's tags could go unworded.
    *
-   * So the mount point is watched rather than predicted. A mutation callback is a
-   * microtask, which is before the browser paints, and React renders a state
-   * change made outside an event handler synchronously — so the list is in place
-   * before the card is ever on screen.
+   * So the mount points are watched rather than predicted. A mutation callback is
+   * a microtask, which is before the browser paints, and React renders a state
+   * change made outside an event handler synchronously — so what this asks for is
+   * in place before any of it is on screen.
    */
-  var cardOpen = React.useRef(false);
+  var dialogDom = React.useRef("");
   React.useEffect(function () {
     if (typeof MutationObserver !== "function") return;
 
     var observer = new MutationObserver(function () {
-      var open = !!dialogEditorBox();
-      if (open === cardOpen.current) return;
+      var state = dialogDomState();
+      if (state === dialogDom.current) return;
 
-      cardOpen.current = open;
+      dialogDom.current = state;
       bump(function (v) {
         return v + 1;
       });
@@ -1035,7 +1326,7 @@ export function DialogLanguageFilter(props: {
     };
   }, []);
 
-  /** Apply, and the two ways Stash itself takes the criterion away */
+  /** Apply, and the ways Stash itself takes the language away */
   React.useEffect(function () {
     function onClick(event: Event) {
       var clicked = event.target as Element | null;
@@ -1055,19 +1346,21 @@ export function DialogLanguageFilter(props: {
         console.info("[mangaTools] Apply pressed");
       }
 
-      // Stash's own ways of taking the language away — the ✗ on our card, or
-      // "clear all" — edit the dialog's working copy rather than this card's
-      // state. Apply then commits a filter with no language in it, and the merge
-      // would read our own still-standing selection as the newer of the two and
-      // write it straight back. Emptying it here is what makes those buttons mean
-      // what they say.
+      // Every way Stash itself takes the language away — the ✗ on the card, the
+      // ✗ on the dialog's tag, and "clear all" — edits the dialog's working copy
+      // rather than this card's state. Apply then commits a filter with no
+      // language in it, and the merge would read our own still-standing selection
+      // as the newer of the two and write it straight back. Emptying it here is
+      // what makes those buttons mean what they say, and what keeps the card
+      // showing the same filter the dialog does.
       if (
         clicked.closest(".clear-all-button") ||
         clicked.closest(
           '.criterion-list [data-type="' +
             LANGUAGE_TYPE +
             '"] .remove-criterion-button'
-        )
+        ) ||
+        clickedTagRemove(clicked)
       ) {
         setChoice(EMPTY_SELECTION);
         setQuery("");
@@ -1213,6 +1506,18 @@ export function DialogLanguageFilter(props: {
     return NS.showFlags ? o.flag : null;
   };
 
+  // The dialog's tag row, kept saying what the card says — see manageDialogTags
+  // for why that row and the list's are worded differently. `pending` is the card
+  // having something the applied filter does not; while it does, Stash's tags
+  // describe the wrong filter and step aside for the ones returned here.
+  var pending = !sameSelection(choice, applied);
+  var appliedCriterion = languageCriterionOf(props.filter);
+  var ownTags = manageDialogTags(
+    pending,
+    pending ? tagLabels(intl, { value: selectionConditions(choice) }) : null,
+    appliedCriterion ? tagLabels(intl, appliedCriterion) : null
+  );
+
   // The card's box, which Stash renders only while the card is open.
   var box = dialogEditorBox();
   var host: Element | null = null;
@@ -1342,7 +1647,30 @@ export function DialogLanguageFilter(props: {
     </div>
   );
 
-  return <>{host ? PluginApi.ReactDOM.createPortal(list, host) : null}</>;
+  return (
+    <>
+      {host ? PluginApi.ReactDOM.createPortal(list, host) : null}
+      {/* And, when the card has something Stash has no tag for, the tags of its
+          own — one per condition, in the place Stash's would have been. */}
+      {ownTags.row && ownTags.labels.length
+        ? PluginApi.ReactDOM.createPortal(
+            ownTags.labels.map(function (label, index) {
+              return (
+                <LanguageTag
+                  key={index}
+                  label={label}
+                  onRemove={function () {
+                    setChoice(EMPTY_SELECTION);
+                    setQuery("");
+                  }}
+                />
+              );
+            }),
+            ownTags.row
+          )
+        : null}
+    </>
+  );
 }
 
 /**

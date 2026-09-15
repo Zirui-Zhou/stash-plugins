@@ -107,11 +107,23 @@ export interface MangaToolsNamespace {
    */
   adoptLanguageCriterion(filter: MangaToolsFilterModel): void;
   /**
-   * Re-words Stash's tags for the language filter, one label per tag in the
-   * order Stash draws them. A DOM repair, not a render — see the note above it in
-   * language-filter.tsx for why it cannot be anything else.
+   * Re-words Stash's tags for the language filter in the list's row, one label
+   * per tag in the order Stash draws them. A DOM repair, not a render — see the
+   * note above it in language-filter.tsx for why it cannot be anything else.
    */
   relabelTags(labels: string[]): void;
+  /**
+   * Keeps the dialog's tag row saying what the language card says: Stash's tags
+   * shown and worded when the two agree, hidden when they do not, and the card's
+   * own labels returned to be drawn in their place.
+   */
+  manageDialogTags(
+    pending: boolean,
+    labels: string[] | null,
+    appliedLabels: string[] | null
+  ): { row: Element | null; labels: string[] };
+  /** Was the ✗ of a language tag in the dialog's row what was clicked? */
+  clickedTagRemove(target: Element | null): boolean;
 
   /*
    * Changes to a selection. Shared by the sidebar section and the dialog's card,
