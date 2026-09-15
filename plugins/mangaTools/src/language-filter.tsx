@@ -73,6 +73,9 @@ var CUSTOM_FIELDS_TYPE = "custom_fields";
 var MODIFIER_ANY = "any";
 var MODIFIER_NONE = "none";
 
+/** Class of the box the dialog's picker is drawn in, inside Stash's card */
+var DIALOG_HOST_CLASS = "manga-tools-dialog-picker-host";
+
 /**
  * The type this plugin registers its own criterion under, so the "edit filters"
  * dialog can offer a Language card of its own.
@@ -511,26 +514,49 @@ function setReactSelectValue(select: HTMLSelectElement, value: string): void {
  * names have moved and this is why a replaced language left two conditions.
  */
 function dropPreviousConditions(editor: Element): void {
-  var tags = editor.querySelectorAll(".filter-tags .tag-item");
-  if (!tags.length) {
-    console.info(
-      "[mangaTools] no condition tags found in the filter editor — a replaced language may leave two conditions behind"
-    );
-    return;
+  // Look in the editor first, then anywhere in the card: Stash's own layout puts
+  // the tags beside the editor inside a Form.Group, but that is a detail of its
+  // markup rather than a promise, and guessing it wrong is silent.
+  var card = editor.closest ? editor.closest(".card") : null;
+  var scope: Element = editor;
+  var containers = editor.querySelectorAll(".filter-tags");
+  if (!containers.length && card) {
+    scope = card;
+    containers = card.querySelectorAll(".filter-tags");
   }
 
+  var tags = scope.querySelectorAll(".filter-tags .tag-item");
+  var removed = 0;
   for (var i = 0; i < tags.length; i++) {
     var text = tags[i].textContent || "";
+    // Stash's format string is "{criterion} (custom field) …" and that criterion
+    // is the raw field name, untranslated; the trailing space keeps a field
+    // called original_language out of it.
     if (text.indexOf(NS.FIELD_NAME + " ") !== 0) continue;
 
     var remove = tags[i].querySelector("button");
     if (remove) {
       (remove as HTMLElement).click();
-      console.info("[mangaTools] dropped the previous language condition");
+      removed++;
     }
   }
-}
 
+  // Said out loud because this is the one step that cannot be verified anywhere
+  // but a browser, and getting it wrong leaves two conditions on one field —
+  // which the backend ANDs, matching nothing at all. If a replaced language
+  // leaves two conditions behind, this line says why.
+  console.info(
+    "[mangaTools] language conditions: " +
+      tags.length +
+      " tag(s) in scope, " +
+      removed +
+      " removed (" +
+      containers.length +
+      " filter-tags container(s), scoped to " +
+      (scope === editor ? "the editor" : "the card") +
+      ")"
+  );
+}
 /** Presses the editor's confirm button, once its state has caught up */
 function pressConfirm(editor: Element): void {
   // `onConfirm` reads the editor's state, and the events above have only queued
@@ -676,14 +702,20 @@ export function DialogLanguageFilter(props: {
       // captured variable does not carry into a closure.
       var target = clicked;
       window.setTimeout(function () {
-        // The ✗ on our card removes the criterion from the dialog's filter
-        // without telling anyone, and the dropdown would otherwise go on showing
-        // a value that is no longer filtering anything.
+        // Clearing the criterion from somewhere else — the ✗ on our card, or the
+        // ✗ on the tag Stash renders for it — happens without telling anyone, and
+        // the dropdown would otherwise go on showing a value that is no longer
+        // filtering anything. Both are clicks inside our card.
         if (
           target.closest(
             '[data-type="' + LANGUAGE_TYPE + '"] .remove-criterion-button'
           )
         ) {
+          setChoice(null);
+        }
+
+        var tag = target.closest(".tag-item");
+        if (tag && (tag.textContent || "").indexOf(NS.FIELD_NAME + " ") === 0) {
           setChoice(null);
         }
         bump(function (v) {
@@ -729,6 +761,15 @@ export function DialogLanguageFilter(props: {
     if (options[i].value === choice) chosen = options[i];
   }
 
+  // Ahead of everything Stash renders here, so the picker sits above the row of
+  // condition tags rather than under it.
+  var host = box.querySelector("." + DIALOG_HOST_CLASS);
+  if (!host) {
+    host = document.createElement("div");
+    host.className = DIALOG_HOST_CLASS;
+    box.insertBefore(host, box.firstChild);
+  }
+
   return PluginApi.ReactDOM.createPortal(
     <div className="manga-tools-dialog-picker">
       {Select ? (
@@ -761,7 +802,7 @@ export function DialogLanguageFilter(props: {
         />
       ) : null}
     </div>,
-    box
+    host
   );
 }
 

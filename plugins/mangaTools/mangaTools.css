@@ -225,7 +225,16 @@
  * attribute both simply become visible again, beside our list: degraded, not
  * broken.
  */
-.criterion-list [data-type="language"] .custom-field-filter,
-.criterion-list [data-type="language"] .filter-tags {
+.criterion-list [data-type="language"] .custom-field-filter {
+  display: none;
+}
+
+/*
+ * Stash's row of condition tags is left alone — it is the honest record of what
+ * the criterion holds. It only has to stay out of the way while it is empty,
+ * since an empty row still contributes its own margin and reads as a stray rule
+ * under the picker.
+ */
+.criterion-list [data-type="language"] .filter-tags:empty {
   display: none;
 }
