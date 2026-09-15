@@ -159,8 +159,9 @@ function buildDisplayNames(
  */
 function displayNamesFor(locale: string): MangaToolsDisplayNames | null {
   if (!(locale in displayNamesCache)) {
-    var ctor = (Intl as unknown as { DisplayNames?: MangaToolsDisplayNamesCtor })
-      .DisplayNames;
+    var ctor = (
+      Intl as unknown as { DisplayNames?: MangaToolsDisplayNamesCtor }
+    ).DisplayNames;
 
     displayNamesCache[locale] =
       typeof ctor === "function"

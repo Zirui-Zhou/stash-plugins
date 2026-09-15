@@ -270,7 +270,8 @@ const MESSAGES = {
     "criterion_modifier_values.none": "无",
     // The pieces Stash composes a criterion's tag from. Its real strings are
     // "is" / "is not null"; these stand in so the composition can be asserted.
-    "criterion_modifier.format_string": "{criterion} {modifierString} {valueString}",
+    "criterion_modifier.format_string":
+      "{criterion} {modifierString} {valueString}",
     "criterion_modifier.format_string_excludes":
       "{criterion} {modifierString} {valueString} (excludes {excludedString})",
     "criterion_modifier.equals": "是",
@@ -422,7 +423,8 @@ global.document = {
   // understands, so a test sets the tags this should return and asserts on what
   // the plugin did with them. Defaults to none, so every other render is inert.
   querySelectorAll: (sel) => tagQuery(sel),
-  addEventListener: (name, fn, capture) => capturedClicks.push({ name, fn, capture }),
+  addEventListener: (name, fn, capture) =>
+    capturedClicks.push({ name, fn, capture }),
   removeEventListener: () => {},
 };
 let tagQuery = () => [];
@@ -438,16 +440,28 @@ let tagQuery = () => [];
 // browser's, so it is worth being able to assert it.
 const FAKE_NAMES = {
   ja: {
-    "en-US": "Japanese", en: "Japanese", "zh-CN": "日语", "zh-TW": "日文",
-    "ja-JP": "日本語", "de-DE": "Japanisch",
+    "en-US": "Japanese",
+    en: "Japanese",
+    "zh-CN": "日语",
+    "zh-TW": "日文",
+    "ja-JP": "日本語",
+    "de-DE": "Japanisch",
   },
   "zh-Hans": {
-    "en-US": "Simplified Chinese", en: "Simplified Chinese", "zh-CN": "简体中文",
-    "zh-TW": "簡體中文", "ja-JP": "簡体中国語", "de-DE": "Chinesisch (vereinfacht)",
+    "en-US": "Simplified Chinese",
+    en: "Simplified Chinese",
+    "zh-CN": "简体中文",
+    "zh-TW": "簡體中文",
+    "ja-JP": "簡体中国語",
+    "de-DE": "Chinesisch (vereinfacht)",
   },
   "zh-Hant": {
-    "en-US": "Traditional Chinese", en: "Traditional Chinese", "zh-CN": "繁体中文",
-    "zh-TW": "繁體中文", "ja-JP": "繁体中国語", "de-DE": "Chinesisch (traditionell)",
+    "en-US": "Traditional Chinese",
+    en: "Traditional Chinese",
+    "zh-CN": "繁体中文",
+    "zh-TW": "繁體中文",
+    "ja-JP": "繁体中国語",
+    "de-DE": "Chinesisch (traditionell)",
   },
   en: { "en-US": "English", en: "English", "zh-CN": "英语", "ja-JP": "英語" },
   // Two complete sets, English and Chinese, so the ordering tests have real
@@ -562,16 +576,32 @@ function find(node, pred) {
 // case and surrounding whitespace are tolerated. Anything else is returned
 // unchanged and described as unknown (a grey "unrecognised" chip).
 const cases = [
-  ["zh-Hans", "zh-Hans"], ["zh-Hant", "zh-Hant"], ["ja", "ja"], ["en", "en"],
-  ["ZH-HANS", "zh-Hans"], ["Zh-Hant", "zh-Hant"],   // case-insensitive
-  ["  en  ", "en"], ["\tja\n", "ja"],               // surrounding whitespace
-  ["chs", "chs"], ["简体", "简体"], ["jp", "jp"],   // former aliases no longer resolve
-  ["zh-TW", "zh-TW"], ["中文", "中文"], ["chi", "chi"],
-  ["klingon", "klingon"], ["zh", "zh"],             // unrecognised: returned as-is
-  ["", ""], [null, ""], [undefined, ""],
+  ["zh-Hans", "zh-Hans"],
+  ["zh-Hant", "zh-Hant"],
+  ["ja", "ja"],
+  ["en", "en"],
+  ["ZH-HANS", "zh-Hans"],
+  ["Zh-Hant", "zh-Hant"], // case-insensitive
+  ["  en  ", "en"],
+  ["\tja\n", "ja"], // surrounding whitespace
+  ["chs", "chs"],
+  ["简体", "简体"],
+  ["jp", "jp"], // former aliases no longer resolve
+  ["zh-TW", "zh-TW"],
+  ["中文", "中文"],
+  ["chi", "chi"],
+  ["klingon", "klingon"],
+  ["zh", "zh"], // unrecognised: returned as-is
+  ["", ""],
+  [null, ""],
+  [undefined, ""],
 ];
 cases.forEach(([input, want]) =>
-  assert.strictEqual(NS.normalize(input), want, `normalize(${JSON.stringify(input)})`)
+  assert.strictEqual(
+    NS.normalize(input),
+    want,
+    `normalize(${JSON.stringify(input)})`
+  )
 );
 console.log(`✓ normalisation: all ${cases.length} cases pass`);
 
@@ -586,8 +616,11 @@ console.log(`✓ normalisation: all ${cases.length} cases pass`);
 const lastDisplayNames = () => displayNamesCalls[displayNamesCalls.length - 1];
 
 assert.strictEqual(NS.name("ja", "zh-CN"), "日语");
-assert.deepStrictEqual(lastDisplayNames().locales, ["zh-CN", "en"],
-  "Stash's locale first, English second — never the locale alone");
+assert.deepStrictEqual(
+  lastDisplayNames().locales,
+  ["zh-CN", "en"],
+  "Stash's locale first, English second — never the locale alone"
+);
 assert.strictEqual(lastDisplayNames().options.type, "language");
 
 // A different UI locale reaches the platform, and changes the answer with it
@@ -600,52 +633,106 @@ const callsBefore = displayNamesCalls.length;
 NS.name("ja", "zh-CN");
 NS.name("zh-Hant", "zh-CN");
 NS.name("en", "zh-CN");
-assert.strictEqual(displayNamesCalls.length, callsBefore,
-  "a warm locale must reuse its formatter");
-console.log("✓ Intl.DisplayNames is asked for [Stash locale, English], once per locale");
+assert.strictEqual(
+  displayNamesCalls.length,
+  callsBefore,
+  "a warm locale must reuse its formatter"
+);
+console.log(
+  "✓ Intl.DisplayNames is asked for [Stash locale, English], once per locale"
+);
 
 // ── 3. Localised names ─────────────────────────────────────────────
 // Still "canonical code → name looked up when rendering → raw value otherwise",
 // but the names are the platform's, so the expected strings here are the
 // stub's — they describe the handoff, not a table this plugin maintains.
 assert.strictEqual(NS.name("ja", "zh-CN"), "日语");
-assert.strictEqual(NS.name("ja", "zh-TW"), "日文", "the Taiwan wording, which the old table got wrong");
+assert.strictEqual(
+  NS.name("ja", "zh-TW"),
+  "日文",
+  "the Taiwan wording, which the old table got wrong"
+);
 assert.strictEqual(NS.name("ja", "en-US"), "Japanese");
 assert.strictEqual(NS.name("ja", "ja-JP"), "日本語");
 assert.strictEqual(NS.name("zh-Hant", "zh-CN"), "繁体中文");
-assert.strictEqual(NS.name("ZH-HANS", "zh-CN"), "简体中文", "non-canonical case still resolves");
-assert.strictEqual(NS.name("chs", "zh-CN"), "chs", "non-canonical spelling returned as-is, never guessed");
-assert.strictEqual(NS.name("ja", "de-DE"), "Japanisch",
-  "a UI language the old four-locale table had no entry for now resolves");
-assert.strictEqual(NS.name("klingon", "zh-CN"), "klingon", "unknown code returned as-is");
+assert.strictEqual(
+  NS.name("ZH-HANS", "zh-CN"),
+  "简体中文",
+  "non-canonical case still resolves"
+);
+assert.strictEqual(
+  NS.name("chs", "zh-CN"),
+  "chs",
+  "non-canonical spelling returned as-is, never guessed"
+);
+assert.strictEqual(
+  NS.name("ja", "de-DE"),
+  "Japanisch",
+  "a UI language the old four-locale table had no entry for now resolves"
+);
+assert.strictEqual(
+  NS.name("klingon", "zh-CN"),
+  "klingon",
+  "unknown code returned as-is"
+);
 
 // Recognition stays ours. DisplayNames would happily name "chi" and "jpn"
 // (ISO 639-2), and those must keep reading as unrecognised data.
-assert.strictEqual(NS.name("chi", "zh-CN"), "chi", "alpha-3 is not one of our codes");
-assert.strictEqual(NS.name("jpn", "ja-JP"), "jpn", "…even in its own UI language");
+assert.strictEqual(
+  NS.name("chi", "zh-CN"),
+  "chi",
+  "alpha-3 is not one of our codes"
+);
+assert.strictEqual(
+  NS.name("jpn", "ja-JP"),
+  "jpn",
+  "…even in its own UI language"
+);
 
 // Falsy locale: ask for the fallback rather than for "" (which throws)
 assert.strictEqual(NS.name("ja", ""), "Japanese");
-assert.strictEqual(NS.name("ja"), "Japanese", "no locale at all still yields a name");
-console.log("✓ localised names (any UI language, canonical recognition, unknown echoed)");
+assert.strictEqual(
+  NS.name("ja"),
+  "Japanese",
+  "no locale at all still yields a name"
+);
+console.log(
+  "✓ localised names (any UI language, canonical recognition, unknown echoed)"
+);
 
 // ── 3b. Degrading when the platform cannot help ────────────────────
 // Two ways, both of which must leave the raw code rather than throwing or
 // inventing English. Each uses a UI locale no earlier test has asked for, so
 // the plugin's per-locale cache cannot mask the failure.
 displayNamesThrows = true;
-assert.strictEqual(NS.name("ja", "pl-PL"), "ja", "a rejected locale degrades to the code");
+assert.strictEqual(
+  NS.name("ja", "pl-PL"),
+  "ja",
+  "a rejected locale degrades to the code"
+);
 displayNamesThrows = false;
 
 global.Intl.DisplayNames = undefined;
-assert.strictEqual(NS.name("ja", "nl-NL"), "ja", "no DisplayNames at all degrades to the code");
-assert.strictEqual(NS.describe("zh-Hant", "nl-NL").name, "zh-Hant",
-  "…and the rest of the description still renders");
+assert.strictEqual(
+  NS.name("ja", "nl-NL"),
+  "ja",
+  "no DisplayNames at all degrades to the code"
+);
+assert.strictEqual(
+  NS.describe("zh-Hant", "nl-NL").name,
+  "zh-Hant",
+  "…and the rest of the description still renders"
+);
 global.Intl.DisplayNames = FakeDisplayNames;
 
-assert.strictEqual(typeof realDisplayNames, "function",
-  "precondition: the runtime has a real DisplayNames, so the stub is the only difference");
-console.log("✓ degraded paths (rejected locale / absent API) fall back to the code");
+assert.strictEqual(
+  typeof realDisplayNames,
+  "function",
+  "precondition: the runtime has a real DisplayNames, so the stub is the only difference"
+);
+console.log(
+  "✓ degraded paths (rejected locale / absent API) fall back to the code"
+);
 
 // ── 4. describe: code + flag + name ────────────────────────────────
 let d = NS.describe("zh-Hans", "zh-CN");
@@ -662,13 +749,21 @@ assert.strictEqual(d.code, "zh-Hans");
 assert.strictEqual(NS.describe("ja", "zh-CN").flag, "jp");
 assert.strictEqual(NS.describe("zh-Hant", "zh-CN").flag, "tw");
 assert.strictEqual(NS.describe("ko", "zh-CN").flag, "kr");
-assert.strictEqual(NS.describe("vi", "zh-CN").flag, "vn", "Vietnam is vn, not vi");
+assert.strictEqual(
+  NS.describe("vi", "zh-CN").flag,
+  "vn",
+  "Vietnam is vn, not vi"
+);
 
 // Non-canonical spellings (former aliases, other notations) are all unknown now
 // and are no longer silently corrected.
 ["chs", "简体", "jp", "zh-TW", "中文"].forEach((v) => {
   const r = NS.describe(v, "zh-CN");
-  assert.strictEqual(r.known, false, `${v} should no longer resolve as a language`);
+  assert.strictEqual(
+    r.known,
+    false,
+    `${v} should no longer resolve as a language`
+  );
   assert.strictEqual(r.flag, null, `${v} should have no flag`);
   assert.strictEqual(r.name, v, `${v} should be displayed as-is`);
 });
@@ -690,7 +785,10 @@ console.log("✓ describe (flag mapping, case tolerance, unknown values)");
 // it, and that is the property to hold on to.
 Object.keys(NS.LANGUAGES).forEach((code) => {
   const entry = NS.LANGUAGES[code];
-  assert.ok(entry.flag && entry.flag.length === 2, `${code} is missing a flag code`);
+  assert.ok(
+    entry.flag && entry.flag.length === 2,
+    `${code} is missing a flag code`
+  );
 });
 const offered = NS.languageOptions("en-US").map((o) => o.value);
 assert.deepStrictEqual(
@@ -698,8 +796,14 @@ assert.deepStrictEqual(
   Object.keys(NS.LANGUAGES).sort(),
   "every language in the table should be offered, and nothing else"
 );
-assert.strictEqual(new Set(offered).size, offered.length, "no language should be offered twice");
-console.log(`✓ language table complete (${Object.keys(NS.LANGUAGES).length} codes × flag, all offered)`);
+assert.strictEqual(
+  new Set(offered).size,
+  offered.length,
+  "no language should be offered twice"
+);
+console.log(
+  `✓ language table complete (${Object.keys(NS.LANGUAGES).length} codes × flag, all offered)`
+);
 
 // ── 5b. The dropdown is ordered by the name the reader sees ────────
 // There is no hand-written order any more — the old one was the author's
@@ -707,9 +811,22 @@ console.log(`✓ language table complete (${Object.keys(NS.LANGUAGES).length} co
 // where the expected sequence is verifiable by eye.
 assert.deepStrictEqual(
   NS.languageOptions("en-US").map((o) => o.label),
-  ["English", "French", "German", "Indonesian", "Italian", "Japanese", "Korean",
-   "Portuguese", "Russian", "Simplified Chinese", "Spanish", "Thai",
-   "Traditional Chinese", "Vietnamese"],
+  [
+    "English",
+    "French",
+    "German",
+    "Indonesian",
+    "Italian",
+    "Japanese",
+    "Korean",
+    "Portuguese",
+    "Russian",
+    "Simplified Chinese",
+    "Spanish",
+    "Thai",
+    "Traditional Chinese",
+    "Vietnamese",
+  ],
   "options should be ordered by the displayed name"
 );
 
@@ -727,10 +844,16 @@ assert.deepStrictEqual(
 
 // And the order follows the UI language — that is the point of sorting by name.
 const enValues = NS.languageOptions("en-US").map((o) => o.value);
-assert.notDeepStrictEqual(zhOptions.map((o) => o.value), enValues,
-  "a different UI language should order the same languages differently");
-assert.deepStrictEqual(zhOptions.map((o) => o.value).sort(), enValues.slice().sort(),
-  "…without changing which languages are offered");
+assert.notDeepStrictEqual(
+  zhOptions.map((o) => o.value),
+  enValues,
+  "a different UI language should order the same languages differently"
+);
+assert.deepStrictEqual(
+  zhOptions.map((o) => o.value).sort(),
+  enValues.slice().sort(),
+  "…without changing which languages are offered"
+);
 console.log("✓ dropdown order (by displayed name, in the reader's collation)");
 
 // ── 6. Patch registration ──────────────────────────────────────────
@@ -757,13 +880,36 @@ assert.ok(patched["GalleryList"], "missing patch: GalleryList (instead)");
 // it does not replace anything. Two of them now: the sidebar section, and the
 // list the filter dialog draws inside its own card.
 const listModel = makeFilterModel();
-const listEl = call("GalleryList", { filter: listModel, selectedIds: new Set() });
-assert.strictEqual(listEl.type, React.Fragment, "GalleryList should be wrapped, not replaced");
+const listEl = call("GalleryList", {
+  filter: listModel,
+  selectedIds: new Set(),
+});
+assert.strictEqual(
+  listEl.type,
+  React.Fragment,
+  "GalleryList should be wrapped, not replaced"
+);
 const [sidebarFilter, dialogFilter, listOriginal] = listEl.props.children;
-assert.strictEqual(typeof sidebarFilter.type, "function", "the sidebar section as a sibling");
-assert.strictEqual(typeof dialogFilter.type, "function", "and the dialog's list as another");
-assert.strictEqual(listOriginal.type, original, "the original GalleryList must still be rendered");
-assert.strictEqual(listOriginal.props.filter, listModel, "…receiving the same filter it was given");
+assert.strictEqual(
+  typeof sidebarFilter.type,
+  "function",
+  "the sidebar section as a sibling"
+);
+assert.strictEqual(
+  typeof dialogFilter.type,
+  "function",
+  "and the dialog's list as another"
+);
+assert.strictEqual(
+  listOriginal.type,
+  original,
+  "the original GalleryList must still be rendered"
+);
+assert.strictEqual(
+  listOriginal.props.filter,
+  listModel,
+  "…receiving the same filter it was given"
+);
 
 // Rendering the list is also what offers the filter dialog a Language card: the
 // dialog builds its cards from the same options array the model holds, and this
@@ -810,19 +956,34 @@ assert.deepStrictEqual(
   ["ja", "zh-Hans"],
   "parse should canonicalise case, drop unknown codes and dedupe"
 );
-assert.strictEqual(NS.parseEnabledLanguages("klingon"), null,
-  "a value with only unknown codes parses to null (no restriction)");
+assert.strictEqual(
+  NS.parseEnabledLanguages("klingon"),
+  null,
+  "a value with only unknown codes parses to null (no restriction)"
+);
 
 // Ordered by code, never by the name the reader sees: the stored value has to
 // come out the same for every user, and languageOptions' order now follows the
 // UI language.
-assert.strictEqual(NS.serializeEnabledLanguages(["ja", "en"]), "en,ja",
-  "serialise should order by code, not insertion order");
-assert.strictEqual(NS.serializeEnabledLanguages(new Set(["zh-Hans", "ja"])), "ja,zh-Hans");
-assert.strictEqual(NS.serializeEnabledLanguages(["en", "ja"]),
+assert.strictEqual(
   NS.serializeEnabledLanguages(["ja", "en"]),
-  "the same selection must serialise the same way whatever order it arrives in");
-assert.strictEqual(NS.serializeEnabledLanguages([]), "", "an empty set serialises to the empty string");
+  "en,ja",
+  "serialise should order by code, not insertion order"
+);
+assert.strictEqual(
+  NS.serializeEnabledLanguages(new Set(["zh-Hans", "ja"])),
+  "ja,zh-Hans"
+);
+assert.strictEqual(
+  NS.serializeEnabledLanguages(["en", "ja"]),
+  NS.serializeEnabledLanguages(["ja", "en"]),
+  "the same selection must serialise the same way whatever order it arrives in"
+);
+assert.strictEqual(
+  NS.serializeEnabledLanguages([]),
+  "",
+  "an empty set serialises to the empty string"
+);
 
 // The boolean settings. Absent means "not configured", so the default — on — is
 // used, and an install that predates the setting behaves exactly as before.
@@ -831,10 +992,18 @@ assert.strictEqual(NS.parseFlag(undefined, true), true);
 assert.strictEqual(NS.parseFlag("", true), true);
 assert.strictEqual(NS.parseFlag(true, false), true);
 assert.strictEqual(NS.parseFlag(false, true), false);
-assert.strictEqual(NS.parseFlag("false", true), false, "a hand-edited string is understood");
+assert.strictEqual(
+  NS.parseFlag("false", true),
+  false,
+  "a hand-edited string is understood"
+);
 assert.strictEqual(NS.parseFlag("0", true), false);
 assert.strictEqual(NS.parseFlag(" TRUE ", false), true);
-assert.strictEqual(NS.parseFlag("nonsense", true), true, "an unreadable value falls back to the default");
+assert.strictEqual(
+  NS.parseFlag("nonsense", true),
+  true,
+  "an unreadable value falls back to the default"
+);
 assert.strictEqual(NS.showFlags, true, "flags default to on");
 assert.strictEqual(NS.showCoverBadge, true, "the cover badge defaults to on");
 console.log("✓ settings parse/serialise (including the booleans)");
@@ -843,27 +1012,45 @@ console.log("✓ settings parse/serialise (including the booleans)");
 // The patched PluginSettings swaps the stock input for MangaToolsSettings only
 // for this plugin; other plugins fall back to the original component.
 const settingsEl = call("PluginSettings", { pluginID: "mangaTools" });
-assert.notStrictEqual(settingsEl.type, original,
-  "mangaTools should swap in its own settings component");
-assert.strictEqual(call("PluginSettings", { pluginID: "other" }).type, original,
-  "other plugins must go back to the original component");
+assert.notStrictEqual(
+  settingsEl.type,
+  original,
+  "mangaTools should swap in its own settings component"
+);
+assert.strictEqual(
+  call("PluginSettings", { pluginID: "other" }).type,
+  original,
+  "other plugins must go back to the original component"
+);
 
 // Render the settings component (find renders function components) and locate
 // the react-select, which carries isMulti + the full option list.
 // Empty (no restriction) must render as an empty box with an "All languages"
 // placeholder, NOT as every tag pre-selected.
 NS.enabledLanguages = null;
-const emptySelect = find(settingsEl, (n) => n.props && Array.isArray(n.props.options) && n.props.isMulti);
+const emptySelect = find(
+  settingsEl,
+  (n) => n.props && Array.isArray(n.props.options) && n.props.isMulti
+);
 assert.ok(emptySelect, "the settings UI should render a multiselect");
 assert.strictEqual(emptySelect.props.isClearable, true);
-assert.strictEqual(emptySelect.props.menuPlacement, "auto",
-  "the menu should flip up when there is not enough room below");
-assert.deepStrictEqual(emptySelect.props.value, [],
-  "empty must not pre-select every language");
+assert.strictEqual(
+  emptySelect.props.menuPlacement,
+  "auto",
+  "the menu should flip up when there is not enough room below"
+);
+assert.deepStrictEqual(
+  emptySelect.props.value,
+  [],
+  "empty must not pre-select every language"
+);
 assert.strictEqual(emptySelect.props.placeholder, "All languages");
 
 NS.enabledLanguages = new Set(["ja", "en"]);
-const settingsSelect = find(settingsEl, (n) => n.props && Array.isArray(n.props.options) && n.props.isMulti);
+const settingsSelect = find(
+  settingsEl,
+  (n) => n.props && Array.isArray(n.props.options) && n.props.isMulti
+);
 assert.deepStrictEqual(
   settingsSelect.props.value.map((o) => o.value),
   ["ja", "en"],
@@ -880,48 +1067,84 @@ assert.strictEqual(switches.length, 2, "both switches should render");
 assert.strictEqual(switches[0].props.id, "mangaTools-showFlags");
 assert.strictEqual(switches[0].props.checked, true, "flags default to on");
 assert.strictEqual(switches[1].props.id, "mangaTools-showCoverBadge");
-assert.strictEqual(switches[1].props.checked, true, "the cover badge defaults to on");
+assert.strictEqual(
+  switches[1].props.checked,
+  true,
+  "the cover badge defaults to on"
+);
 
 // Selecting a new set writes it back through configurePlugin and updates the
 // shared NS.enabledLanguages immediately.
 settingsSelect.props.onChange([{ value: "ja" }, { value: "zh-Hans" }]);
-assert.deepStrictEqual(capturedConfigWrite, {
-  plugin_id: "mangaTools",
-  input: {
-    enabledLanguages: "ja,zh-Hans",
-    showFlags: true,
-    showCoverBadge: true,
+assert.deepStrictEqual(
+  capturedConfigWrite,
+  {
+    plugin_id: "mangaTools",
+    input: {
+      enabledLanguages: "ja,zh-Hans",
+      showFlags: true,
+      showCoverBadge: true,
+    },
   },
-}, "every setting is written together, so replace-vs-merge cannot matter");
-assert.deepStrictEqual([...NS.enabledLanguages], ["ja", "zh-Hans"],
-  "the in-memory set should update immediately");
+  "every setting is written together, so replace-vs-merge cannot matter"
+);
+assert.deepStrictEqual(
+  [...NS.enabledLanguages],
+  ["ja", "zh-Hans"],
+  "the in-memory set should update immediately"
+);
 
 // Clearing writes "" (which parses back to "no restriction").
 settingsSelect.props.onChange(null);
 assert.deepStrictEqual(capturedConfigWrite.input.enabledLanguages, "");
-assert.strictEqual(NS.enabledLanguages, null, "clearing should restore null (all languages)");
+assert.strictEqual(
+  NS.enabledLanguages,
+  null,
+  "clearing should restore null (all languages)"
+);
 
 // Flipping a switch updates the shared state and persists the lot.
 switches[0].props.onChange();
-assert.strictEqual(NS.showFlags, false, "toggling should update the shared state");
+assert.strictEqual(
+  NS.showFlags,
+  false,
+  "toggling should update the shared state"
+);
 assert.deepStrictEqual(capturedConfigWrite, {
   plugin_id: "mangaTools",
   input: { enabledLanguages: "", showFlags: false, showCoverBadge: true },
 });
 NS.showFlags = true;
-console.log("✓ settings UI (multiselect + switches write configurePlugin, update shared state)");
+console.log(
+  "✓ settings UI (multiselect + switches write configurePlugin, update shared state)"
+);
 
 // ── 8. CustomFieldInput isolation ──────────────────────────────────
-assert.strictEqual(call("CustomFieldInput", { field: "language", value: "zh-Hans" }), null,
-  "an existing language row should render null");
-assert.strictEqual(call("CustomFieldInput", { field: "Language", value: "x" }), null,
-  "a capitalised field name should be recognised too");
-assert.strictEqual(call("CustomFieldInput", { field: "language", isNew: true }).type, original,
-  "the isNew row must pass through, or it vanishes while the name is being typed");
-assert.strictEqual(call("CustomFieldInput", { field: "author", value: "x" }).type, original,
-  "other fields must go back to the original component");
-assert.strictEqual(call2("CustomFieldInput", { field: "author" }).type, original,
-  "reading the original as args[last] must survive the 2-argument call form");
+assert.strictEqual(
+  call("CustomFieldInput", { field: "language", value: "zh-Hans" }),
+  null,
+  "an existing language row should render null"
+);
+assert.strictEqual(
+  call("CustomFieldInput", { field: "Language", value: "x" }),
+  null,
+  "a capitalised field name should be recognised too"
+);
+assert.strictEqual(
+  call("CustomFieldInput", { field: "language", isNew: true }).type,
+  original,
+  "the isNew row must pass through, or it vanishes while the name is being typed"
+);
+assert.strictEqual(
+  call("CustomFieldInput", { field: "author", value: "x" }).type,
+  original,
+  "other fields must go back to the original component"
+);
+assert.strictEqual(
+  call2("CustomFieldInput", { field: "author" }).type,
+  original,
+  "reading the original as args[last] must survive the 2-argument call form"
+);
 console.log("✓ CustomFieldInput isolation (including the 2-argument form)");
 
 // ── 9. CustomFields detail page: lift the language entry, portal it into .gallery-details ──
@@ -941,7 +1164,11 @@ const detail = (values) => {
 };
 
 let r9 = detail({ language: "zh-Hant", author: "x" });
-assert.deepStrictEqual(r9.rest, { author: "x" }, "the language entry must be lifted out so it is not rendered twice");
+assert.deepStrictEqual(
+  r9.rest,
+  { author: "x" },
+  "the language entry must be lifted out so it is not rendered twice"
+);
 assert.strictEqual(r9.portal.__portal, true, "should render through a portal");
 
 // The mount point must land at the end of .gallery-details — after "photographer",
@@ -949,15 +1176,24 @@ assert.strictEqual(r9.portal.__portal, true, "should render through a portal");
 const host = galleryPanel.lastElementChild;
 assert.strictEqual(host.className, "manga-tools-detail-host");
 assert.strictEqual(host.parentNode, galleryPanel);
-assert.strictEqual(r9.portal.host, host, "the portal should render into this mount point");
+assert.strictEqual(
+  r9.portal.host,
+  host,
+  "the portal should render into this mount point"
+);
 
 // Content: <h6> + flag + localised name, matching the rows above it
 assert.strictEqual(r9.portal.node.type, "h6");
 assert.strictEqual(r9.portal.node.props.className, "manga-tools-detail");
-const rowFlag = find(r9.portal.node, (n) => /fi fi-/.test(n.props.className || ""));
+const rowFlag = find(r9.portal.node, (n) =>
+  /fi fi-/.test(n.props.className || "")
+);
 assert.strictEqual(rowFlag.props.className, "fi fi-tw manga-tools-flag");
 assert.ok(hasText(r9.portal.node, "繁体中文"), "the name should be localised");
-assert.ok(hasText(r9.portal.node, "语言: "), "the label should come from Stash's locale files (zh-CN → 语言)");
+assert.ok(
+  hasText(r9.portal.node, "语言: "),
+  "the label should come from Stash's locale files (zh-CN → 语言)"
+);
 
 // Spacing comes from a text space, not a CSS margin, so pin the text children
 // down. With a flag: "label + space" + flag + " " + name — equal gaps either side.
@@ -968,53 +1204,88 @@ assert.deepStrictEqual(
 
 // When a React re-render pushes the mount point earlier, it must be pulled back.
 galleryPanel.appendChild(makeEl("h6")); // stand in for another row React adds
-assert.strictEqual(galleryPanel.lastElementChild.tagName, "h6", "precondition: the mount point was displaced");
+assert.strictEqual(
+  galleryPanel.lastElementChild.tagName,
+  "h6",
+  "precondition: the mount point was displaced"
+);
 detail({ language: "ja" });
-assert.strictEqual(galleryPanel.lastElementChild, host, "a re-render should pull it back to the end");
+assert.strictEqual(
+  galleryPanel.lastElementChild,
+  host,
+  "a re-render should pull it back to the end"
+);
 const hosts = galleryPanel.children.filter(
   (c) => c.className === "manga-tools-detail-host"
 );
-assert.strictEqual(hosts.length, 1, "the mount point must not be created twice");
+assert.strictEqual(
+  hosts.length,
+  1,
+  "the mount point must not be created twice"
+);
 assert.strictEqual(hosts[0], host, "the same mount point should be reused");
 
 // A capitalised key should be lifted out too (field names are case-insensitive;
 // the value itself must still be canonical).
 r9 = detail({ Language: "zh-Hant" });
-assert.deepStrictEqual(r9.rest, {}, "a capitalised key should be lifted out too");
+assert.deepStrictEqual(
+  r9.rest,
+  {},
+  "a capitalised key should be lifted out too"
+);
 assert.ok(hasText(r9.portal.node, "繁体中文"));
 
 // Unknown value: no flag, text only — and no stray extra space
 r9 = detail({ language: "klingon" });
-assert.strictEqual(find(r9.portal.node, (n) => /fi fi-/.test(n.props.className || "")), null,
-  "an unknown value should have no flag");
+assert.strictEqual(
+  find(r9.portal.node, (n) => /fi fi-/.test(n.props.className || "")),
+  null,
+  "an unknown value should have no flag"
+);
 assert.ok(hasText(r9.portal.node, "klingon"));
 assert.deepStrictEqual(
   r9.portal.node.props.children.filter((c) => typeof c === "string"),
   ["语言: ", "klingon"],
-  "without a flag there must not be a double space in \"语言:  klingon\""
+  'without a flag there must not be a double space in "语言:  klingon"'
 );
 
 // Label i18n: follows the UI language, falls back to English
 currentLocale = "ja-JP";
-assert.ok(hasText(detail({ language: "ja" }).portal.node, "言語: "), "should follow the UI language");
+assert.ok(
+  hasText(detail({ language: "ja" }).portal.node, "言語: "),
+  "should follow the UI language"
+);
 currentLocale = "de-DE";
-assert.ok(hasText(detail({ language: "ja" }).portal.node, "Language: "),
-  "should fall back to English for a locale without the key");
+assert.ok(
+  hasText(detail({ language: "ja" }).portal.node, "Language: "),
+  "should fall back to English for a locale without the key"
+);
 currentLocale = "zh-CN";
 
 // No language field at all → hands off completely
 let noLang = call("CustomFields", { values: { author: "x" } });
-assert.strictEqual(noLang.type, original, "without a language field the original is used unchanged");
+assert.strictEqual(
+  noLang.type,
+  original,
+  "without a language field the original is used unchanged"
+);
 assert.ok(call("CustomFields", {}), "empty values must not throw");
 assert.ok(call("CustomFields", {}), "missing values must not throw");
 
 // Not on a gallery detail page (no .gallery-details): render nothing, do not throw
 galleryPanel.parentNode.children.splice(
-  galleryPanel.parentNode.children.indexOf(galleryPanel), 1
+  galleryPanel.parentNode.children.indexOf(galleryPanel),
+  1
 );
-assert.strictEqual(detail({ language: "ja" }).portal, null, "with no mount point it should safely return null");
+assert.strictEqual(
+  detail({ language: "ja" }).portal,
+  null,
+  "with no mount point it should safely return null"
+);
 documentRoot.appendChild(galleryPanel);
-console.log("✓ detail page (lift out / portal target / pull back / label i18n / unknown / no mount point)");
+console.log(
+  "✓ detail page (lift out / portal target / pull back / label i18n / unknown / no mount point)"
+);
 
 // ── 9b. Edit page: the language field portals between studio and performers ──
 // Stand in for the edit form: studio row → performer row, with data-field as the anchor
@@ -1040,20 +1311,32 @@ performerRow.dataset.field = "performer_ids";
 editForm.appendChild(performerRow);
 
 const editField = (values, onChange) => {
-  const el = call("CustomFieldsInput", { values, onChange: onChange || (() => {}) })
-    .props.children[0];
+  const el = call("CustomFieldsInput", {
+    values,
+    onChange: onChange || (() => {}),
+  }).props.children[0];
   return el.type(el.props);
 };
 
 const fieldPortal = editField({ language: "ja" });
-assert.strictEqual(fieldPortal.__portal, true, "should render through a portal into the edit form");
+assert.strictEqual(
+  fieldPortal.__portal,
+  true,
+  "should render through a portal into the edit form"
+);
 
 const fieldHostEl = editForm.children[1];
 assert.strictEqual(fieldHostEl.className, "manga-tools-field-host");
-assert.strictEqual(fieldHostEl.previousElementSibling, studioRow,
-  "the mount point should come right after the studio row");
-assert.strictEqual(fieldHostEl.nextElementSibling, performerRow,
-  "and right before the performer row — i.e. between studio and performers");
+assert.strictEqual(
+  fieldHostEl.previousElementSibling,
+  studioRow,
+  "the mount point should come right after the studio row"
+);
+assert.strictEqual(
+  fieldHostEl.nextElementSibling,
+  performerRow,
+  "and right before the performer row — i.e. between studio and performers"
+);
 assert.strictEqual(fieldPortal.host, fieldHostEl);
 
 // Field structure: every class name is copied from the native field rather than
@@ -1069,31 +1352,50 @@ assert.strictEqual(fg.props["data-field"], "manga_tools_language");
 // Copying the native class names matches whatever they happen to be.
 const labelEl = fg.props.children[0];
 assert.strictEqual(labelEl.type, "label");
-assert.strictEqual(labelEl.props.className, "form-label col-form-label col-sm-3",
-  "the label classes should be copied verbatim (no extra col-xl-2)");
+assert.strictEqual(
+  labelEl.props.className,
+  "form-label col-form-label col-sm-3",
+  "the label classes should be copied verbatim (no extra col-xl-2)"
+);
 assert.strictEqual(labelEl.props.htmlFor, "manga_tools_language");
-assert.strictEqual(labelEl.props.children, "语言", "the label should come from Stash's locale files");
+assert.strictEqual(
+  labelEl.props.children,
+  "语言",
+  "the label should come from Stash's locale files"
+);
 
 const controlEl = fg.props.children[1];
 assert.strictEqual(controlEl.type, "div");
-assert.strictEqual(controlEl.props.className, "col-sm-9",
-  "the control classes should be copied verbatim (no extra col-xl-7)");
+assert.strictEqual(
+  controlEl.props.className,
+  "col-sm-9",
+  "the control classes should be copied verbatim (no extra col-xl-7)"
+);
 
 // When the native field changes width, follow it
 studioLabel.className = "form-label col-form-label col-xl-12 col-sm-3";
 studioControl.className = "col-xl-12 col-sm-9";
 const followed = editField({ language: "ja" }).node;
-assert.strictEqual(followed.props.children[0].props.className,
-  "form-label col-form-label col-xl-12 col-sm-3", "should follow the native field's widths");
-assert.strictEqual(followed.props.children[1].props.className, "col-xl-12 col-sm-9");
+assert.strictEqual(
+  followed.props.children[0].props.className,
+  "form-label col-form-label col-xl-12 col-sm-3",
+  "should follow the native field's widths"
+);
+assert.strictEqual(
+  followed.props.children[1].props.className,
+  "col-xl-12 col-sm-9"
+);
 studioLabel.className = "form-label col-form-label col-sm-3";
 studioControl.className = "col-sm-9";
 
 // Anchor present but unreadable internals: fall back to the default, do not throw
 studioRow.detach(studioLabel);
 studioRow.detach(studioControl);
-assert.strictEqual(editField({ language: "ja" }).node.props.children[1].props.className,
-  "col-sm-9", "should fall back to the default when the native classes cannot be read");
+assert.strictEqual(
+  editField({ language: "ja" }).node.props.children[1].props.className,
+  "col-sm-9",
+  "should fall back to the default when the native classes cannot be read"
+);
 studioRow.appendChild(studioLabel);
 studioRow.appendChild(studioControl);
 
@@ -1102,39 +1404,77 @@ const editSelect = find(fg, (n) => n.props && n.props.options);
 assert.strictEqual(editSelect.props.value.value, "ja");
 assert.strictEqual(editSelect.props.value.flag, "jp");
 // The order is asserted in 5b; here it is only the selected value echoing back.
-assert.strictEqual(editSelect.props.options.find((o) => o.value === "ja").label, "日语");
+assert.strictEqual(
+  editSelect.props.options.find((o) => o.value === "ja").label,
+  "日语"
+);
 
 // Appearance must match Stash's own dropdowns: no default separator rule, and
 // the same theme prefix
-assert.strictEqual(typeof editSelect.props.components.IndicatorSeparator, "function",
-  "the react-select IndicatorSeparator should be removed (Stash's Select.tsx does the same)");
+assert.strictEqual(
+  typeof editSelect.props.components.IndicatorSeparator,
+  "function",
+  "the react-select IndicatorSeparator should be removed (Stash's Select.tsx does the same)"
+);
 assert.strictEqual(editSelect.props.components.IndicatorSeparator(), null);
-assert.strictEqual(editSelect.props.classNamePrefix, "react-select",
-  "should reuse Stash's react-select theme prefix");
-assert.strictEqual(editSelect.props.inputId, "manga_tools_language", "should pair with the label's for");
+assert.strictEqual(
+  editSelect.props.classNamePrefix,
+  "react-select",
+  "should reuse Stash's react-select theme prefix"
+);
+assert.strictEqual(
+  editSelect.props.inputId,
+  "manga_tools_language",
+  "should pair with the label's for"
+);
 
 // When a React re-render displaces the mount point, pull it back after studio
 editForm.insertBefore(makeEl("div"), performerRow);
 editField({ language: "ja" });
-assert.strictEqual(fieldHostEl.previousElementSibling, studioRow, "a re-render should pull it back");
+assert.strictEqual(
+  fieldHostEl.previousElementSibling,
+  studioRow,
+  "a re-render should pull it back"
+);
 const fieldHosts = editForm.children.filter(
   (c) => c.className === "manga-tools-field-host"
 );
-assert.strictEqual(fieldHosts.length, 1, "the mount point must not be created twice");
+assert.strictEqual(
+  fieldHosts.length,
+  1,
+  "the mount point must not be created twice"
+);
 
 // Nothing renders off a gallery page
-globalListeners["stash:location"]({ detail: { data: { location: { pathname: "/scenes/5" } } } });
-assert.strictEqual(editField({ language: "ja" }), null, "no language field on a scene page");
-globalListeners["stash:location"]({ detail: { data: { location: { pathname: "/galleries/1" } } } });
-assert.notStrictEqual(editField({ language: "ja" }), null, "restored when back on a gallery page");
+globalListeners["stash:location"]({
+  detail: { data: { location: { pathname: "/scenes/5" } } },
+});
+assert.strictEqual(
+  editField({ language: "ja" }),
+  null,
+  "no language field on a scene page"
+);
+globalListeners["stash:location"]({
+  detail: { data: { location: { pathname: "/galleries/1" } } },
+});
+assert.notStrictEqual(
+  editField({ language: "ja" }),
+  null,
+  "restored when back on a gallery page"
+);
 
 // No studio anchor: return null safely, do not throw
 const firstChild = editForm.children[0];
 editForm.detach(studioRow);
-assert.strictEqual(editField({ language: "ja" }), null, "with no studio field it should safely return null");
+assert.strictEqual(
+  editField({ language: "ja" }),
+  null,
+  "with no studio field it should safely return null"
+);
 editForm.insertBefore(studioRow, firstChild);
-console.log("✓ edit page (target between studio and performers / widths copied / pull back / no anchor)");
-
+console.log(
+  "✓ edit page (target between studio and performers / widths copied / pull back / no anchor)"
+);
 
 // ── 10. Basic CSS checks (catch typos and missing rules after hand edits) ──
 const css = fs.readFileSync(path.join(PLUGIN, "mangaTools.css"), "utf8");
@@ -1148,11 +1488,15 @@ assert.ok(
   "the badge's resting opacity should be 0.75 (matching .studio-overlay)"
 );
 assert.ok(
-  /\.gallery-card:hover\s+\.manga-tools-badge[^{]*\{[^}]*opacity:\s*0/.test(css),
+  /\.gallery-card:hover\s+\.manga-tools-badge[^{]*\{[^}]*opacity:\s*0/.test(
+    css
+  ),
   "the hover fade-out rule is missing"
 );
 assert.ok(
-  /\.gallery-card\s+\.thumbnail-section\s*\{[^}]*position:\s*relative/.test(css),
+  /\.gallery-card\s+\.thumbnail-section\s*\{[^}]*position:\s*relative/.test(
+    css
+  ),
   "the .thumbnail-section positioning context is missing, so the badge lands below the title"
 );
 assert.ok(
@@ -1163,8 +1507,10 @@ assert.ok(
 // language name is shown whole — clipping it is what made "印度尼西亚语" come out
 // as "印度尼…" with flags turned off.
 const boundedChip = /\.manga-tools-badge\.is-unknown\s*\{([^}]*)\}/.exec(css);
-assert.ok(boundedChip && /text-overflow:\s*ellipsis/.test(boundedChip[1]),
-  "an unrecognised value should be bounded and ellipsised");
+assert.ok(
+  boundedChip && /text-overflow:\s*ellipsis/.test(boundedChip[1]),
+  "an unrecognised value should be bounded and ellipsised"
+);
 assert.ok(
   !/\.manga-tools-badge\.is-name\s*\{[^}]*text-overflow/.test(css),
   "a recognised language name must not be truncated — see the .is-name rule"
@@ -1177,15 +1523,22 @@ assert.ok(
 // The whole row, not the empty one: an earlier version hid it only when empty,
 // which left it appearing as soon as the criterion held anything — and that is
 // the state a language filter is normally in.
-const pillsTagsRule = /\.criterion-list \[data-type="language"\] \.filter-tags\s*\{([^}]*)\}/.exec(css);
+const pillsTagsRule =
+  /\.criterion-list \[data-type="language"\] \.filter-tags\s*\{([^}]*)\}/.exec(
+    css
+  );
 assert.ok(pillsTagsRule, "the editor's own tag row should be hidden");
-assert.ok(/display:\s*none\s*!important/.test(pillsTagsRule[1]),
-  "…with !important: a plain display: none loses to Bootstrap's d-flex");
+assert.ok(
+  /display:\s*none\s*!important/.test(pillsTagsRule[1]),
+  "…with !important: a plain display: none loses to Bootstrap's d-flex"
+);
 // The flag needs its own spacing in a list row: a flex `gap` would also open up
 // the icon-to-name spacing those rows share with Stash's, and a margin applied
 // more broadly would double up in the dropdown and the detail row.
 assert.ok(
-  /\.selected-object \.manga-tools-flag,[^}]*\.unselected-object \.manga-tools-flag\s*\{[^}]*margin:/.test(css),
+  /\.selected-object \.manga-tools-flag,[^}]*\.unselected-object \.manga-tools-flag\s*\{[^}]*margin:/.test(
+    css
+  ),
   "the flag in a list row should be spaced from the icon and the name"
 );
 // Stash's `.setting-section .setting > div:last-child { text-align: right }`
@@ -1197,7 +1550,9 @@ assert.ok(
   ),
   "the settings block must reset Stash's text-align: right"
 );
-console.log("✓ CSS checks (braces / hover / positioning / flag sizing / settings alignment)");
+console.log(
+  "✓ CSS checks (braces / hover / positioning / flag sizing / settings alignment)"
+);
 
 // ── 10b. Bundle shape ──────────────────────────────────────────────
 // The plugin is loaded by Stash through a plain <script> tag, so the file has to
@@ -1206,8 +1561,11 @@ console.log("✓ CSS checks (braces / hover / positioning / flag sizing / settin
 // worth asserting: changing format to "esm" or forgetting bundle: true would
 // still produce a file, and it would only fail in the browser.
 const buildFiles = fs.readdirSync(PLUGIN).filter((f) => f.endsWith(".js"));
-assert.deepStrictEqual(buildFiles, ["mangaTools.js"],
-  "one bundled file, named after the plugin ID — ui.javascript in the yml names this file");
+assert.deepStrictEqual(
+  buildFiles,
+  ["mangaTools.js"],
+  "one bundled file, named after the plugin ID — ui.javascript in the yml names this file"
+);
 
 const bundle = fs.readFileSync(path.join(PLUGIN, "mangaTools.js"), "utf8");
 assert.ok(
@@ -1222,7 +1580,9 @@ assert.ok(
   /window\.MangaTools\s*=/.test(bundle),
   "languages.ts should be inlined into the bundle, not left as a separate file"
 );
-console.log("✓ bundle shape (single script file, self-contained, JSX transformed)");
+console.log(
+  "✓ bundle shape (single script file, self-contained, JSX transformed)"
+);
 
 // ── 10c. Gallery list: what the language filter reads and writes ───
 // The filter works by rewriting the URL, which Stash's list hook re-reads on
@@ -1242,55 +1602,82 @@ const conditionsOf = (modifier, value) => {
 };
 
 // --- reading: every shape the model can be in ---------------------
-assert.deepStrictEqual(NS.readLanguageFilter(makeFilterModel()), sel(),
-  "a filter with no criteria means no language selection");
 assert.deepStrictEqual(
-  NS.readLanguageFilter(makeFilterModel([customFieldsCriterion([conditionsOf("NOT_NULL")])])),
+  NS.readLanguageFilter(makeFilterModel()),
+  sel(),
+  "a filter with no criteria means no language selection"
+);
+assert.deepStrictEqual(
+  NS.readLanguageFilter(
+    makeFilterModel([customFieldsCriterion([conditionsOf("NOT_NULL")])])
+  ),
   sel("any"),
   "NOT_NULL is the (Any) state"
 );
 assert.deepStrictEqual(
-  NS.readLanguageFilter(makeFilterModel([customFieldsCriterion([conditionsOf("IS_NULL")])])),
+  NS.readLanguageFilter(
+    makeFilterModel([customFieldsCriterion([conditionsOf("IS_NULL")])])
+  ),
   sel("none"),
   "IS_NULL is the (None) state"
 );
 assert.deepStrictEqual(
-  NS.readLanguageFilter(makeFilterModel([customFieldsCriterion([conditionsOf("EQUALS", ["ja"])])])),
+  NS.readLanguageFilter(
+    makeFilterModel([customFieldsCriterion([conditionsOf("EQUALS", ["ja"])])])
+  ),
   sel("", ["ja"]),
   "EQUALS is an included value"
 );
 assert.deepStrictEqual(
-  NS.readLanguageFilter(makeFilterModel([customFieldsCriterion([conditionsOf("NOT_EQUALS", ["ko"])])])),
+  NS.readLanguageFilter(
+    makeFilterModel([
+      customFieldsCriterion([conditionsOf("NOT_EQUALS", ["ko"])]),
+    ])
+  ),
   sel("", [], ["ko"]),
   "NOT_EQUALS is an excluded value"
 );
 assert.deepStrictEqual(
-  NS.readLanguageFilter(makeFilterModel([customFieldsCriterion([
-    conditionsOf("EQUALS", ["ja"]),
-    conditionsOf("NOT_EQUALS", ["ko"]),
-  ])])),
+  NS.readLanguageFilter(
+    makeFilterModel([
+      customFieldsCriterion([
+        conditionsOf("EQUALS", ["ja"]),
+        conditionsOf("NOT_EQUALS", ["ko"]),
+      ]),
+    ])
+  ),
   sel("", ["ja"], ["ko"]),
   "include and exclude are two conditions and both are read"
 );
 assert.deepStrictEqual(
-  NS.readLanguageFilter(makeFilterModel([customFieldsCriterion([
-    conditionsOf("EQUALS", ["ja"]),
-    { field: "author", modifier: "EQUALS", value: ["x"] },
-  ])])),
+  NS.readLanguageFilter(
+    makeFilterModel([
+      customFieldsCriterion([
+        conditionsOf("EQUALS", ["ja"]),
+        { field: "author", modifier: "EQUALS", value: ["x"] },
+      ]),
+    ])
+  ),
   sel("", ["ja"]),
   "another field's condition is not a language selection"
 );
 assert.deepStrictEqual(
-  NS.readLanguageFilter(makeFilterModel([customFieldsCriterion([
-    { field: "Language", modifier: "EQUALS", value: ["ja"] },
-  ])])),
+  NS.readLanguageFilter(
+    makeFilterModel([
+      customFieldsCriterion([
+        { field: "Language", modifier: "EQUALS", value: ["ja"] },
+      ]),
+    ])
+  ),
   sel("", ["ja"]),
   "field names are matched case-insensitively, as everywhere else in this plugin"
 );
 assert.deepStrictEqual(
-  NS.readLanguageFilter(makeFilterModel([customFieldsCriterion([
-    conditionsOf("MATCHES_REGEX", ["ja"]),
-  ])])),
+  NS.readLanguageFilter(
+    makeFilterModel([
+      customFieldsCriterion([conditionsOf("MATCHES_REGEX", ["ja"])]),
+    ])
+  ),
   sel(),
   "a modifier this plugin does not use is ignored rather than misread"
 );
@@ -1305,23 +1692,35 @@ function writeFilter(selection, conditions) {
   const result = NS.languageFilterQuery(model, selection);
   return {
     result,
-    criteria: encodedCriteria.length ? encodedCriteria[encodedCriteria.length - 1] : null,
+    criteria: encodedCriteria.length
+      ? encodedCriteria[encodedCriteria.length - 1]
+      : null,
   };
 }
 const languageConditions = (criteria) =>
   (criteria || [])
-    .filter((c) => c.criterionOption && c.criterionOption.type === "custom_fields")
+    .filter(
+      (c) => c.criterionOption && c.criterionOption.type === "custom_fields"
+    )
     .flatMap((c) => c.value || []);
 
 let w = writeFilter(sel("", ["ja"]));
 assert.ok(w.result, "a selection should produce query parameters");
-assert.deepStrictEqual(languageConditions(w.criteria), [conditionsOf("EQUALS", ["ja"])]);
+assert.deepStrictEqual(languageConditions(w.criteria), [
+  conditionsOf("EQUALS", ["ja"]),
+]);
 
 // The two modifier states carry no value at all
-assert.deepStrictEqual(languageConditions(writeFilter(sel("any")).criteria),
-  [conditionsOf("NOT_NULL")], "(Any) should be NOT_NULL");
-assert.deepStrictEqual(languageConditions(writeFilter(sel("none")).criteria),
-  [conditionsOf("IS_NULL")], "(None) should be IS_NULL");
+assert.deepStrictEqual(
+  languageConditions(writeFilter(sel("any")).criteria),
+  [conditionsOf("NOT_NULL")],
+  "(Any) should be NOT_NULL"
+);
+assert.deepStrictEqual(
+  languageConditions(writeFilter(sel("none")).criteria),
+  [conditionsOf("IS_NULL")],
+  "(None) should be IS_NULL"
+);
 
 // Include and exclude ride together, which works because the conditions are ANDed
 assert.deepStrictEqual(
@@ -1349,8 +1748,11 @@ const liveModel = makeFilterModel([
   customFieldsCriterion([conditionsOf("EQUALS", ["ja"])]),
 ]);
 NS.languageFilterQuery(liveModel, sel("", ["ko"]));
-assert.deepStrictEqual(liveModel.criteria[0].value, [conditionsOf("EQUALS", ["ja"])],
-  "the live filter model must not be mutated");
+assert.deepStrictEqual(
+  liveModel.criteria[0].value,
+  [conditionsOf("EQUALS", ["ja"])],
+  "the live filter model must not be mutated"
+);
 
 // Another custom field's condition survives: this composes with a hand-made
 // filter rather than discarding it.
@@ -1358,24 +1760,39 @@ w = writeFilter(sel("", ["ja"]), [
   { field: "author", modifier: "EQUALS", value: ["x"] },
   conditionsOf("EQUALS", ["ko"]),
 ]);
-assert.deepStrictEqual(languageConditions(w.criteria),
-  [{ field: "author", modifier: "EQUALS", value: ["x"] }, conditionsOf("EQUALS", ["ja"])],
-  "another custom field's condition should be kept, and the language replaced");
+assert.deepStrictEqual(
+  languageConditions(w.criteria),
+  [
+    { field: "author", modifier: "EQUALS", value: ["x"] },
+    conditionsOf("EQUALS", ["ja"]),
+  ],
+  "another custom field's condition should be kept, and the language replaced"
+);
 
 // A case variant of the field name is dropped, for the same reason.
-w = writeFilter(sel("", ["ja"]), [{ field: "Language", modifier: "EQUALS", value: ["ko"] }]);
-assert.deepStrictEqual(languageConditions(w.criteria), [conditionsOf("EQUALS", ["ja"])],
-  "a capitalised field name must not leave a second condition behind");
+w = writeFilter(sel("", ["ja"]), [
+  { field: "Language", modifier: "EQUALS", value: ["ko"] },
+]);
+assert.deepStrictEqual(
+  languageConditions(w.criteria),
+  [conditionsOf("EQUALS", ["ja"])],
+  "a capitalised field name must not leave a second condition behind"
+);
 
 // Clearing removes the conditions, and the criterion with them — an empty
 // criterion would otherwise show up as a filter tag with nothing in it.
-assert.deepStrictEqual(writeFilter(sel(), [conditionsOf("EQUALS", ["ja"])]).criteria, [],
-  "clearing should drop the criterion entirely");
 assert.deepStrictEqual(
-  languageConditions(writeFilter(sel(), [
-    conditionsOf("EQUALS", ["ja"]),
-    { field: "author", modifier: "EQUALS", value: ["x"] },
-  ]).criteria),
+  writeFilter(sel(), [conditionsOf("EQUALS", ["ja"])]).criteria,
+  [],
+  "clearing should drop the criterion entirely"
+);
+assert.deepStrictEqual(
+  languageConditions(
+    writeFilter(sel(), [
+      conditionsOf("EQUALS", ["ja"]),
+      { field: "author", modifier: "EQUALS", value: ["x"] },
+    ]).criteria
+  ),
   [{ field: "author", modifier: "EQUALS", value: ["x"] }],
   "…but a criterion that still holds something else stays"
 );
@@ -1389,15 +1806,21 @@ const mixed = makeFilterModel([
 ]);
 encodedCriteria.length = 0;
 NS.languageFilterQuery(mixed, sel("", ["ja"]));
-assert.deepStrictEqual(encodedCriteria[0].map((c) => c.criterionOption.type),
-  ["studios", "custom_fields"], "unrelated criteria should be kept, with ours alongside");
+assert.deepStrictEqual(
+  encodedCriteria[0].map((c) => c.criterionOption.type),
+  ["studios", "custom_fields"],
+  "unrelated criteria should be kept, with ours alongside"
+);
 assert.deepStrictEqual(encodedCriteria[0][0].value, [], "…and left untouched");
 
 // A filter that offers no custom-fields criterion cannot take one
 const noCustomFields = makeFilterModel([]);
 noCustomFields.options = { criterionOptions: [] };
-assert.strictEqual(NS.languageFilterQuery(noCustomFields, sel("", ["ja"])), null,
-  "without the option there is nowhere to put the condition, and it says so");
+assert.strictEqual(
+  NS.languageFilterQuery(noCustomFields, sel("", ["ja"])),
+  null,
+  "without the option there is nowhere to put the condition, and it says so"
+);
 
 // What the dialog's Apply merges into is the model the plugin was rendered with —
 // *not* one rebuilt from the URL Stash has just written. That was tried, to stop a
@@ -1412,16 +1835,25 @@ const mergeModel = makeFilterModel([
 ]);
 encodedCriteria.length = 0;
 NS.languageFilterQuery(mergeModel, sel("", ["ko"]));
-assert.deepStrictEqual(encodedCriteria[0].map((c) => c.criterionOption.type),
+assert.deepStrictEqual(
+  encodedCriteria[0].map((c) => c.criterionOption.type),
   ["organized", "custom_fields"],
-  "the merge should leave every other criterion exactly as the model has it");
-assert.deepStrictEqual(encodedCriteria[0][1].value, [conditionsOf("EQUALS", ["ko"])],
-  "…changing only the language");
-assert.deepStrictEqual(mergeModel.criteria.map((c) => c.criterionOption.type),
+  "the merge should leave every other criterion exactly as the model has it"
+);
+assert.deepStrictEqual(
+  encodedCriteria[0][1].value,
+  [conditionsOf("EQUALS", ["ko"])],
+  "…changing only the language"
+);
+assert.deepStrictEqual(
+  mergeModel.criteria.map((c) => c.criterionOption.type),
   ["organized", "custom_fields"],
-  "…and the model it merged from is untouched");
+  "…and the model it merged from is untouched"
+);
 
-console.log("✓ filter conditions (read any/none/include/exclude, write, merge, clear, not mutated)");
+console.log(
+  "✓ filter conditions (read any/none/include/exclude, write, merge, clear, not mutated)"
+);
 
 // ── 10d. The sidebar section itself ────────────────────────────────
 // Stand in for the gallery list's sidebar, in the shape the real one has: the
@@ -1455,20 +1887,33 @@ const renderLanguageFilter = (conditions) => {
 };
 
 let section = renderLanguageFilter();
-assert.strictEqual(section.__portal, true, "the section should render through a portal");
+assert.strictEqual(
+  section.__portal,
+  true,
+  "the section should render through a portal"
+);
 
 const filterHostEl = sidebar.children[1];
 assert.strictEqual(filterHostEl.className, "manga-tools-field-host");
-assert.strictEqual(filterHostEl.previousElementSibling, savedFiltersSection,
-  "the section should come after the saved filters");
-assert.strictEqual(filterHostEl.nextElementSibling, pinnedStudioSection,
-  "and before Stash's own pinned sections");
+assert.strictEqual(
+  filterHostEl.previousElementSibling,
+  savedFiltersSection,
+  "the section should come after the saved filters"
+);
+assert.strictEqual(
+  filterHostEl.nextElementSibling,
+  pinnedStudioSection,
+  "and before Stash's own pinned sections"
+);
 assert.strictEqual(section.host, filterHostEl);
 
 // Markup copied from Stash's own sidebar section (CollapseButton/SidebarSection),
 // so it reads as one of them rather than as something bolted on.
 const sectionEl = section.node;
-assert.strictEqual(sectionEl.props.className, "sidebar-section sidebar-list-filter");
+assert.strictEqual(
+  sectionEl.props.className,
+  "sidebar-section sidebar-list-filter"
+);
 const headerButton = sectionEl.props.children[0].props.children;
 assert.strictEqual(headerButton.type, "Button");
 assert.strictEqual(headerButton.props.className, "minimal collapse-button");
@@ -1479,63 +1924,104 @@ assert.strictEqual(
 );
 // Collapsed when the filter is not in use — Stash's own sections start closed,
 // and the chevron points right to say so.
-assert.strictEqual(find(sectionEl, (n) => n.type === "Collapse").props.in, false,
-  "with nothing filtered the section should start collapsed, like Stash's");
-assert.strictEqual(find(sectionEl, (n) => n.type === "Icon").props.icon, "faChevronRight",
-  "and the chevron should point right");
-assert.strictEqual(find(sectionEl, (n) => n.type === "Collapse").props.mountOnEnter, true,
-  "the candidates should not be mounted until the section is opened");
-assert.strictEqual(typeof headerButton.props.onClick, "function",
-  "the header should be clickable — the transition itself is not asserted, since "
-  + "this stub's useState has a no-op setter and asserting it would test the stub");
+assert.strictEqual(
+  find(sectionEl, (n) => n.type === "Collapse").props.in,
+  false,
+  "with nothing filtered the section should start collapsed, like Stash's"
+);
+assert.strictEqual(
+  find(sectionEl, (n) => n.type === "Icon").props.icon,
+  "faChevronRight",
+  "and the chevron should point right"
+);
+assert.strictEqual(
+  find(sectionEl, (n) => n.type === "Collapse").props.mountOnEnter,
+  true,
+  "the candidates should not be mounted until the section is opened"
+);
+assert.strictEqual(
+  typeof headerButton.props.onClick,
+  "function",
+  "the header should be clickable — the transition itself is not asserted, since " +
+    "this stub's useState has a no-op setter and asserting it would test the stub"
+);
 
 // The candidate list: a search box, then Stash's two modifier entries, then
 // every language.
 const candidateList = find(sectionEl, (n) => {
   return n.props && n.props.className === "queryable-candidate-list";
 });
-assert.ok(candidateList, "the candidates should be in a queryable-candidate-list");
+assert.ok(
+  candidateList,
+  "the candidates should be in a queryable-candidate-list"
+);
 
-const searchField = find(candidateList, (n) =>
-  n.props && n.props.className === "clearable-text-field form-control");
+const searchField = find(
+  candidateList,
+  (n) => n.props && n.props.className === "clearable-text-field form-control"
+);
 assert.ok(searchField, "the candidates should be searchable, like Stash's own");
-assert.strictEqual(searchField.props.placeholder, "搜索…",
-  "with Stash's placeholder, localised");
+assert.strictEqual(
+  searchField.props.placeholder,
+  "搜索…",
+  "with Stash's placeholder, localised"
+);
 
 const candidateItems = [];
 find(candidateList, (n) => {
-  if (n.props && /^unselected-object\b/.test(n.props.className)) candidateItems.push(n);
+  if (n.props && /^unselected-object\b/.test(n.props.className))
+    candidateItems.push(n);
   return false;
 });
-assert.strictEqual(candidateItems.length, Object.keys(NS.LANGUAGES).length + 2,
-  "every language should be offered, plus (Any) and (None)");
+assert.strictEqual(
+  candidateItems.length,
+  Object.keys(NS.LANGUAGES).length + 2,
+  "every language should be offered, plus (Any) and (None)"
+);
 const labelOf = (item) =>
-  find(item, (n) => n.props && typeof n.props.children === "string").props.children;
-assert.deepStrictEqual(candidateItems.slice(0, 2).map(labelOf), ["(任意)", "(无)"],
-  "the modifier entries come first, in Stash's own parenthesised wording, localised");
-assert.deepStrictEqual(candidateItems.slice(0, 2).map((i) => i.props.className),
+  find(item, (n) => n.props && typeof n.props.children === "string").props
+    .children;
+assert.deepStrictEqual(
+  candidateItems.slice(0, 2).map(labelOf),
+  ["(任意)", "(无)"],
+  "the modifier entries come first, in Stash's own parenthesised wording, localised"
+);
+assert.deepStrictEqual(
+  candidateItems.slice(0, 2).map((i) => i.props.className),
   ["unselected-object modifier-object", "unselected-object modifier-object"],
-  "and carry modifier-object, as Stash marks them");
-assert.strictEqual(candidateItems.some((i) => labelOf(i) === "日语"), true,
-  "and the languages after them");
+  "and carry modifier-object, as Stash marks them"
+);
+assert.strictEqual(
+  candidateItems.some((i) => labelOf(i) === "日语"),
+  true,
+  "and the languages after them"
+);
 
 // Markup details taken from a real studio section, so the two read identically:
 // the include icon carries no extra state class, and the row's trailing wrapper
 // is present even when there is no button in it.
 const jaRow = candidateItems.find((i) => labelOf(i) === "日语");
-assert.strictEqual(find(jaRow, (n) => n.type === "Icon").props.className,
-  "fa-fw include-button");
-const modifierTrailing = find(candidateItems[0], (n) => n.type === "a").props.children[1];
-assert.strictEqual(modifierTrailing.type, "div",
-  "the trailing wrapper is rendered even when it holds no exclude button — "
-  + "the modifier entries have nothing to put in it");
+assert.strictEqual(
+  find(jaRow, (n) => n.type === "Icon").props.className,
+  "fa-fw include-button"
+);
+const modifierTrailing = find(candidateItems[0], (n) => n.type === "a").props
+  .children[1];
+assert.strictEqual(
+  modifierTrailing.type,
+  "div",
+  "the trailing wrapper is rendered even when it holds no exclude button — " +
+    "the modifier entries have nothing to put in it"
+);
 assert.strictEqual(modifierTrailing.props.children, null, "…and it is empty");
 
 // Flags are drawn in the sidebar like everywhere else
 assert.strictEqual(NS.showFlags, true, "precondition: flags are on");
 assert.ok(
-  find(candidateItems.find((i) => labelOf(i) === "日语"),
-    (n) => /fi fi-/.test(n.props.className || "")),
+  find(
+    candidateItems.find((i) => labelOf(i) === "日语"),
+    (n) => /fi fi-/.test(n.props.className || "")
+  ),
   "candidates should carry a flag"
 );
 
@@ -1543,33 +2029,64 @@ assert.ok(
 const jaCandidate = candidateItems.find((i) => labelOf(i) === "日语");
 historyReplaces.length = 0;
 find(jaCandidate, (n) => n.type === "a").props.onClick();
-assert.strictEqual(historyReplaces.length, 1, "clicking should apply the filter");
-assert.strictEqual(historyReplaces[0].pathname, "/galleries", "on the same page");
-assert.ok(/"field":"language","modifier":"EQUALS","value":\["ja"\]/.test(historyReplaces[0].search),
-  "and the URL should carry an EQUALS condition for that language");
+assert.strictEqual(
+  historyReplaces.length,
+  1,
+  "clicking should apply the filter"
+);
+assert.strictEqual(
+  historyReplaces[0].pathname,
+  "/galleries",
+  "on the same page"
+);
+assert.ok(
+  /"field":"language","modifier":"EQUALS","value":\["ja"\]/.test(
+    historyReplaces[0].search
+  ),
+  "and the URL should carry an EQUALS condition for that language"
+);
 
 // The exclude button sits inside the row, so it has to stop the click reaching
 // the row's own include handler.
-const jaExclude = find(jaCandidate, (n) =>
-  n.props && n.props.className === "minimal exclude-button");
+const jaExclude = find(
+  jaCandidate,
+  (n) => n.props && n.props.className === "minimal exclude-button"
+);
 assert.ok(jaExclude, "a candidate should offer an exclude button");
-assert.strictEqual(find(jaExclude, (n) => n.props.children === "exclude") !== null, true,
-  "labelled the way Stash labels it");
+assert.strictEqual(
+  find(jaExclude, (n) => n.props.children === "exclude") !== null,
+  true,
+  "labelled the way Stash labels it"
+);
 historyReplaces.length = 0;
 let stopped = false;
-jaExclude.props.onClick({ stopPropagation: () => { stopped = true; } });
+jaExclude.props.onClick({
+  stopPropagation: () => {
+    stopped = true;
+  },
+});
 assert.strictEqual(stopped, true, "the exclude click must stop propagating");
-assert.strictEqual(historyReplaces.length, 1, "…and exclude rather than include");
-assert.ok(/"modifier":"NOT_EQUALS","value":\["ja"\]/.test(historyReplaces[0].search),
-  "the URL should carry a NOT_EQUALS condition");
-console.log("✓ sidebar section (placement / native markup / search / candidates / include / exclude)");
+assert.strictEqual(
+  historyReplaces.length,
+  1,
+  "…and exclude rather than include"
+);
+assert.ok(
+  /"modifier":"NOT_EQUALS","value":\["ja"\]/.test(historyReplaces[0].search),
+  "the URL should carry a NOT_EQUALS condition"
+);
+console.log(
+  "✓ sidebar section (placement / native markup / search / candidates / include / exclude)"
+);
 
 // Clicking (Any) asks for galleries that have a language at all
 const anyItem = candidateItems.find((i) => labelOf(i) === "(任意)");
 historyReplaces.length = 0;
 find(anyItem, (n) => n.type === "a").props.onClick();
-assert.ok(/"modifier":"NOT_NULL"/.test(historyReplaces[0].search),
-  "(Any) should ask for galleries carrying a language");
+assert.ok(
+  /"modifier":"NOT_NULL"/.test(historyReplaces[0].search),
+  "(Any) should ask for galleries carrying a language"
+);
 console.log("✓ sidebar section (modifier entries: any / none)");
 
 // With something selected, it moves above the fold-away list — outside the
@@ -1578,22 +2095,36 @@ section = renderLanguageFilter([
   conditionsOf("EQUALS", ["ja"]),
   conditionsOf("NOT_EQUALS", ["ko"]),
 ]);
-const selectedList = find(section.node, (n) =>
-  n.props && n.props.className === "selected-list");
+const selectedList = find(
+  section.node,
+  (n) => n.props && n.props.className === "selected-list"
+);
 
 // A filter being set does NOT open the section — Stash does no such thing
 // (nothing in it writes a section's open state but the reader's own click), and
 // deriving it here would flicker, since a filter arriving from the URL is known
 // a render later than the first paint.
-assert.strictEqual(find(section.node, (n) => n.type === "Collapse").props.in, false,
-  "a filter in use should not force the section open");
+assert.strictEqual(
+  find(section.node, (n) => n.type === "Collapse").props.in,
+  false,
+  "a filter in use should not force the section open"
+);
 
 assert.ok(selectedList, "a chosen language should appear in the selected-list");
-assert.strictEqual(section.node.props.children[1], selectedList,
-  "the selected list sits outside the collapse, where Stash puts it");
-assert.strictEqual(find(selectedList, (n) => n.type === "Icon").props.icon, "faCheckCircle",
-  "a chosen entry is ticked");
-assert.strictEqual(find(selectedList, (n) => n.props.children === "日语") !== null, true);
+assert.strictEqual(
+  section.node.props.children[1],
+  selectedList,
+  "the selected list sits outside the collapse, where Stash puts it"
+);
+assert.strictEqual(
+  find(selectedList, (n) => n.type === "Icon").props.icon,
+  "faCheckCircle",
+  "a chosen entry is ticked"
+);
+assert.strictEqual(
+  find(selectedList, (n) => n.props.children === "日语") !== null,
+  true
+);
 
 // A selected row has no second column, unlike a candidate — checked against a
 // real section, where a candidate's <a> holds the exclude button and a chosen
@@ -1601,99 +2132,166 @@ assert.strictEqual(find(selectedList, (n) => n.props.children === "日语") !== 
 const selectedLink = find(selectedList, (n) => n.type === "a");
 /** The children that actually render — a null slot produces nothing */
 const renderedChildren = (el) =>
-  (Array.isArray(el.props.children) ? el.props.children : [el.props.children])
-    .filter((c) => c !== null && c !== undefined);
-assert.strictEqual(renderedChildren(selectedLink).length, 1,
-  "a chosen row holds only its label group");
-assert.strictEqual(renderedChildren(selectedLink)[0].props.className, "label-group");
+  (Array.isArray(el.props.children)
+    ? el.props.children
+    : [el.props.children]
+  ).filter((c) => c !== null && c !== undefined);
+assert.strictEqual(
+  renderedChildren(selectedLink).length,
+  1,
+  "a chosen row holds only its label group"
+);
+assert.strictEqual(
+  renderedChildren(selectedLink)[0].props.className,
+  "label-group"
+);
 
 const remaining = [];
-find(find(section.node, (n) =>
-  n.props && n.props.className === "queryable-candidate-list"), (n) => {
-  if (n.props && /^unselected-object\b/.test(n.props.className)) remaining.push(n);
-  return false;
-});
-assert.strictEqual(remaining.length, Object.keys(NS.LANGUAGES).length - 2,
-  "neither chosen language should also be offered as a candidate");
-assert.strictEqual(remaining.some((i) => /modifier-object/.test(i.props.className)), false,
-  "(Any) and (None) are for the empty state, and those are only offered then");
+find(
+  find(
+    section.node,
+    (n) => n.props && n.props.className === "queryable-candidate-list"
+  ),
+  (n) => {
+    if (n.props && /^unselected-object\b/.test(n.props.className))
+      remaining.push(n);
+    return false;
+  }
+);
+assert.strictEqual(
+  remaining.length,
+  Object.keys(NS.LANGUAGES).length - 2,
+  "neither chosen language should also be offered as a candidate"
+);
+assert.strictEqual(
+  remaining.some((i) => /modifier-object/.test(i.props.className)),
+  false,
+  "(Any) and (None) are for the empty state, and those are only offered then"
+);
 
 // Clicking the chosen one clears it
 historyReplaces.length = 0;
 selectedLink.props.onClick();
-assert.ok(/"modifier":"NOT_EQUALS","value":\["ko"\]/.test(historyReplaces[0].search)
-  && !/"EQUALS"/.test(historyReplaces[0].search),
-  "clicking the chosen language should drop it and leave the excluded one");
+assert.ok(
+  /"modifier":"NOT_EQUALS","value":\["ko"\]/.test(historyReplaces[0].search) &&
+    !/"EQUALS"/.test(historyReplaces[0].search),
+  "clicking the chosen language should drop it and leave the excluded one"
+);
 
 // An excluded language goes in its own list, which Stash marks excluded-list
-const excludedList = find(section.node, (n) =>
-  n.props && n.props.className === "selected-list excluded-list");
+const excludedList = find(
+  section.node,
+  (n) => n.props && n.props.className === "selected-list excluded-list"
+);
 assert.ok(excludedList, "an excluded language should get the excluded-list");
-assert.strictEqual(find(excludedList, (n) => n.type === "Icon").props.icon, "faTimesCircle",
-  "and be marked with a cross rather than a tick");
 assert.strictEqual(
-  find(excludedList, (n) => n.props.className === "TruncatedText inline excluded-object-label") !== null,
+  find(excludedList, (n) => n.type === "Icon").props.icon,
+  "faTimesCircle",
+  "and be marked with a cross rather than a tick"
+);
+assert.strictEqual(
+  find(
+    excludedList,
+    (n) => n.props.className === "TruncatedText inline excluded-object-label"
+  ) !== null,
   true,
   "with the excluded label class, as Stash has it"
 );
-console.log("✓ sidebar section (selected + excluded lists / row shapes / click clears)");
+console.log(
+  "✓ sidebar section (selected + excluded lists / row shapes / click clears)"
+);
 
 // The open state lives in the history entry, where Stash keeps its own — so it
 // survives a reload, which is what a reader sees as "it remembers".
 fakeHistory.location.state = { mangaToolsLanguageOpen: true, somethingElse: 1 };
 section = renderLanguageFilter();
-assert.strictEqual(find(section.node, (n) => n.type === "Collapse").props.in, true,
-  "a remembered open state should be honoured on the first render");
-assert.strictEqual(find(section.node, (n) => n.type === "Icon").props.icon, "faChevronDown");
+assert.strictEqual(
+  find(section.node, (n) => n.type === "Collapse").props.in,
+  true,
+  "a remembered open state should be honoured on the first render"
+);
+assert.strictEqual(
+  find(section.node, (n) => n.type === "Icon").props.icon,
+  "faChevronDown"
+);
 
 // …and toggling records the choice in that same place, merging rather than
 // replacing whatever else the entry was holding.
 const searchBeforeToggle = fakeHistory.location.search;
 historyReplaces.length = 0;
 find(section.node, (n) => n.type === "Button").props.onClick();
-assert.strictEqual(historyReplaces.length, 1, "toggling should remember the choice");
-assert.deepStrictEqual(historyReplaces[0].state,
+assert.strictEqual(
+  historyReplaces.length,
+  1,
+  "toggling should remember the choice"
+);
+assert.deepStrictEqual(
+  historyReplaces[0].state,
   { mangaToolsLanguageOpen: false, somethingElse: 1 },
-  "the entry's other state must survive");
-assert.strictEqual(historyReplaces[0].search, searchBeforeToggle,
-  "and the URL's query must be left exactly as it was — this is not a filter change");
+  "the entry's other state must survive"
+);
+assert.strictEqual(
+  historyReplaces[0].search,
+  searchBeforeToggle,
+  "and the URL's query must be left exactly as it was — this is not a filter change"
+);
 fakeHistory.location.state = undefined;
 // Enter takes the only candidate left, as Stash's onEnter does. Restricted to a
 // single enabled language so the list really does hold one — the search box
 // itself cannot be typed into here, since this stub's useState is inert.
 NS.enabledLanguages = new Set(["ja"]);
 const oneCandidate = renderLanguageFilter();
-const oneSearchBox = find(oneCandidate, (n) =>
-  n.props && n.props.className === "clearable-text-field form-control");
+const oneSearchBox = find(
+  oneCandidate,
+  (n) => n.props && n.props.className === "clearable-text-field form-control"
+);
 assert.ok(oneSearchBox, "precondition: the search box is rendered");
 historyReplaces.length = 0;
 oneSearchBox.props.onKeyDown({ key: "Enter" });
-assert.ok(/"field":"language","modifier":"EQUALS","value":\["ja"\]/.test(historyReplaces[0].search),
-  "Enter should take the only candidate on offer");
+assert.ok(
+  /"field":"language","modifier":"EQUALS","value":\["ja"\]/.test(
+    historyReplaces[0].search
+  ),
+  "Enter should take the only candidate on offer"
+);
 NS.enabledLanguages = null;
 
 // …and stays out of the way when there is a choice to make
 const manyCandidates = renderLanguageFilter();
 historyReplaces.length = 0;
-find(manyCandidates, (n) =>
-  n.props && n.props.className === "clearable-text-field form-control")
-  .props.onKeyDown({ key: "Enter" });
-assert.strictEqual(historyReplaces.length, 0,
-  "Enter must not pick one of several — that choice is the reader's");
+find(
+  manyCandidates,
+  (n) => n.props && n.props.className === "clearable-text-field form-control"
+).props.onKeyDown({ key: "Enter" });
+assert.strictEqual(
+  historyReplaces.length,
+  0,
+  "Enter must not pick one of several — that choice is the reader's"
+);
 
 // (Any) and (None) are absent while a value is chosen, and come back when it is
 // cleared — the state Stash offers them in.
 section = renderLanguageFilter([conditionsOf("NOT_NULL")]);
 const modifierItems = [];
-find(find(section.node, (n) =>
-  n.props && n.props.className === "queryable-candidate-list"), (n) => {
-  if (n.props && /modifier-object/.test(n.props.className || "")) modifierItems.push(n);
-  return false;
-});
-assert.strictEqual(modifierItems.length, 0,
-  "with the (Any) modifier set, the modifier entries belong above, not in the list");
+find(
+  find(
+    section.node,
+    (n) => n.props && n.props.className === "queryable-candidate-list"
+  ),
+  (n) => {
+    if (n.props && /modifier-object/.test(n.props.className || ""))
+      modifierItems.push(n);
+    return false;
+  }
+);
 assert.strictEqual(
-  find(section.node, (n) => n.props && n.props.children === "(任意)") !== null, true,
+  modifierItems.length,
+  0,
+  "with the (Any) modifier set, the modifier entries belong above, not in the list"
+);
+assert.strictEqual(
+  find(section.node, (n) => n.props && n.props.children === "(任意)") !== null,
+  true,
   "…and are shown as the chosen value"
 );
 
@@ -1702,17 +2300,28 @@ assert.strictEqual(
 // makes the studios disappear; the same must happen here or the two sections
 // behave differently for no reason the reader can see.
 const offeredWhileFiltered = [];
-find(find(section.node, (n) =>
-  n.props && n.props.className === "queryable-candidate-list"), (n) => {
-  if (n.props && /^unselected-object\b/.test(n.props.className)) {
-    offeredWhileFiltered.push(n);
+find(
+  find(
+    section.node,
+    (n) => n.props && n.props.className === "queryable-candidate-list"
+  ),
+  (n) => {
+    if (n.props && /^unselected-object\b/.test(n.props.className)) {
+      offeredWhileFiltered.push(n);
+    }
+    return false;
   }
-  return false;
-});
-assert.strictEqual(offeredWhileFiltered.length, 0,
-  "(Any) or (None) leaves nothing to choose, so no language is offered");
+);
+assert.strictEqual(
+  offeredWhileFiltered.length,
+  0,
+  "(Any) or (None) leaves nothing to choose, so no language is offered"
+);
 assert.ok(
-  find(section.node, (n) => n.props && n.props.className === "clearable-text-field form-control"),
+  find(
+    section.node,
+    (n) => n.props && n.props.className === "clearable-text-field form-control"
+  ),
   "…though the search box stays, standing over an empty list, as it does in Stash"
 );
 
@@ -1721,12 +2330,20 @@ assert.ok(
 // a different action from selecting it, so it cannot be a toggle on the
 // candidate. That escape hatch was silently broken once, hence this test.
 historyReplaces.length = 0;
-const chosenModifier = find(section.node, (n) =>
-  n.props && n.props.className === "selected-object modifier-object");
-assert.ok(chosenModifier, "the chosen modifier should sit in the selected list");
+const chosenModifier = find(
+  section.node,
+  (n) => n.props && n.props.className === "selected-object modifier-object"
+);
+assert.ok(
+  chosenModifier,
+  "the chosen modifier should sit in the selected list"
+);
 chosenModifier.props.children.props.onClick();
-assert.strictEqual(historyReplaces[0].search, "ENCODED([])",
-  "clearing it should leave no language condition at all");
+assert.strictEqual(
+  historyReplaces[0].search,
+  "ENCODED([])",
+  "clearing it should leave no language condition at all"
+);
 
 // The search box's clear button cannot be reached from these tests: it only
 // renders once the box has text, and this stub's useState cannot type. Its one
@@ -1744,8 +2361,10 @@ const clearProps = bundleText.slice(
   bundleText.lastIndexOf("{", clearAt),
   bundleText.indexOf("}", clearAt)
 );
-assert.ok(/variant:\s*"secondary"/.test(clearProps),
-  "the clear button must be a secondary button, like Stash's — a primary one is a blue block");
+assert.ok(
+  /variant:\s*"secondary"/.test(clearProps),
+  "the clear button must be a secondary button, like Stash's — a primary one is a blue block"
+);
 console.log("✓ search box clear button (secondary, not the primary default)");
 
 // ── 10e. The filter dialog's Language card ─────────────────────────
@@ -1757,46 +2376,72 @@ const dialogModel = makeFilterModel();
 const dialogOptions = dialogModel.options.criterionOptions;
 const before = dialogOptions.length;
 NS.registerLanguageCriterionOption(dialogModel);
-assert.strictEqual(dialogOptions.length, before + 1, "one card should be added");
+assert.strictEqual(
+  dialogOptions.length,
+  before + 1,
+  "one card should be added"
+);
 NS.registerLanguageCriterionOption(dialogModel);
-assert.strictEqual(dialogOptions.length, before + 1,
-  "registering again must not add a second card — the list is shared");
+assert.strictEqual(
+  dialogOptions.length,
+  before + 1,
+  "registering again must not add a second card — the list is shared"
+);
 
-const languageCriterionOption = dialogOptions.find((o) => o.type === "language");
+const languageCriterionOption = dialogOptions.find(
+  (o) => o.type === "language"
+);
 assert.ok(languageCriterionOption, "the card should be keyed on its own type");
-assert.strictEqual(languageCriterionOption.messageID, "config.ui.language.heading",
-  "and labelled with Stash's own word for language");
+assert.strictEqual(
+  languageCriterionOption.messageID,
+  "config.ui.language.heading",
+  "and labelled with Stash's own word for language"
+);
 
 const madeCriterion = languageCriterionOption.makeCriterion();
-assert.strictEqual(madeCriterion.criterionOption.type, "language",
-  "the criterion must carry our type, or the card cannot open or light up");
-assert.deepStrictEqual(madeCriterion.value, [],
-  "no conditions until a language is picked: an empty EQUALS matches nothing, "
-  + "so merely opening the card must not be able to filter the list away");
+assert.strictEqual(
+  madeCriterion.criterionOption.type,
+  "language",
+  "the criterion must carry our type, or the card cannot open or light up"
+);
+assert.deepStrictEqual(
+  madeCriterion.value,
+  [],
+  "no conditions until a language is picked: an empty EQUALS matches nothing, " +
+    "so merely opening the card must not be able to filter the list away"
+);
 
 // The guarantee that makes it safe: what reaches the URL is a plain custom
 // field. A stored type of "language" would not resolve on reload, because Stash
 // decodes the query string before this option has been registered.
-assert.deepStrictEqual(madeCriterion.toQueryParams(),
+assert.deepStrictEqual(
+  madeCriterion.toQueryParams(),
   { type: "custom_fields", value: [] },
-  "the URL must carry custom_fields, which Stash always understands");
+  "the URL must carry custom_fields, which Stash always understands"
+);
 
 // And it must read the criterion it is called on. Stash clones a criterion with
 // cloneDeep before committing it — the copy keeps this method but is a different
 // object — so a closure over the original would serialise a stale value.
 const cloned = Object.assign({}, madeCriterion);
 cloned.value = [{ field: "language", modifier: "EQUALS", value: ["ja"] }];
-assert.deepStrictEqual(cloned.toQueryParams().value,
+assert.deepStrictEqual(
+  cloned.toQueryParams().value,
   [{ field: "language", modifier: "EQUALS", value: ["ja"] }],
-  "toQueryParams must use `this`, not the object it was defined on");
+  "toQueryParams must use `this`, not the object it was defined on"
+);
 
 // A criterion made by the card is recognised by the sidebar, and vice versa:
 // they are the same criterion underneath, so the two must not disagree.
 assert.deepStrictEqual(
-  NS.readLanguageFilter(makeFilterModel([{
-    criterionOption: { type: "language" },
-    value: [{ field: "language", modifier: "EQUALS", value: ["ja"] }],
-  }])),
+  NS.readLanguageFilter(
+    makeFilterModel([
+      {
+        criterionOption: { type: "language" },
+        value: [{ field: "language", modifier: "EQUALS", value: ["ja"] }],
+      },
+    ])
+  ),
   { modifier: "", included: ["ja"], excluded: [] },
   "the sidebar should read a filter set from the dialog"
 );
@@ -1804,10 +2449,19 @@ assert.deepStrictEqual(
 // …and a filter set from the sidebar is made under our type, so it shows as the
 // Language card rather than as a generic custom field.
 encodedCriteria.length = 0;
-NS.languageFilterQuery(dialogModel, { modifier: "", included: ["ja"], excluded: [] });
-assert.strictEqual(encodedCriteria[0][0].criterionOption.type, "language",
-  "the sidebar should create the criterion the dialog's card represents");
-console.log("✓ filter dialog card (registered once / usable criterion / stored as a custom field)");
+NS.languageFilterQuery(dialogModel, {
+  modifier: "",
+  included: ["ja"],
+  excluded: [],
+});
+assert.strictEqual(
+  encodedCriteria[0][0].criterionOption.type,
+  "language",
+  "the sidebar should create the criterion the dialog's card represents"
+);
+console.log(
+  "✓ filter dialog card (registered once / usable criterion / stored as a custom field)"
+);
 
 // ── 10h. The card component itself ─────────────────────────────────
 // Nothing else renders it, and everything it does happens through DOM Stash
@@ -1822,7 +2476,9 @@ console.log("✓ filter dialog card (registered once / usable criterion / stored
 // found, and the stub's state setters are inert, so nothing re-renders anyway.
 const renderDialogCard = (conditions) => {
   const el = call("GalleryList", {
-    filter: makeFilterModel(conditions ? [customFieldsCriterion(conditions)] : []),
+    filter: makeFilterModel(
+      conditions ? [customFieldsCriterion(conditions)] : []
+    ),
     selectedIds: new Set(),
   }).props.children[1];
   return el.type(el.props);
@@ -1830,15 +2486,24 @@ const renderDialogCard = (conditions) => {
 renderDialogCard([{ field: "language", modifier: "EQUALS", value: ["ja"] }]);
 
 assert.strictEqual(observed.length, 1, "the card should watch the DOM once");
-assert.strictEqual(observed[0].target, global.document.body,
-  "…on the document, because Stash mounts the dialog outside the list");
-assert.strictEqual(observed[0].options.subtree, true,
-  "…and into what is inside the dialog, not just the dialog itself");
+assert.strictEqual(
+  observed[0].target,
+  global.document.body,
+  "…on the document, because Stash mounts the dialog outside the list"
+);
+assert.strictEqual(
+  observed[0].options.subtree,
+  true,
+  "…and into what is inside the dialog, not just the dialog itself"
+);
 
 const clicks = capturedClicks.filter((l) => l.name === "click");
 assert.strictEqual(clicks.length, 1, "and listen for clicks, once");
-assert.strictEqual(clicks[0].capture, true,
-  "…on the capture phase, which is what makes Apply run before React's own render");
+assert.strictEqual(
+  clicks[0].capture,
+  true,
+  "…on the capture phase, which is what makes Apply run before React's own render"
+);
 
 // The listener has to survive whatever the document hands it
 assert.doesNotThrow(() => {
@@ -1865,25 +2530,37 @@ const languageCondition = (field = "language") => [
 
 let adopt = adoptModel(languageCondition());
 NS.adoptLanguageCriterion(adopt);
-assert.strictEqual(adopt.criteria[0].criterionOption.type, "language",
-  "Stash should be told this criterion is the Language one");
+assert.strictEqual(
+  adopt.criteria[0].criterionOption.type,
+  "language",
+  "Stash should be told this criterion is the Language one"
+);
 assert.deepStrictEqual(
   adopt.criteria[0].toQueryParams(),
   { type: "custom_fields", value: languageCondition() },
-  "…while the URL keeps carrying custom_fields — the only stored type that can "
-  + "be read back on a reload, since Stash decodes the query string before this "
-  + "plugin's option exists"
+  "…while the URL keeps carrying custom_fields — the only stored type that can " +
+    "be read back on a reload, since Stash decodes the query string before this " +
+    "plugin's option exists"
 );
 
 // The dialog works on a cloneDeep of the filter, so both have to survive being
 // copied onto a fresh criterion object. Object.assign stands in for it here.
 const adoptedClone = Object.assign({}, adopt.criteria[0]);
-assert.strictEqual(adoptedClone.criterionOption.type, "language",
-  "the dialog's copy must stay ours");
-assert.strictEqual(adoptedClone.toQueryParams().type, "custom_fields",
-  "…including the stored form, which is what the dialog's Apply encodes");
-assert.strictEqual(adopt.criteria[0].toQueryParams.call({ value: [] }).value.length, 0,
-  "toQueryParams must read `this`, not the criterion it was attached to");
+assert.strictEqual(
+  adoptedClone.criterionOption.type,
+  "language",
+  "the dialog's copy must stay ours"
+);
+assert.strictEqual(
+  adoptedClone.toQueryParams().type,
+  "custom_fields",
+  "…including the stored form, which is what the dialog's Apply encodes"
+);
+assert.strictEqual(
+  adopt.criteria[0].toQueryParams.call({ value: [] }).value.length,
+  0,
+  "toQueryParams must read `this`, not the criterion it was attached to"
+);
 
 // Exactly two properties, and no more. The other places Stash asks a criterion
 // to write itself out — applyToCriterionInput for the query, and
@@ -1893,9 +2570,11 @@ assert.strictEqual(adopt.criteria[0].toQueryParams.call({ value: [] }).value.len
 // reads it back. Shadowing either one with `this.criterionOption.type` would file
 // it under "language", which nothing can read back; this asserts the swap stays
 // out of them.
-assert.deepStrictEqual(Object.keys(adopt.criteria[0]).sort(),
+assert.deepStrictEqual(
+  Object.keys(adopt.criteria[0]).sort(),
   ["criterionOption", "toQueryParams", "value"],
-  "adopting must add the two properties and touch nothing else");
+  "adopting must add the two properties and touch nothing else"
+);
 
 // Adopting twice must not wrap anything or swap a second time
 adopt.criteria[0].criterionOption = { type: "language" };
@@ -1906,26 +2585,38 @@ assert.strictEqual(typeof adopt.criteria[0].toQueryParams, "function");
 // The field name is matched case-insensitively, as everywhere else
 adopt = adoptModel(languageCondition("Language"));
 NS.adoptLanguageCriterion(adopt);
-assert.strictEqual(adopt.criteria[0].criterionOption.type, "language",
-  "a capitalised field name is still the language field");
+assert.strictEqual(
+  adopt.criteria[0].criterionOption.type,
+  "language",
+  "a capitalised field name is still the language field"
+);
 
 adopt = adoptModel([{ field: "artist", modifier: "EQUALS", value: ["x"] }]);
 NS.adoptLanguageCriterion(adopt);
-assert.strictEqual(adopt.criteria[0].criterionOption.type, "custom_fields",
-  "another field's criterion belongs to Stash and must be left alone");
+assert.strictEqual(
+  adopt.criteria[0].criterionOption.type,
+  "custom_fields",
+  "another field's criterion belongs to Stash and must be left alone"
+);
 
 adopt = adoptModel([
   { field: "language", modifier: "EQUALS", value: ["ja"] },
   { field: "artist", modifier: "EQUALS", value: ["x"] },
 ]);
 NS.adoptLanguageCriterion(adopt);
-assert.strictEqual(adopt.criteria[0].criterionOption.type, "custom_fields",
-  "so must one that carries another field alongside ours");
+assert.strictEqual(
+  adopt.criteria[0].criterionOption.type,
+  "custom_fields",
+  "so must one that carries another field alongside ours"
+);
 
 adopt = adoptModel([]);
 NS.adoptLanguageCriterion(adopt);
-assert.strictEqual(adopt.criteria[0].criterionOption.type, "custom_fields",
-  "and one with nothing in it to recognise");
+assert.strictEqual(
+  adopt.criteria[0].criterionOption.type,
+  "custom_fields",
+  "and one with nothing in it to recognise"
+);
 
 // Stash's tag for this criterion is the generic custom-field sentence with the
 // raw field name in it. The tag itself is Stash's — its click and its ✗ already
@@ -1965,14 +2656,26 @@ const emptyTag = tagWithText(null);
 tagQuery = () => [studioTag, ourTag, similarFieldTag, emptyTag];
 NS.relabelTags(["语言 是 日语, 英语"]);
 tagQuery = () => [];
-assert.strictEqual(ourTag.firstChild.nodeValue, "语言 是 日语, 英语",
-  "the language tag should be re-worded");
-assert.strictEqual(studioTag.firstChild.nodeValue, "Studio is J-Model",
-  "another criterion's tag must be left exactly as it is");
-assert.strictEqual(similarFieldTag.firstChild.nodeValue, "languageNotes (custom field) is x",
-  "a field whose name merely starts with the language field's must be left alone");
-assert.strictEqual(emptyTag.firstChild.nodeValue, null,
-  "a tag whose label is not a text node must be skipped, not crashed on");
+assert.strictEqual(
+  ourTag.firstChild.nodeValue,
+  "语言 是 日语, 英语",
+  "the language tag should be re-worded"
+);
+assert.strictEqual(
+  studioTag.firstChild.nodeValue,
+  "Studio is J-Model",
+  "another criterion's tag must be left exactly as it is"
+);
+assert.strictEqual(
+  similarFieldTag.firstChild.nodeValue,
+  "languageNotes (custom field) is x",
+  "a field whose name merely starts with the language field's must be left alone"
+);
+assert.strictEqual(
+  emptyTag.firstChild.nodeValue,
+  null,
+  "a tag whose label is not a text node must be skipped, not crashed on"
+);
 
 // …and the re-worded tag is still known to be the language one afterwards, which
 // is what the dialog needs: it has to find the tag again on later renders, to
@@ -1981,8 +2684,11 @@ assert.strictEqual(emptyTag.firstChild.nodeValue, null,
 tagQuery = () => [ourTag];
 NS.relabelTags(["语言 是 日语"]);
 tagQuery = () => [];
-assert.strictEqual(ourTag.firstChild.nodeValue, "语言 是 日语",
-  "a tag whose wording this plugin wrote should be recognised again by its mark");
+assert.strictEqual(
+  ourTag.firstChild.nodeValue,
+  "语言 是 日语",
+  "a tag whose wording this plugin wrote should be recognised again by its mark"
+);
 
 // One label per tag, in the order Stash draws them — which is the order of the
 // criterion's conditions. A filter with an exclusion is two tags, not one.
@@ -1992,10 +2698,16 @@ tagQuery = () => [studioTag, includedTag, excludedTag];
 NS.relabelTags(["语言 是 日语", "语言 不是 韩语"]);
 tagQuery = () => [];
 assert.strictEqual(includedTag.firstChild.nodeValue, "语言 是 日语");
-assert.strictEqual(excludedTag.firstChild.nodeValue, "语言 不是 韩语",
-  "the second tag takes the second label, not the first one again");
-assert.strictEqual(studioTag.firstChild.nodeValue, "Studio is J-Model",
-  "…and a tag in between that is not ours does not take a label");
+assert.strictEqual(
+  excludedTag.firstChild.nodeValue,
+  "语言 不是 韩语",
+  "the second tag takes the second label, not the first one again"
+);
+assert.strictEqual(
+  studioTag.firstChild.nodeValue,
+  "Studio is J-Model",
+  "…and a tag in between that is not ours does not take a label"
+);
 
 // A tag for a modifier rather than values — "(None)", and "(Any)" likewise —
 // still opens with the field name, which is all a tag is recognised by.
@@ -2010,9 +2722,14 @@ const untouchedTag = tagWithText("language (custom field) is ja");
 tagQuery = () => [untouchedTag];
 NS.relabelTags([]);
 tagQuery = () => [];
-assert.strictEqual(untouchedTag.firstChild.nodeValue, "language (custom field) is ja",
-  "an empty list of labels must leave the tags alone");
-console.log("✓ the criterion handed to Stash (identity, stored form, and its tags' wording)");
+assert.strictEqual(
+  untouchedTag.firstChild.nodeValue,
+  "language (custom field) is ja",
+  "an empty list of labels must leave the tags alone"
+);
+console.log(
+  "✓ the criterion handed to Stash (identity, stored form, and its tags' wording)"
+);
 
 // ── 10i. The dialog's tag row ──────────────────────────────────────
 // The list's row reports the filter the list is applied to; the dialog's reports
@@ -2034,12 +2751,18 @@ let dialogTag = dialogTagWithText("language (custom field) is ja");
 tagQuery = () => [dialogTag];
 NS.manageDialogTags(["语言 是 日语"]);
 tagQuery = () => [];
-assert.strictEqual(dialogTag.firstChild.nodeValue, "语言 是 日语",
-  "Stash's tag should be worded the way this plugin words it");
+assert.strictEqual(
+  dialogTag.firstChild.nodeValue,
+  "语言 是 日语",
+  "Stash's tag should be worded the way this plugin words it"
+);
 assert.strictEqual(dialogTag.style.display, "", "…and left showing");
 tagQuery = () => [dialogTag];
-assert.deepStrictEqual(NS.ownTagLabels(["语言 是 日语"]), [],
-  "…with nothing left for the card to draw itself");
+assert.deepStrictEqual(
+  NS.ownTagLabels(["语言 是 日语"]),
+  [],
+  "…with nothing left for the card to draw itself"
+);
 tagQuery = () => [];
 
 // A second pass with the same labels must leave the DOM alone: this runs after
@@ -2048,8 +2771,11 @@ const writesSoFar = dialogTag.writes;
 tagQuery = () => [dialogTag];
 NS.manageDialogTags(["语言 是 日语"]);
 tagQuery = () => [];
-assert.strictEqual(dialogTag.writes, writesSoFar,
-  "re-wording a tag it has already worded should write nothing");
+assert.strictEqual(
+  dialogTag.writes,
+  writesSoFar,
+  "re-wording a tag it has already worded should write nothing"
+);
 
 // More labels than tags: the extra conditions have nowhere to go, so the card
 // draws them — this is the dialog that had no language at all when it opened
@@ -2057,11 +2783,17 @@ dialogTag = dialogTagWithText("language (custom field) is ja");
 tagQuery = () => [dialogTag];
 NS.manageDialogTags(["语言 是 日语", "语言 不是 韩语"]);
 tagQuery = () => [];
-assert.strictEqual(dialogTag.firstChild.nodeValue, "语言 是 日语",
-  "the first label goes into the tag Stash drew");
+assert.strictEqual(
+  dialogTag.firstChild.nodeValue,
+  "语言 是 日语",
+  "the first label goes into the tag Stash drew"
+);
 tagQuery = () => [dialogTag];
-assert.deepStrictEqual(NS.ownTagLabels(["语言 是 日语", "语言 不是 韩语"]),
-  ["语言 不是 韩语"], "…and the rest are the card's to draw");
+assert.deepStrictEqual(
+  NS.ownTagLabels(["语言 是 日语", "语言 不是 韩语"]),
+  ["语言 不是 韩语"],
+  "…and the rest are the card's to draw"
+);
 tagQuery = () => [];
 
 // Fewer labels than tags — an emptied card, or exclusions just taken off: the
@@ -2070,17 +2802,27 @@ const secondTag = dialogTagWithText("language (custom field) is not ko");
 tagQuery = () => [dialogTag, secondTag];
 NS.manageDialogTags(["语言 是 日语"]);
 tagQuery = () => [];
-assert.strictEqual(dialogTag.style.display, "", "a label with a tag keeps it shown");
-assert.strictEqual(secondTag.style.display, "none",
-  "a tag with no label to carry should step aside");
+assert.strictEqual(
+  dialogTag.style.display,
+  "",
+  "a label with a tag keeps it shown"
+);
+assert.strictEqual(
+  secondTag.style.display,
+  "none",
+  "a tag with no label to carry should step aside"
+);
 
 // …and back again, which is the pair that must not oscillate: showing it again
 // is the same comparison read the other way
 tagQuery = () => [dialogTag, secondTag];
 NS.manageDialogTags(["语言 是 日语", "语言 不是 韩语"]);
 tagQuery = () => [];
-assert.strictEqual(secondTag.style.display, "",
-  "…and come back when the card has something for it again");
+assert.strictEqual(
+  secondTag.style.display,
+  "",
+  "…and come back when the card has something for it again"
+);
 
 // An empty card takes them all away: the language is about to be removed
 tagQuery = () => [dialogTag, secondTag];
@@ -2089,8 +2831,11 @@ tagQuery = () => [];
 assert.strictEqual(dialogTag.style.display, "none");
 assert.strictEqual(secondTag.style.display, "none");
 tagQuery = () => [dialogTag, secondTag];
-assert.deepStrictEqual(NS.ownTagLabels([]), [],
-  "an empty card draws nothing of its own either");
+assert.deepStrictEqual(
+  NS.ownTagLabels([]),
+  [],
+  "an empty card draws nothing of its own either"
+);
 tagQuery = () => [];
 
 documentRoot.detach(dialogHostEl);
@@ -2102,7 +2847,8 @@ documentRoot.detach(dialogHostEl);
 const clickInside = (where) => ({
   closest: (sel) => (sel in where ? where[sel] : null),
 });
-const tagInDialog = () => tagWithText("language (custom field) is ja", [".edit-filter-dialog"]);
+const tagInDialog = () =>
+  tagWithText("language (custom field) is ja", [".edit-filter-dialog"]);
 const removeClick = (tag, extra = {}) =>
   clickInside(
     Object.assign(
@@ -2115,31 +2861,49 @@ const removeClick = (tag, extra = {}) =>
     )
   );
 
-assert.strictEqual(NS.clickedTagRemove(removeClick(tagInDialog())), true,
-  "the ✗ of the dialog's language tag is what the card follows");
 assert.strictEqual(
-  NS.clickedTagRemove(clickInside({ ".edit-filter-dialog": {}, ".tag-item": tagInDialog() })),
+  NS.clickedTagRemove(removeClick(tagInDialog())),
+  true,
+  "the ✗ of the dialog's language tag is what the card follows"
+);
+assert.strictEqual(
+  NS.clickedTagRemove(
+    clickInside({ ".edit-filter-dialog": {}, ".tag-item": tagInDialog() })
+  ),
   false,
   "the tag itself is Stash's way into the card, not a removal"
 );
 assert.strictEqual(
   NS.clickedTagRemove(
-    removeClick(tagWithText("language (custom field) is ja", [".edit-filter-dialog", ".criterion-list"]))
+    removeClick(
+      tagWithText("language (custom field) is ja", [
+        ".edit-filter-dialog",
+        ".criterion-list",
+      ])
+    )
   ),
   false,
   "the pills a card draws beside its editor are Stash's record, not the row"
 );
-assert.strictEqual(NS.clickedTagRemove(removeClick(tagWithText("Studio is J-Model"))), false,
-  "another criterion's ✗ is not this plugin's business");
+assert.strictEqual(
+  NS.clickedTagRemove(removeClick(tagWithText("Studio is J-Model"))),
+  false,
+  "another criterion's ✗ is not this plugin's business"
+);
 assert.strictEqual(
   NS.clickedTagRemove(
-    clickInside({ ".filter-tags .tag-item button": tagInDialog(), ".tag-item": tagInDialog() })
+    clickInside({
+      ".filter-tags .tag-item button": tagInDialog(),
+      ".tag-item": tagInDialog(),
+    })
   ),
   false,
   "…and the list's own row is not the dialog's"
 );
 assert.strictEqual(NS.clickedTagRemove(null), false);
-console.log("✓ dialog tags (worded from the card / tags with nothing to say step aside / ✗ follows)");
+console.log(
+  "✓ dialog tags (worded from the card / tags with nothing to say step aside / ✗ follows)"
+);
 
 // ── 10f. The selection operations both surfaces share ──────────────
 // Pure functions, so they can be tested directly rather than through two
@@ -2147,70 +2911,130 @@ console.log("✓ dialog tags (worded from the card / tags with nothing to say st
 // by a click; the two commit at different times, which is exactly why the
 // meaning has to live in one place.
 // `sel` is the helper the filter-condition tests above already define.
-assert.deepStrictEqual(NS.toggleIncluded(sel(), "ja"), sel("", ["ja"]),
-  "a pick adds to the included list");
-assert.deepStrictEqual(NS.toggleIncluded(sel("", ["ja"]), "ja"), sel(),
-  "picking the same one again takes it out");
-assert.deepStrictEqual(NS.toggleIncluded(sel("", ["ja"]), "en"), sel("", ["ja", "en"]),
-  "several values are a union, not a replacement");
-assert.deepStrictEqual(NS.toggleIncluded(sel("none"), "ja"), sel("", ["ja"]),
-  "picking a value leaves the (None) state");
-assert.deepStrictEqual(NS.toggleIncluded(sel("", [], ["ja"]), "ja"), sel("", ["ja"]),
-  "…and moves a value out of the excluded list: one or the other, never both");
+assert.deepStrictEqual(
+  NS.toggleIncluded(sel(), "ja"),
+  sel("", ["ja"]),
+  "a pick adds to the included list"
+);
+assert.deepStrictEqual(
+  NS.toggleIncluded(sel("", ["ja"]), "ja"),
+  sel(),
+  "picking the same one again takes it out"
+);
+assert.deepStrictEqual(
+  NS.toggleIncluded(sel("", ["ja"]), "en"),
+  sel("", ["ja", "en"]),
+  "several values are a union, not a replacement"
+);
+assert.deepStrictEqual(
+  NS.toggleIncluded(sel("none"), "ja"),
+  sel("", ["ja"]),
+  "picking a value leaves the (None) state"
+);
+assert.deepStrictEqual(
+  NS.toggleIncluded(sel("", [], ["ja"]), "ja"),
+  sel("", ["ja"]),
+  "…and moves a value out of the excluded list: one or the other, never both"
+);
 
 assert.deepStrictEqual(NS.toggleExcluded(sel(), "ko"), sel("", [], ["ko"]));
-assert.deepStrictEqual(NS.toggleExcluded(sel("", ["ko"]), "ko"), sel("", [], ["ko"]),
-  "excluding a value includes no longer");
+assert.deepStrictEqual(
+  NS.toggleExcluded(sel("", ["ko"]), "ko"),
+  sel("", [], ["ko"]),
+  "excluding a value includes no longer"
+);
 
-assert.deepStrictEqual(NS.withModifier(sel("", ["ja"]), "any"), sel("any"),
-  "(Any) cannot be said at the same time as particular values, so the values go");
-assert.deepStrictEqual(NS.withoutModifier(sel("none")), sel(),
-  "clearing the modifier leaves no restriction");
-assert.deepStrictEqual(NS.withoutModifier(sel("none", ["ja"])), sel("", ["ja"]),
-  "…and keeps any values that were there");
+assert.deepStrictEqual(
+  NS.withModifier(sel("", ["ja"]), "any"),
+  sel("any"),
+  "(Any) cannot be said at the same time as particular values, so the values go"
+);
+assert.deepStrictEqual(
+  NS.withoutModifier(sel("none")),
+  sel(),
+  "clearing the modifier leaves no restriction"
+);
+assert.deepStrictEqual(
+  NS.withoutModifier(sel("none", ["ja"])),
+  sel("", ["ja"]),
+  "…and keeps any values that were there"
+);
 
 assert.strictEqual(NS.isEmptySelection(sel()), true);
 assert.strictEqual(NS.isEmptySelection(sel("any")), false);
 assert.strictEqual(NS.isEmptySelection(sel("", ["ja"])), false);
-assert.strictEqual(NS.sameSelection(sel("", ["ja", "en"]), sel("", ["en", "ja"])), true,
-  "compared as sets: click order must not count as a change");
-assert.strictEqual(NS.sameSelection(sel("", ["ja"]), sel("", ["ja", "en"])), false);
+assert.strictEqual(
+  NS.sameSelection(sel("", ["ja", "en"]), sel("", ["en", "ja"])),
+  true,
+  "compared as sets: click order must not count as a change"
+);
+assert.strictEqual(
+  NS.sameSelection(sel("", ["ja"]), sel("", ["ja", "en"])),
+  false
+);
 assert.strictEqual(NS.sameSelection(sel("any"), sel("none")), false);
-console.log("✓ selection operations (toggle / modifier / emptiness / sameness)");
+console.log(
+  "✓ selection operations (toggle / modifier / emptiness / sameness)"
+);
 
 // The tag text, assembled from Stash's own messages so a tag reads like one
 // Stash draws. Per condition, because Stash draws a tag per condition — which is
 // how a filter with exclusions comes out as two sentences rather than one.
 const intl = PluginApi.libraries.Intl.useIntl();
 const condition = (modifier, value) => ({ field: "language", modifier, value });
-assert.strictEqual(NS.conditionLabel(intl, condition("EQUALS", ["ja", "en"])),
+assert.strictEqual(
+  NS.conditionLabel(intl, condition("EQUALS", ["ja", "en"])),
   "语言 是 日语, 英语",
-  "the criterion's localised name, the modifier's label, the values joined");
-assert.strictEqual(NS.conditionLabel(intl, condition("NOT_EQUALS", ["ko"])),
-  "语言 不是 韩语", "an exclusion is a sentence of its own");
-assert.strictEqual(NS.conditionLabel(intl, condition("NOT_NULL")), "语言 不为空 ",
-  "(Any) is not-null, and says so — that is what it produces");
-assert.strictEqual(NS.conditionLabel(intl, condition("IS_NULL")), "语言 为空 ",
-  "…and (None) is null");
-assert.strictEqual(NS.conditionLabel(intl, condition("GREATER_THAN", ["1"])), null,
-  "a modifier this plugin has no wording for is left to Stash");
+  "the criterion's localised name, the modifier's label, the values joined"
+);
+assert.strictEqual(
+  NS.conditionLabel(intl, condition("NOT_EQUALS", ["ko"])),
+  "语言 不是 韩语",
+  "an exclusion is a sentence of its own"
+);
+assert.strictEqual(
+  NS.conditionLabel(intl, condition("NOT_NULL")),
+  "语言 不为空 ",
+  "(Any) is not-null, and says so — that is what it produces"
+);
+assert.strictEqual(
+  NS.conditionLabel(intl, condition("IS_NULL")),
+  "语言 为空 ",
+  "…and (None) is null"
+);
+assert.strictEqual(
+  NS.conditionLabel(intl, condition("GREATER_THAN", ["1"])),
+  null,
+  "a modifier this plugin has no wording for is left to Stash"
+);
 
 // …and a whole criterion is one label per condition, in its order
 assert.deepStrictEqual(
-  NS.tagLabels(intl, { value: [condition("EQUALS", ["ja"]), condition("NOT_EQUALS", ["ko"])] }),
+  NS.tagLabels(intl, {
+    value: [condition("EQUALS", ["ja"]), condition("NOT_EQUALS", ["ko"])],
+  }),
   ["语言 是 日语", "语言 不是 韩语"],
   "a filter with picks and exclusions is two tags, as Stash draws it"
 );
-assert.deepStrictEqual(NS.tagLabels(intl, { value: [condition("EQUALS", ["ja"])] }),
-  ["语言 是 日语"]);
+assert.deepStrictEqual(
+  NS.tagLabels(intl, { value: [condition("EQUALS", ["ja"])] }),
+  ["语言 是 日语"]
+);
 assert.strictEqual(
-  NS.tagLabels(intl, { value: [condition("EQUALS", ["ja"]), condition("GREATER_THAN", ["1"])] }),
+  NS.tagLabels(intl, {
+    value: [condition("EQUALS", ["ja"]), condition("GREATER_THAN", ["1"])],
+  }),
   null,
   "one condition without wording is enough to leave the whole criterion to Stash"
 );
-assert.strictEqual(NS.tagLabels(intl, { value: [] }), null,
-  "and a criterion with nothing in it has no tags to word");
-console.log("✓ tag wording (per condition, built from Stash's messages not a table of ours)");
+assert.strictEqual(
+  NS.tagLabels(intl, { value: [] }),
+  null,
+  "and a criterion with nothing in it has no tags to word"
+);
+console.log(
+  "✓ tag wording (per condition, built from Stash's messages not a table of ours)"
+);
 
 setTimeout(() => {
   // ── 11. Badges (after the refresh promise settles) ───────────────
@@ -2232,62 +3056,137 @@ setTimeout(() => {
     return inner.type(inner.props);
   };
 
-  assert.strictEqual(card("1").type, React.Fragment, "gallery 1 should carry a badge");
-  assert.strictEqual(flagOf("1").props.className, "fi fi-cn", "gallery 1 should show the China flag");
-  assert.strictEqual(flagOf("2").props.className, "fi fi-tw", "gallery 2 holds a traditional value");
-  assert.strictEqual(flagOf("5").props.className, "fi fi-cn",
-    "gallery 5 holds ZH-HANS, which is non-canonical case and should still resolve");
-  assert.strictEqual(badgeOf("1").props["aria-label"], "简体中文", "should carry an aria-label");
-  assert.strictEqual(card("4").type, original, "a gallery without a language must not be touched");
-  assert.strictEqual(card("999").type, original, "an unknown id must not be touched");
+  assert.strictEqual(
+    card("1").type,
+    React.Fragment,
+    "gallery 1 should carry a badge"
+  );
+  assert.strictEqual(
+    flagOf("1").props.className,
+    "fi fi-cn",
+    "gallery 1 should show the China flag"
+  );
+  assert.strictEqual(
+    flagOf("2").props.className,
+    "fi fi-tw",
+    "gallery 2 holds a traditional value"
+  );
+  assert.strictEqual(
+    flagOf("5").props.className,
+    "fi fi-cn",
+    "gallery 5 holds ZH-HANS, which is non-canonical case and should still resolve"
+  );
+  assert.strictEqual(
+    badgeOf("1").props["aria-label"],
+    "简体中文",
+    "should carry an aria-label"
+  );
+  assert.strictEqual(
+    card("4").type,
+    original,
+    "a gallery without a language must not be touched"
+  );
+  assert.strictEqual(
+    card("999").type,
+    original,
+    "an unknown id must not be touched"
+  );
 
   // Unknown value: grey text chip, no flag
   const unknown = badgeOf("3");
   assert.strictEqual(unknown.props.className, "manga-tools-badge is-unknown");
   assert.strictEqual(unknown.props.children, "klingon");
-  assert.strictEqual(flagOf("3"), null, "an unknown value must not render a flag");
+  assert.strictEqual(
+    flagOf("3"),
+    null,
+    "an unknown value must not render a flag"
+  );
 
   // Follows the UI language, which is Stash's setting rather than the browser's,
   // so the name changes when that changes. (The locale list itself is pinned in
   // section 2; here it is only the visible consequence that matters.)
   currentLocale = "ja-JP";
-  assert.strictEqual(badgeOf("1").props["aria-label"], "簡体中国語", "should follow the UI language");
+  assert.strictEqual(
+    badgeOf("1").props["aria-label"],
+    "簡体中国語",
+    "should follow the UI language"
+  );
   currentLocale = "zh-CN";
-  console.log("✓ badges (flag / case tolerance / unknown / no field / UI language)");
+  console.log(
+    "✓ badges (flag / case tolerance / unknown / no field / UI language)"
+  );
 
   // ── 12. Route scoping ────────────────────────────────────────────
-  assert.strictEqual(typeof globalListeners["stash:location"], "function", "the route event was never subscribed");
+  assert.strictEqual(
+    typeof globalListeners["stash:location"],
+    "function",
+    "the route event was never subscribed"
+  );
   const nav = (p) =>
-    globalListeners["stash:location"]({ detail: { data: { location: { pathname: p } } } });
+    globalListeners["stash:location"]({
+      detail: { data: { location: { pathname: p } } },
+    });
 
   const renderRow = (values, onChange) => {
-    const el = call("CustomFieldsInput", { values, onChange: onChange || (() => {}) })
-      .props.children[0];
+    const el = call("CustomFieldsInput", {
+      values,
+      onChange: onChange || (() => {}),
+    }).props.children[0];
     return el.type(el.props);
   };
 
   nav("/scenes/5");
-  assert.strictEqual(renderRow({ language: "zh-Hans" }), null, "no language dropdown on a scene page");
+  assert.strictEqual(
+    renderRow({ language: "zh-Hans" }),
+    null,
+    "no language dropdown on a scene page"
+  );
   nav("/performers/3");
-  assert.strictEqual(renderRow({ language: "zh-Hans" }), null, "no language dropdown on a performer page");
+  assert.strictEqual(
+    renderRow({ language: "zh-Hans" }),
+    null,
+    "no language dropdown on a performer page"
+  );
   nav("/galleries/12");
-  assert.notStrictEqual(renderRow({ language: "zh-Hans" }), null, "the dropdown should appear on a gallery detail page");
+  assert.notStrictEqual(
+    renderRow({ language: "zh-Hans" }),
+    null,
+    "the dropdown should appear on a gallery detail page"
+  );
   nav("/galleries");
-  assert.notStrictEqual(renderRow({ language: "zh-Hans" }), null, "and on the gallery list page (bulk edit)");
-  console.log("✓ route scoping (hidden on scenes/performers, shown on galleries)");
+  assert.notStrictEqual(
+    renderRow({ language: "zh-Hans" }),
+    null,
+    "and on the gallery list page (bulk edit)"
+  );
+  console.log(
+    "✓ route scoping (hidden on scenes/performers, shown on galleries)"
+  );
 
   // ── 13. Edit write semantics ─────────────────────────────────────
   let captured = null;
-  const setter = (v) => { captured = v; };
+  const setter = (v) => {
+    captured = v;
+  };
   const row = renderRow({ author: "x", Language: "ja" }, setter);
-  const select = find(row, (n) => n.props && typeof n.props.onChange === "function" && n.props.options);
+  const select = find(
+    row,
+    (n) => n.props && typeof n.props.onChange === "function" && n.props.options
+  );
 
   select.props.onChange({ value: "zh-Hant" });
-  assert.deepStrictEqual(captured, { author: "x", language: "zh-Hant" },
-    "writing should drop case variants and canonicalise the field name to lowercase");
+  assert.deepStrictEqual(
+    captured,
+    { author: "x", language: "zh-Hant" },
+    "writing should drop case variants and canonicalise the field name to lowercase"
+  );
 
   select.props.onChange(null);
-  assert.deepStrictEqual(captured, { author: "x" }, "clearing should remove the field entirely");
+  assert.deepStrictEqual(
+    captured,
+    { author: "x" },
+    "clearing should remove the field entirely"
+  );
 
   // Options: flag + localised name. The order is asserted in 5b; what matters
   // here is that each option carries both halves of the display.
@@ -2295,62 +3194,123 @@ setTimeout(() => {
   const jaOption = opts.find((o) => o.value === "ja");
   assert.strictEqual(jaOption.label, "日语");
   assert.strictEqual(jaOption.flag, "jp");
-  assert.strictEqual(opts.some((o) => o.flag === "vn"), true, "the Vietnam flag should be vn");
-  assert.strictEqual(opts.every((o) => o.flag && o.flag.length === 2), true, "every option should have a flag");
+  assert.strictEqual(
+    opts.some((o) => o.flag === "vn"),
+    true,
+    "the Vietnam flag should be vn"
+  );
+  assert.strictEqual(
+    opts.every((o) => o.flag && o.flag.length === 2),
+    true,
+    "every option should have a flag"
+  );
 
   // Enabled-languages restriction: the dropdown is limited to the selected set,
   // but the currently-selected value still echoes even if it is outside the set
   // (display is unaffected — only the option list is filtered).
   NS.enabledLanguages = new Set(["ja", "en"]);
-  const filtered = find(renderRow({ language: "vi" }), (n) => n.props && n.props.options);
+  const filtered = find(
+    renderRow({ language: "vi" }),
+    (n) => n.props && n.props.options
+  );
   assert.deepStrictEqual(
     filtered.props.options.map((o) => o.value),
     ["ja", "en"],
     "the dropdown should show only the enabled languages"
   );
-  assert.strictEqual(filtered.props.value.value, "vi",
-    "a selected value outside the enabled set must still echo (display is unaffected)");
+  assert.strictEqual(
+    filtered.props.value.value,
+    "vi",
+    "a selected value outside the enabled set must still echo (display is unaffected)"
+  );
   assert.strictEqual(filtered.props.value.flag, "vn");
   NS.enabledLanguages = null; // restore
 
   // Selected value echo: a canonical code in the wrong case echoes back canonical
-  const sel = find(renderRow({ language: "ZH-HANT" }), (n) => n.props && n.props.options);
-  assert.strictEqual(sel.props.value.label, "繁体中文", "should echo the canonical name");
-  assert.strictEqual(sel.props.value.value, "zh-Hant", "should echo the canonical code");
+  const sel = find(
+    renderRow({ language: "ZH-HANT" }),
+    (n) => n.props && n.props.options
+  );
+  assert.strictEqual(
+    sel.props.value.label,
+    "繁体中文",
+    "should echo the canonical name"
+  );
+  assert.strictEqual(
+    sel.props.value.value,
+    "zh-Hant",
+    "should echo the canonical code"
+  );
   assert.strictEqual(sel.props.value.flag, "tw");
 
   // Non-canonical spellings (former aliases, other notations) are unknown values
   // now: they appear in the list as-is, otherwise picking something else would
   // make them unreachable.
-  const selUnknown = find(renderRow({ language: "chs" }), (n) => n.props && n.props.options);
+  const selUnknown = find(
+    renderRow({ language: "chs" }),
+    (n) => n.props && n.props.options
+  );
   assert.strictEqual(selUnknown.props.options[0].value, "chs");
-  assert.strictEqual(selUnknown.props.options[0].flag, null, "an unknown option has no flag");
-  assert.strictEqual(selUnknown.props.value.label, "chs", "an unknown value echoes as-is");
+  assert.strictEqual(
+    selUnknown.props.options[0].flag,
+    null,
+    "an unknown option has no flag"
+  );
+  assert.strictEqual(
+    selUnknown.props.value.label,
+    "chs",
+    "an unknown value echoes as-is"
+  );
 
   // formatOptionLabel should render flag + name
-  const formatted = sel.props.formatOptionLabel({ value: "ja", label: "日语", flag: "jp" });
+  const formatted = sel.props.formatOptionLabel({
+    value: "ja",
+    label: "日语",
+    flag: "jp",
+  });
   assert.strictEqual(
-    find(formatted, (n) => /fi fi-jp/.test(n.props.className || "")).props.className,
+    find(formatted, (n) => /fi fi-jp/.test(n.props.className || "")).props
+      .className,
     "fi fi-jp manga-tools-flag"
   );
-  assert.strictEqual(find(formatted, (n) => n.props.children === "日语") !== null, true);
-  const formattedUnknown = sel.props.formatOptionLabel({ value: "x", label: "x", flag: null });
-  assert.strictEqual(find(formattedUnknown, (n) => /fi fi-/.test(n.props.className || "")), null,
-    "an option with no flag must not render a flag");
+  assert.strictEqual(
+    find(formatted, (n) => n.props.children === "日语") !== null,
+    true
+  );
+  const formattedUnknown = sel.props.formatOptionLabel({
+    value: "x",
+    label: "x",
+    flag: null,
+  });
+  assert.strictEqual(
+    find(formattedUnknown, (n) => /fi fi-/.test(n.props.className || "")),
+    null,
+    "an option with no flag must not render a flag"
+  );
   console.log("✓ edit write / clear / option flags and names");
 
   // ── 13b. The two display switches, and that they are independent ──
   NS.showFlags = false;
 
-  const formattedFlat = sel.props.formatOptionLabel({ value: "ja", label: "日语", flag: "jp" });
-  assert.strictEqual(find(formattedFlat, (n) => /fi fi-/.test(n.props.className || "")), null,
-    "the dropdown must not draw a flag when flags are off");
+  const formattedFlat = sel.props.formatOptionLabel({
+    value: "ja",
+    label: "日语",
+    flag: "jp",
+  });
+  assert.strictEqual(
+    find(formattedFlat, (n) => /fi fi-/.test(n.props.className || "")),
+    null,
+    "the dropdown must not draw a flag when flags are off"
+  );
   assert.ok(hasText(formattedFlat, "日语"), "the name must still be there");
 
   // The space in the detail row belongs to the flag, so it has to go with it.
   const flatDetail = detail({ language: "zh-Hant" });
-  assert.strictEqual(find(flatDetail.portal.node, (n) => /fi fi-/.test(n.props.className || "")), null,
-    "the detail row must not draw a flag when flags are off");
+  assert.strictEqual(
+    find(flatDetail.portal.node, (n) => /fi fi-/.test(n.props.className || "")),
+    null,
+    "the detail row must not draw a flag when flags are off"
+  );
   assert.deepStrictEqual(
     flatDetail.portal.node.props.children.filter((c) => typeof c === "string"),
     ["语言: ", "繁体中文"],
@@ -2364,31 +3324,60 @@ setTimeout(() => {
   // The class matters as much as the text: an unrecognised value is bounded and
   // ellipsised, while a recognised name is not clipped at all. Getting those the
   // same way round is what stopped "印度尼西亚语" rendering as "印度尼…".
-  assert.strictEqual(card("1").type, React.Fragment, "the badge should survive flags being off");
+  assert.strictEqual(
+    card("1").type,
+    React.Fragment,
+    "the badge should survive flags being off"
+  );
   const flatBadge = badgeOf("1");
-  assert.strictEqual(flatBadge.props.className, "manga-tools-badge is-name",
-    "a recognised language falls back to the name chip, which is not truncated");
-  assert.strictEqual(flatBadge.props.children, "简体中文", "showing the localised name");
+  assert.strictEqual(
+    flatBadge.props.className,
+    "manga-tools-badge is-name",
+    "a recognised language falls back to the name chip, which is not truncated"
+  );
+  assert.strictEqual(
+    flatBadge.props.children,
+    "简体中文",
+    "showing the localised name"
+  );
   assert.strictEqual(flagOf("1"), null, "and no flag element inside it");
 
   // A long name is the case that motivated the split, so check one end to end:
   // gallery 1 is zh-Hans, which is "Chinesisch (vereinfacht)" in German.
   currentLocale = "de-DE";
   assert.strictEqual(badgeOf("1").props.children, "Chinesisch (vereinfacht)");
-  assert.strictEqual(badgeOf("1").props.className, "manga-tools-badge is-name",
-    "a name long enough to be clipped keeps the chip that is allowed its full width");
+  assert.strictEqual(
+    badgeOf("1").props.className,
+    "manga-tools-badge is-name",
+    "a name long enough to be clipped keeps the chip that is allowed its full width"
+  );
   currentLocale = "zh-CN";
 
   // An unrecognised value keeps the bounded chip, whatever its length
-  assert.strictEqual(badgeOf("3").props.className, "manga-tools-badge is-unknown");
+  assert.strictEqual(
+    badgeOf("3").props.className,
+    "manga-tools-badge is-unknown"
+  );
 
   NS.showFlags = true;
-  assert.strictEqual(flagOf("1").props.className, "fi fi-cn", "the flag comes back");
+  assert.strictEqual(
+    flagOf("1").props.className,
+    "fi fi-cn",
+    "the flag comes back"
+  );
 
   // The cover badge turns off on its own, whatever the flags setting says.
   NS.showCoverBadge = false;
-  assert.strictEqual(card("1").type, original, "no badge at all when the cover badge is off");
-  assert.strictEqual(card("3").type, original, "and none for an unknown value either");
+  assert.strictEqual(
+    card("1").type,
+    original,
+    "no badge at all when the cover badge is off"
+  );
+  assert.strictEqual(
+    card("3").type,
+    original,
+    "and none for an unknown value either"
+  );
 
   NS.showFlags = false;
   assert.strictEqual(card("1").type, original, "nor with both switches off");
@@ -2396,7 +3385,9 @@ setTimeout(() => {
   NS.showCoverBadge = true;
   NS.showFlags = true;
   assert.strictEqual(card("1").type, React.Fragment, "restored");
-  console.log("✓ display switches (flags off = names only / badge off / independent)");
+  console.log(
+    "✓ display switches (flags off = names only / badge off / independent)"
+  );
 
   // ── 14. Bulk edit dialog: the language row rides along with Apply ──
   // This runs here rather than with the other synchronous sections because the
@@ -2437,53 +3428,92 @@ setTimeout(() => {
     return rowEl.type(rowEl.props);
   };
   const bulkSelectOf = () =>
-    find(bulkRow().node, (n) => n.props && n.props.inputId === "manga_tools_language");
+    find(
+      bulkRow().node,
+      (n) => n.props && n.props.inputId === "manga_tools_language"
+    );
 
   let b14 = bulkRow();
-  assert.strictEqual(b14.__portal, true, "the bulk row should render through a portal");
+  assert.strictEqual(
+    b14.__portal,
+    true,
+    "the bulk row should render through a portal"
+  );
 
   const bulkHost = bulkForm.children[1];
   assert.strictEqual(bulkHost.className, "manga-tools-field-host");
-  assert.strictEqual(bulkHost.previousElementSibling, bulkStudioRow,
-    "the row should go right after the studio row");
-  assert.strictEqual(bulkHost.nextElementSibling, bulkPerformerRow,
-    "and right before the performers row — i.e. between studio and performers");
+  assert.strictEqual(
+    bulkHost.previousElementSibling,
+    bulkStudioRow,
+    "the row should go right after the studio row"
+  );
+  assert.strictEqual(
+    bulkHost.nextElementSibling,
+    bulkPerformerRow,
+    "and right before the performers row — i.e. between studio and performers"
+  );
   assert.strictEqual(b14.host, bulkHost);
 
   // Structure and classes are copied from the native row, so it lines up with it
   const bulkNode = b14.node;
   assert.strictEqual(bulkNode.props.className, "row");
   assert.strictEqual(bulkNode.props["data-field"], "manga_tools_language");
-  assert.strictEqual(bulkNode.props.children[0].props.className, "col-form-label col-3",
-    "the label classes should be copied from the native row");
+  assert.strictEqual(
+    bulkNode.props.children[0].props.className,
+    "col-form-label col-3",
+    "the label classes should be copied from the native row"
+  );
   assert.strictEqual(bulkNode.props.children[0].props.children, "语言");
 
   // Like the studio field: one value per gallery, cleared with the selector's own
   // x. No extra button, and no way to blank the field across a selection.
   assert.strictEqual(bulkSelectOf().props.isClearable, true);
   assert.strictEqual(
-    find(bulkNode, (n) => n.props && n.props["aria-pressed"] !== undefined), null,
-    "there should be no separate clear button");
-  assert.strictEqual(bulkSelectOf().props.menuPortalTarget, global.document.body,
-    "the menu has to escape the modal");
+    find(bulkNode, (n) => n.props && n.props["aria-pressed"] !== undefined),
+    null,
+    "there should be no separate clear button"
+  );
+  assert.strictEqual(
+    bulkSelectOf().props.menuPortalTarget,
+    global.document.body,
+    "the menu has to escape the modal"
+  );
 
   // ── Prefill from the selection, the way the studio field does ──
   // Gallery 1 and 6 are zh-Hans, 2 is zh-Hant, 4 has no language field at all.
   selectGalleries(["1", "6"]);
-  assert.strictEqual(bulkSelectOf().props.value.value, "zh-Hans",
-    "the whole selection agreeing should prefill that language");
-  assert.strictEqual(bulkSelectOf().props.value.label, "简体中文", "in the UI language");
+  assert.strictEqual(
+    bulkSelectOf().props.value.value,
+    "zh-Hans",
+    "the whole selection agreeing should prefill that language"
+  );
+  assert.strictEqual(
+    bulkSelectOf().props.value.label,
+    "简体中文",
+    "in the UI language"
+  );
 
   selectGalleries(["1", "2"]);
-  assert.strictEqual(bulkSelectOf().props.value, null, "a mixed selection must not prefill");
+  assert.strictEqual(
+    bulkSelectOf().props.value,
+    null,
+    "a mixed selection must not prefill"
+  );
   assert.strictEqual(bulkSelectOf().props.placeholder, "Select language…");
 
   selectGalleries(["1", "4"]);
-  assert.strictEqual(bulkSelectOf().props.value, null,
-    "a gallery with no language counts as differing, not as a match");
+  assert.strictEqual(
+    bulkSelectOf().props.value,
+    null,
+    "a gallery with no language counts as differing, not as a match"
+  );
 
   selectGalleries([]);
-  assert.strictEqual(bulkSelectOf().props.value, null, "nothing selected, nothing to prefill");
+  assert.strictEqual(
+    bulkSelectOf().props.value,
+    null,
+    "nothing selected, nothing to prefill"
+  );
 
   // ── Apply: the picked language rides along with the dialog's own update ──
   /** Runs an operation through the plugin's link and reports what came out */
@@ -2507,7 +3537,9 @@ setTimeout(() => {
             {
               kind: "OperationDefinition",
               selectionSet: {
-                selections: [{ name: { value: rootField ?? "bulkGalleryUpdate" } }],
+                selections: [
+                  { name: { value: rootField ?? "bulkGalleryUpdate" } },
+                ],
               },
             },
           ],
@@ -2524,74 +3556,124 @@ setTimeout(() => {
   // The link is installed the first time the row renders, and must not disturb
   // the chain Stash already had.
   assert.ok(installedLink, "the bulk row should install the link hook");
-  assert.strictEqual(installedLink.__chain[1].__original, true,
-    "the existing link chain must be passed through untouched");
+  assert.strictEqual(
+    installedLink.__chain[1].__original,
+    true,
+    "the existing link chain must be passed through untouched"
+  );
 
   // Untouched: the operation must go out exactly as Stash built it.
   let r14 = runLink(bulkVars());
-  assert.strictEqual(r14.forwarded.variables.input.custom_fields, undefined,
-    "an untouched row must not add custom_fields");
-  assert.strictEqual(r14.completed, null, "nothing to clear when nothing was injected");
+  assert.strictEqual(
+    r14.forwarded.variables.input.custom_fields,
+    undefined,
+    "an untouched row must not add custom_fields"
+  );
+  assert.strictEqual(
+    r14.completed,
+    null,
+    "nothing to clear when nothing was injected"
+  );
 
   const queriesBefore = galleryQueryCount;
-  bulkSelectOf().props.onChange({ value: "zh-Hant", label: "繁体中文", flag: "tw" });
-  assert.strictEqual(bulkSelectOf().props.value.value, "zh-Hant", "the row should echo the pick");
+  bulkSelectOf().props.onChange({
+    value: "zh-Hant",
+    label: "繁体中文",
+    flag: "tw",
+  });
+  assert.strictEqual(
+    bulkSelectOf().props.value.value,
+    "zh-Hant",
+    "the row should echo the pick"
+  );
 
   r14 = runLink(bulkVars());
-  assert.deepStrictEqual(r14.forwarded.variables.input.custom_fields,
+  assert.deepStrictEqual(
+    r14.forwarded.variables.input.custom_fields,
     { partial: { language: "zh-Hant" } },
-    "the picked language should ride along with the dialog's own update");
-  assert.deepStrictEqual(r14.forwarded.variables.input.ids, ["1", "2"],
-    "the rest of the input must be left alone");
+    "the picked language should ride along with the dialog's own update"
+  );
+  assert.deepStrictEqual(
+    r14.forwarded.variables.input.ids,
+    ["1", "2"],
+    "the rest of the input must be left alone"
+  );
   assert.strictEqual(r14.forwarded.variables.input.photographer, "x");
-  assert.strictEqual(r14.completed !== null, true,
-    "a successful update should clear the pending value");
+  assert.strictEqual(
+    r14.completed !== null,
+    true,
+    "a successful update should clear the pending value"
+  );
 
   // ...and once cleared, a second Apply must not repeat it.
   r14 = runLink(bulkVars());
-  assert.strictEqual(r14.forwarded.variables.input.custom_fields, undefined,
-    "the value should only ever be sent once");
+  assert.strictEqual(
+    r14.forwarded.variables.input.custom_fields,
+    undefined,
+    "the value should only ever be sent once"
+  );
 
   // Other entities' bulk updates must never be touched, even with a value pending.
   bulkSelectOf().props.onChange({ value: "ja", label: "日语", flag: "jp" });
   r14 = runLink(bulkVars(), "bulkSceneUpdate");
-  assert.strictEqual(r14.forwarded.variables.input.custom_fields, undefined,
-    "a scene bulk update must not be given a language");
+  assert.strictEqual(
+    r14.forwarded.variables.input.custom_fields,
+    undefined,
+    "a scene bulk update must not be given a language"
+  );
 
   // ...and the value survives that, so it is still applied to the right operation.
   r14 = runLink(bulkVars());
-  assert.deepStrictEqual(r14.forwarded.variables.input.custom_fields,
-    { partial: { language: "ja" } });
+  assert.deepStrictEqual(r14.forwarded.variables.input.custom_fields, {
+    partial: { language: "ja" },
+  });
 
   // Clearing the x means "leave the language alone", exactly as clearing the
   // studio field means "leave the studio alone" — neither sends a value.
   bulkSelectOf().props.onChange(null);
   r14 = runLink(bulkVars());
-  assert.strictEqual(r14.forwarded.variables.input.custom_fields, undefined,
-    "clearing must not write anything");
+  assert.strictEqual(
+    r14.forwarded.variables.input.custom_fields,
+    undefined,
+    "clearing must not write anything"
+  );
   assert.strictEqual(r14.completed, null);
 
   // The route is checked by the injection itself, not only by the row being
   // mounted: a value left pending must not be written once the route has moved on.
   bulkSelectOf().props.onChange({ value: "ko", label: "韩语", flag: "kr" });
   r14 = runLink(bulkVars());
-  assert.deepStrictEqual(r14.forwarded.variables.input.custom_fields,
+  assert.deepStrictEqual(
+    r14.forwarded.variables.input.custom_fields,
     { partial: { language: "ko" } },
-    "precondition: it does apply while on a gallery page");
+    "precondition: it does apply while on a gallery page"
+  );
 
   bulkSelectOf().props.onChange({ value: "ko", label: "韩语", flag: "kr" });
-  globalListeners["stash:location"]({ detail: { data: { location: { pathname: "/scenes/5" } } } });
+  globalListeners["stash:location"]({
+    detail: { data: { location: { pathname: "/scenes/5" } } },
+  });
   r14 = runLink(bulkVars());
-  assert.strictEqual(r14.forwarded.variables.input.custom_fields, undefined,
-    "a pending value must never be written once the route has left the galleries");
+  assert.strictEqual(
+    r14.forwarded.variables.input.custom_fields,
+    undefined,
+    "a pending value must never be written once the route has left the galleries"
+  );
 
   // Off a gallery page there is no row at all
   const onScene14 = call("RatingSystem", { value: 0 });
-  assert.strictEqual(onScene14.props.children[1].type(onScene14.props.children[1].props), null,
-    "no bulk language row on a scene page");
-  globalListeners["stash:location"]({ detail: { data: { location: { pathname: "/galleries" } } } });
+  assert.strictEqual(
+    onScene14.props.children[1].type(onScene14.props.children[1].props),
+    null,
+    "no bulk language row on a scene page"
+  );
+  globalListeners["stash:location"]({
+    detail: { data: { location: { pathname: "/galleries" } } },
+  });
   assert.notStrictEqual(bulkRow(), null, "restored on a gallery page");
-  console.log("✓ bulk edit (placement / prefill / partial set / clear / scene isolation / one-shot / route)");
+  console.log(
+    "✓ bulk edit (placement / prefill / partial set / clear / scene isolation / one-shot / route)"
+  );
 
   // The badges read the plugin's own store, so a successful write refetches it —
   // otherwise the covers keep the old flag until the next poll. That refetch is
@@ -2599,8 +3681,11 @@ setTimeout(() => {
   // started before the write would otherwise land afterwards and undo it), so the
   // count can only be checked once the microtask queue has drained.
   setTimeout(() => {
-    assert.strictEqual(galleryQueryCount, queriesBefore + 1,
-      "a successful bulk update should refetch the gallery map, so the badges update");
+    assert.strictEqual(
+      galleryQueryCount,
+      queriesBefore + 1,
+      "a successful bulk update should refetch the gallery map, so the badges update"
+    );
     console.log("✓ bulk edit refetch (deferred past the in-flight fetch)");
 
     console.log("\nAll smoke tests passed");

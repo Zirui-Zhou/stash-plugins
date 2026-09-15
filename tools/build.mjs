@@ -82,11 +82,18 @@ function topLevel(text, key) {
 
 /** Reads an indented list under a top-level `<key>:` (used for `requires`). */
 function topLevelList(text, key) {
-  const m = new RegExp(`^${key}:[ \\t]*\\n((?:[ \\t]+-.*\\n?)*)`, "m").exec(text);
+  const m = new RegExp(`^${key}:[ \\t]*\\n((?:[ \\t]+-.*\\n?)*)`, "m").exec(
+    text
+  );
   if (!m) return [];
   return m[1]
     .split("\n")
-    .map((line) => line.trim().replace(/^-[ \t]*/, "").trim())
+    .map((line) =>
+      line
+        .trim()
+        .replace(/^-[ \t]*/, "")
+        .trim()
+    )
     .filter(Boolean);
 }
 
@@ -95,13 +102,19 @@ function topLevelList(text, key) {
  * ui.javascript and ui.css, which sit under `ui:` rather than at column 0.
  */
 function listUnderKey(text, key) {
-  const m = new RegExp(`^[ \\t]+${key}:[ \\t]*\\n((?:[ \\t]+-.*\\n?)*)`, "m").exec(
-    text
-  );
+  const m = new RegExp(
+    `^[ \\t]+${key}:[ \\t]*\\n((?:[ \\t]+-.*\\n?)*)`,
+    "m"
+  ).exec(text);
   if (!m) return [];
   return m[1]
     .split("\n")
-    .map((line) => line.trim().replace(/^-[ \t]*/, "").trim())
+    .map((line) =>
+      line
+        .trim()
+        .replace(/^-[ \t]*/, "")
+        .trim()
+    )
     .filter(Boolean);
 }
 
@@ -195,11 +208,10 @@ function typecheck() {
     // Run the compiler through the current node binary rather than through npx
     // or the node_modules/.bin shim: those differ per platform (tsc.cmd on
     // Windows) and are awkward to invoke without going through a shell.
-    execFileSync(
-      process.execPath,
-      [tsc, "-p", tsconfigOf(plugin.dir)],
-      { cwd: ROOT, stdio: "inherit" }
-    );
+    execFileSync(process.execPath, [tsc, "-p", tsconfigOf(plugin.dir)], {
+      cwd: ROOT,
+      stdio: "inherit",
+    });
   }
 }
 
@@ -402,7 +414,11 @@ function main() {
   fs.mkdirSync(DIST_DIR, { recursive: true });
 
   const entries = dirs.map((d) => buildPlugin(d, sha));
-  fs.writeFileSync(path.join(DIST_DIR, "index.yml"), renderIndex(entries), "utf8");
+  fs.writeFileSync(
+    path.join(DIST_DIR, "index.yml"),
+    renderIndex(entries),
+    "utf8"
+  );
 
   for (const e of entries) {
     console.log(`  ${e.id}  ${e.version}  ${e.sha256.slice(0, 12)}…`);

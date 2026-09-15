@@ -87,7 +87,9 @@ export interface MangaToolsNamespace {
    * The language part of Stash's filter model, as the sidebar section sees it.
    * Populated by language-filter.tsx.
    */
-  readLanguageFilter(filter: MangaToolsFilterModel): MangaToolsLanguageSelection;
+  readLanguageFilter(
+    filter: MangaToolsFilterModel
+  ): MangaToolsLanguageSelection;
   /**
    * Query parameters for the filter with this selection applied, or null when
    * the list offers no custom-fields criterion to attach it to.

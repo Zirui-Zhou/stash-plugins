@@ -343,9 +343,13 @@ function getSettingsQuery(): unknown {
 
   // plugins is the PluginConfigMap scalar, so it needs no sub-selection.
   SETTINGS_QUERY = gql(
-    ["query MangaToolsSettings {", "  configuration {", "    plugins", "  }", "}"].join(
-      "\n"
-    )
+    [
+      "query MangaToolsSettings {",
+      "  configuration {",
+      "    plugins",
+      "  }",
+      "}",
+    ].join("\n")
   );
 
   return SETTINGS_QUERY;
@@ -743,7 +747,9 @@ function BooleanSetting(props: {
 }) {
   var Bootstrap = PluginApi.libraries.Bootstrap;
   if (!Bootstrap) {
-    console.error("[mangaTools] react-bootstrap not available, cannot render the settings switches");
+    console.error(
+      "[mangaTools] react-bootstrap not available, cannot render the settings switches"
+    );
     return null;
   }
 
@@ -1216,7 +1222,9 @@ function BulkLanguageRow() {
           // Clearing means "leave the language alone", exactly as clearing the
           // studio field means "leave the studio alone" — neither sends a value.
           onChange={function (opt: MangaToolsOption | null) {
-            bulkPending = opt ? { kind: "set", value: opt.value } : { kind: "cleared" };
+            bulkPending = opt
+              ? { kind: "set", value: opt.value }
+              : { kind: "cleared" };
             emit();
           }}
         />
@@ -1350,7 +1358,10 @@ function ensureDetailHost(): HTMLElement | null {
 var FIELD_HOST_CLASS = "manga-tools-field-host";
 
 /** As above, held at module scope so the same node is reused */
-var fieldHosts: { [key: string]: HTMLElement | null } = { edit: null, bulk: null };
+var fieldHosts: { [key: string]: HTMLElement | null } = {
+  edit: null,
+  bulk: null,
+};
 
 /**
  * Finds (creating if needed) the mount point for a language field row,

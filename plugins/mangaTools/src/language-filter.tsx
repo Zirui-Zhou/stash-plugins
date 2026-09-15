@@ -205,7 +205,9 @@ function customFieldsCriterion(
 }
 
 /** Is this condition about the language field? Field names match case-insensitively. */
-function isLanguageCondition(condition: MangaToolsCustomFieldCondition): boolean {
+function isLanguageCondition(
+  condition: MangaToolsCustomFieldCondition
+): boolean {
   return !!condition && String(condition.field).toLowerCase() === NS.FIELD_NAME;
 }
 
@@ -430,9 +432,11 @@ export function sameSelection(
   a: MangaToolsLanguageSelection,
   b: MangaToolsLanguageSelection
 ): boolean {
-  return a.modifier === b.modifier &&
+  return (
+    a.modifier === b.modifier &&
     sameCodes(a.included, b.included) &&
-    sameCodes(a.excluded, b.excluded);
+    sameCodes(a.excluded, b.excluded)
+  );
 }
 
 function sameCodes(a: string[], b: string[]): boolean {
@@ -595,7 +599,8 @@ function languageFilterQuery(
   var kept: MangaToolsCustomFieldCondition[] = [];
   if (criterion && criterion.value) {
     for (var j = 0; j < criterion.value.length; j++) {
-      if (!isLanguageCondition(criterion.value[j])) kept.push(criterion.value[j]);
+      if (!isLanguageCondition(criterion.value[j]))
+        kept.push(criterion.value[j]);
     }
   }
 
@@ -825,7 +830,9 @@ function LanguageRow(props: {
       >
         <div className={sidebar ? "label-group" : undefined}>
           <Icon
-            className={"fa-fw " + (excluded ? "exclude-icon" : "include-button")}
+            className={
+              "fa-fw " + (excluded ? "exclude-icon" : "include-button")
+            }
             icon={icon}
           />
           {props.flag ? <Flag flag={props.flag} /> : null}
@@ -1246,9 +1253,7 @@ function dialogDomState(): string {
  * an earlier version of this component had to draw itself, in a second tag that
  * sat beside Stash's.
  */
-export function DialogLanguageFilter(props: {
-  filter: MangaToolsFilterModel;
-}) {
+export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
   var intl = PluginApi.libraries.Intl.useIntl();
   var history = PluginApi.libraries.ReactRouterDOM.useHistory();
 
@@ -1310,7 +1315,7 @@ export function DialogLanguageFilter(props: {
       if (state === dialogDom.current) return;
 
       dialogDom.current = state;
-        bump(function (v) {
+      bump(function (v) {
         return v + 1;
       });
     });
@@ -1350,8 +1355,8 @@ export function DialogLanguageFilter(props: {
           applyPending.current = false;
 
           console.warn(
-            "[mangaTools] Apply changed nothing in Stash's filter, so the language "
-              + "picked in the card was not applied. Pick it in the sidebar instead."
+            "[mangaTools] Apply changed nothing in Stash's filter, so the language " +
+              "picked in the card was not applied. Pick it in the sidebar instead."
           );
         }, 2000);
       }
@@ -1440,7 +1445,7 @@ export function DialogLanguageFilter(props: {
 
     // Stash reads the URL on every navigation, so this is the whole of it — the
     // same route the sidebar takes.
-      history.replace(Object.assign({}, history.location, { search: search }));
+    history.replace(Object.assign({}, history.location, { search: search }));
   });
 
   /**
@@ -1749,7 +1754,6 @@ function ensureFilterHost(): HTMLElement | null {
   return filterHost;
 }
 
-
 /**
  * The gallery list's language filter, rendered through a portal into the
  * sidebar.
@@ -1816,7 +1820,7 @@ export function SidebarLanguageFilter(props: {
     if (tagLabelsFor) relabelTags(tagLabelsFor);
 
     if (ensureFilterHost() !== host) {
-        bump(function (v) {
+      bump(function (v) {
         return v + 1;
       });
     }
@@ -1946,7 +1950,9 @@ export function SidebarLanguageFilter(props: {
   // excluding a third left just the one hierarchical entry and neither of
   // these. Once one is picked it shows above, in the chosen list.
   var showModifiers =
-    !selection.modifier && !selection.included.length && !selection.excluded.length;
+    !selection.modifier &&
+    !selection.included.length &&
+    !selection.excluded.length;
 
   // The section above the fold-away list: whatever is being asked for, in the
   // same "selected-object" shape as a chosen studio. The modifier entries are
@@ -1975,7 +1981,7 @@ export function SidebarLanguageFilter(props: {
   chosen.map(function (o) {
     chosenItems.push(
       <LanguageRow
-                variant="sidebar"
+        variant="sidebar"
         key={"in-" + o.value}
         label={o.label}
         flag={flagFor(o)}
@@ -1990,8 +1996,14 @@ export function SidebarLanguageFilter(props: {
   var section = (
     <div className="sidebar-section sidebar-list-filter">
       <div className="collapse-header">
-        <Bootstrap.Button onClick={toggleOpen} className="minimal collapse-button">
-          <Icon icon={open ? Solid.faChevronDown : Solid.faChevronRight} fixedWidth />
+        <Bootstrap.Button
+          onClick={toggleOpen}
+          className="minimal collapse-button"
+        >
+          <Icon
+            icon={open ? Solid.faChevronDown : Solid.faChevronRight}
+            fixedWidth
+          />
           <span>{fieldLabel(intl)}</span>
         </Bootstrap.Button>
       </div>
@@ -2064,8 +2076,12 @@ export function SidebarLanguageFilter(props: {
             <ul>
               {showModifiers ? (
                 <LanguageRow
-                variant="sidebar"
-                  label={"(" + message(intl, "criterion_modifier_values.any", "Any") + ")"}
+                  variant="sidebar"
+                  label={
+                    "(" +
+                    message(intl, "criterion_modifier_values.any", "Any") +
+                    ")"
+                  }
                   state="candidate"
                   modifier
                   canExclude={false}
@@ -2076,8 +2092,12 @@ export function SidebarLanguageFilter(props: {
               ) : null}
               {showModifiers ? (
                 <LanguageRow
-                variant="sidebar"
-                  label={"(" + message(intl, "criterion_modifier_values.none", "None") + ")"}
+                  variant="sidebar"
+                  label={
+                    "(" +
+                    message(intl, "criterion_modifier_values.none", "None") +
+                    ")"
+                  }
                   state="candidate"
                   modifier
                   canExclude={false}
@@ -2089,7 +2109,7 @@ export function SidebarLanguageFilter(props: {
               {candidates.map(function (o) {
                 return (
                   <LanguageRow
-                variant="sidebar"
+                    variant="sidebar"
                     key={o.value}
                     label={o.label}
                     flag={flagFor(o)}
