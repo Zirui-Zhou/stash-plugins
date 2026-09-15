@@ -1415,6 +1415,26 @@ export function DialogLanguageFilter(props: {
       if (clicked.closest(".modal-footer button.btn-primary")) {
         applyPending.current = true;
         console.info("[mangaTools] Apply pressed");
+
+        // A deadline, because the wait in the merge below has no other way out.
+        // This writes nothing: it reports what the filter and the URL looked like
+        // when the wait ran out, which is the only way to tell a merge that was
+        // never needed from one that could not happen.
+        window.setTimeout(function () {
+          if (!applyPending.current) return;
+          applyPending.current = false;
+
+          var filter = filterRef.current;
+          console.warn(
+            "[mangaTools] 2s after Apply the filter still had not updated, so the "
+              + "language was not merged. Its criteria: "
+              + (filter ? filter.criteria.map(function (c) {
+                  return String(c.criterionOption && c.criterionOption.type);
+                }).join(", ") : "none")
+              + " | url: "
+              + window.location.search
+          );
+        }, 2000);
       }
 
       // Every way Stash itself takes the language away — the ✗ on the card, the
@@ -1472,6 +1492,11 @@ export function DialogLanguageFilter(props: {
    * identity and so never compares equal to a freshly decoded one. If it somehow
    * does not arrive, the timer says so rather than merging later and wrongly.
    */
+  // The latest filter, for the deadline above to report on — a timeout cannot see
+  // this render's props.
+  var filterRef = React.useRef(props.filter);
+  filterRef.current = props.filter;
+
   var lastModel = React.useRef<MangaToolsFilterModel | null>(null);
   React.useEffect(function () {
     var model = props.filter;
@@ -1480,16 +1505,11 @@ export function DialogLanguageFilter(props: {
 
     if (!applyPending.current) return;
 
-    if (!previous || previous === model) {
-      window.setTimeout(function () {
-        if (!applyPending.current) return;
-        applyPending.current = false;
-        console.warn(
-          "[mangaTools] the filter did not update after Apply, so the language was not merged"
-        );
-      }, 0);
-      return;
-    }
+    // Still waiting: the filter has not become what Apply committed yet. This is
+    // checked on every render rather than once, because how many renders the wait
+    // lasts is Stash's business — a fresh page has more of them, which is why the
+    // first Apply after a reload is the one that used to miss.
+    if (!previous || previous === model) return;
 
     applyPending.current = false;
     var unchanged = sameSelection(choice, readLanguageFilter(model));
