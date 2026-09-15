@@ -700,6 +700,7 @@ NS.adoptLanguageCriterion = adoptLanguageCriterion;
 NS.relabelTags = relabelTags;
 NS.manageDialogTags = manageDialogTags;
 NS.ownTagLabels = ownTagLabels;
+NS.noteCause = noteCause;
 NS.clickedTagRemove = clickedTagRemove;
 NS.filterFromQuery = filterFromQuery;
 
@@ -741,6 +742,46 @@ function message(intl: MangaToolsIntl, id: string, fallback: string): string {
  * and the section does not visibly move.
  */
 var SECTION_STATE_KEY = "mangaToolsLanguageOpen";
+
+/**
+ * TEMPORARY — render-loop probe, to be removed once the loop is found.
+ *
+ * Every path in this plugin that asks React for another render announces itself
+ * here. A tick is one turn of the event loop, so more than a handful of the same
+ * cause within a tick is a loop, and the 25th one prints where it came from —
+ * the stack names the caller — and then stops asking, so the page survives with
+ * a stale tag instead of going blank.
+ *
+ * Delete this, noteCause, and its call sites together.
+ */
+var tickCounts: { [name: string]: number } = {};
+var tickEnd: number | null = null;
+
+function noteCause(name: string): boolean {
+  tickCounts[name] = (tickCounts[name] || 0) + 1;
+  var count = tickCounts[name];
+
+  if (tickEnd === null) {
+    tickEnd = setTimeout(function () {
+      tickCounts = {};
+      tickEnd = null;
+    }, 0);
+  }
+
+  if (count === 5) {
+    console.info("[mangaTools] probe: " + name + " has run 5 times in one tick");
+  }
+
+  if (count === 25) {
+    console.error(
+      "[mangaTools] probe: " + name + " ran 25 times in one tick — this is the loop",
+      new Error(name).stack
+    );
+    return false;
+  }
+
+  return count <= 25;
+}
 
 /**
  * Whether the reader is on a touch device.
@@ -1289,6 +1330,8 @@ export function DialogLanguageFilter(props: {
   var intl = PluginApi.libraries.Intl.useIntl();
   var history = PluginApi.libraries.ReactRouterDOM.useHistory();
 
+  noteCause("dialog render");
+
   var bumpState = React.useState(0);
   var bump = bumpState[1];
 
@@ -1347,6 +1390,7 @@ export function DialogLanguageFilter(props: {
       if (state === dialogDom.current) return;
 
       dialogDom.current = state;
+      if (!noteCause("observer bump")) return;
       bump(function (v) {
         return v + 1;
       });
@@ -1462,6 +1506,7 @@ export function DialogLanguageFilter(props: {
 
     // Stash reads the URL on every navigation, so this is the whole of it — the
     // same route the sidebar takes.
+    if (!noteCause("merge URL write")) return;
     history.replace(Object.assign({}, history.location, { search: search }));
     console.info("[mangaTools] applied the language filter to the URL");
   });
@@ -1518,6 +1563,7 @@ export function DialogLanguageFilter(props: {
     // it does not need — a setState in a layout effect is a synchronous render,
     // and one that changes nothing every time is a loop.
     var applied = readLanguageFilter(props.filter);
+    noteCause("session sync");
     setChoice(function (previous) {
       return sameSelection(previous, applied) ? previous : applied;
     });
@@ -1790,6 +1836,8 @@ export function SidebarLanguageFilter(props: {
   var intl = PluginApi.libraries.Intl.useIntl();
   var history = PluginApi.libraries.ReactRouterDOM.useHistory();
 
+  noteCause("sidebar render");
+
   // Read during the render rather than restored in an effect, so the first paint
   // already has the right answer. Stash restores its sections in a `useEffect`,
   // which is why they can appear to jump on a reload; there is no need to copy
@@ -1839,6 +1887,7 @@ export function SidebarLanguageFilter(props: {
     if (tagLabelsFor) relabelTags(tagLabelsFor);
 
     if (ensureFilterHost() !== host) {
+      if (!noteCause("sidebar host bump")) return;
       bump(function (v) {
         return v + 1;
       });
