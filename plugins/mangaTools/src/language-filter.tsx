@@ -796,9 +796,58 @@ function dialogEditorBox(): Element | null {
   );
 }
 
-/** The dialog's own row of condition tags, where a criterion of Stash's is listed */
-function dialogTagsBox(): Element | null {
-  return document.querySelector(".edit-filter-dialog .dialog-content");
+/** Our own tag row, held so the same node is reused and can be taken away again */
+var dialogTagsFallback: HTMLElement | null = null;
+
+/**
+ * Where a pending tag goes: beside the tags Stash draws for the criteria it
+ * knows about, so the dialog has one place that answers "what is in this filter".
+ *
+ * That row is inside `.dialog-content` and outside `.criterion-list`, which is
+ * the point — it is not inside a card, so closing the card cannot take our tag
+ * away with it.
+ *
+ * It exists only while the dialog holds at least one criterion of its own (Stash
+ * renders the row under `criteria.length > 0`), and a pending language is not
+ * one of those yet, so sometimes there is no row to join and one has to be made.
+ *
+ * The search deliberately skips rows inside `.criterion-list`: a custom-fields
+ * card draws a `.filter-tags` row of its own for its conditions, and joining
+ * that one would put our tag inside a card — the very thing this avoids.
+ */
+function dialogTagsRow(): Element | null {
+  var content = document.querySelector(".edit-filter-dialog .dialog-content");
+  if (!content) {
+    dropFallbackRow();
+    return null;
+  }
+
+  var rows = content.querySelectorAll(".filter-tags");
+  for (var i = 0; i < rows.length; i++) {
+    if (!rows[i].closest(".criterion-list")) {
+      dropFallbackRow();
+      return rows[i];
+    }
+  }
+
+  if (!dialogTagsFallback) {
+    dialogTagsFallback = document.createElement("div");
+    dialogTagsFallback.className =
+      "d-flex justify-content-center mb-2 wrap-tags filter-tags";
+  }
+
+  if (dialogTagsFallback.parentNode !== content) {
+    content.appendChild(dialogTagsFallback);
+  }
+
+  return dialogTagsFallback;
+}
+
+/** Takes our row away again once Stash is drawing one of its own */
+function dropFallbackRow(): void {
+  if (dialogTagsFallback && dialogTagsFallback.parentNode) {
+    dialogTagsFallback.parentNode.removeChild(dialogTagsFallback);
+  }
 }
 
 /**
@@ -967,15 +1016,18 @@ export function DialogLanguageFilter(props: {
     return NS.showFlags ? o.flag : null;
   };
 
+  // The card's box, which Stash renders only while the card is open. The tag is
+  // *not* gated on it: the tag lives outside the card, and returning early here
+  // is what used to make closing the card take the tag with it.
   var box = dialogEditorBox();
-  var tagsBox = dialogTagsBox();
-  if (!box) return null;
-
-  var host = box.querySelector("." + DIALOG_HOST_CLASS);
-  if (!host) {
-    host = document.createElement("div");
-    host.className = DIALOG_HOST_CLASS;
-    box.insertBefore(host, box.firstChild);
+  var host: Element | null = null;
+  if (box) {
+    host = box.querySelector("." + DIALOG_HOST_CLASS);
+    if (!host) {
+      host = document.createElement("div");
+      host.className = DIALOG_HOST_CLASS;
+      box.insertBefore(host, box.firstChild);
+    }
   }
 
   var pending = !sameSelection(choice, applied);
@@ -1107,13 +1159,14 @@ export function DialogLanguageFilter(props: {
     </div>
   );
 
+  var tagsRow = dialogTagsRow();
+
   return (
     <>
-      {PluginApi.ReactDOM.createPortal(list, host)}
-      {/* The dialog's own row of tags, which Stash fills for the criteria it
-          knows. Ours goes at the end of the same area, and only while it is
-          still only ours. */}
-      {pending && tagsBox
+      {host ? PluginApi.ReactDOM.createPortal(list, host) : null}
+      {/* Beside the tags Stash draws, and only while this one is still only
+          ours — once Apply has written it to the URL, Stash draws its own. */}
+      {pending && tagsRow
         ? PluginApi.ReactDOM.createPortal(
             <LanguageTag
               label={label}
@@ -1121,7 +1174,7 @@ export function DialogLanguageFilter(props: {
                 setChoice(applied);
               }}
             />,
-            tagsBox
+            tagsRow
           )
         : null}
     </>

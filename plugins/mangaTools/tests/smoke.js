@@ -1126,6 +1126,14 @@ assert.ok(
   !/\.manga-tools-badge\.is-name\s*\{[^}]*text-overflow/.test(css),
   "a recognised language name must not be truncated — see the .is-name rule"
 );
+// Stash's empty tag row inside our card carries Bootstrap's `d-flex`, which is
+// `display: flex !important` — so hiding it only works with `!important` of our
+// own. Without it the empty row keeps its margin and shows up as a stray rule
+// under the picker, which is exactly what happened.
+const emptyTagsRule = /\.criterion-list \[data-type="language"\] \.filter-tags:empty\s*\{([^}]*)\}/.exec(css);
+assert.ok(emptyTagsRule, "the empty tag row should be hidden");
+assert.ok(/display:\s*none\s*!important/.test(emptyTagsRule[1]),
+  "…with !important: a plain display: none loses to Bootstrap's d-flex");
 // Stash's `.setting-section .setting > div:last-child { text-align: right }`
 // right-aligns the heading and description of this full-width settings block
 // unless it is explicitly undone.
