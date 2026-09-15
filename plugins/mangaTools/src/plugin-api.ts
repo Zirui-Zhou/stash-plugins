@@ -170,8 +170,14 @@ export interface MangaToolsNamespace {
  * What the language filter is asking for.
  *
  * `modifier` is "any" (galleries carrying a language), "none" (those without)
- * or "" when the include/exclude lists are what matter. Either list may hold
- * several codes — EQUALS unions them, so several languages are "any of these".
+ * or "" when the include/exclude lists are what matter — matching how Stash's
+ * own sidebar filter treats its modifier as one of several candidate values
+ * rather than as a separate control.
+ *
+ * Either list may hold several codes: EQUALS unions them, so "Japanese or
+ * Traditional Chinese" is one condition. A code appears in at most one of the
+ * two lists, since EQUALS and NOT_EQUALS for the same language would be a
+ * contradiction and match nothing.
  */
 export interface MangaToolsLanguageSelection {
   modifier: "" | "any" | "none";
@@ -256,7 +262,6 @@ export interface MangaToolsCustomFieldCondition {
 export interface MangaToolsFilterCriterion {
   criterionOption?: { type?: string };
   value?: MangaToolsCustomFieldCondition[];
-  clone?(): MangaToolsFilterCriterion;
   /** How the criterion writes itself into the URL */
   toQueryParams?(): { type: string; value: unknown };
 }
@@ -271,7 +276,6 @@ export interface MangaToolsFilterCriterion {
 export interface MangaToolsCriterionOption {
   type: string;
   messageID: string;
-  sfwMessageID?: string;
   makeCriterion(): MangaToolsFilterCriterion;
 }
 

@@ -53,6 +53,7 @@ import type {
   MangaToolsFilterModel,
   MangaToolsHistory,
   MangaToolsIntl,
+  MangaToolsLanguageSelection,
   MangaToolsOption,
 } from "./plugin-api";
 
@@ -73,25 +74,6 @@ const CUSTOM_FIELDS_TYPE = "custom_fields";
  * gets written to the URL — see registerLanguageCriterionOption.
  */
 const LANGUAGE_TYPE = "language";
-
-/**
- * What the section is currently asking for.
- *
- * `modifier` is "any" (galleries with a language), "none" (those without), or ""
- * when the include/exclude lists are what matter — matching how Stash's own
- * sidebar filter treats its modifier as one of several candidate values rather
- * than as a separate control.
- *
- * Either list may hold several codes: EQUALS unions them, so "Japanese or
- * Traditional Chinese" is one condition. A code appears in at most one of the
- * two lists, since EQUALS and NOT_EQUALS for the same language would be a
- * contradiction and match nothing.
- */
-export interface MangaToolsLanguageSelection {
-  modifier: "" | "any" | "none";
-  included: string[];
-  excluded: string[];
-}
 
 const EMPTY_SELECTION: MangaToolsLanguageSelection = {
   modifier: "",
@@ -714,33 +696,6 @@ const FILTER_HOST_CLASS = "manga-tools-field-host";
 /** The mount point, held at module scope so re-renders reuse the same node */
 let filterHost: HTMLElement | null = null;
 
-/**
- * Sets a React-controlled input's value the way a person would.
- *
- * Assigning `input.value` directly does not reach React: its onChange is driven
- * by a value tracker that records the last value React wrote, and a plain
- * assignment updates that tracker too — so the change looks like no change.
- * Going through the prototype's setter leaves the tracker alone, and the
- * dispatched event then reads as real input.
- */
-/**
- * Sets a React-controlled input's value the way a person would.
- *
- * Assigning `input.value` directly does not reach React: its onChange is driven
- * by a value tracker that records the last value React wrote, and a plain
- * assignment updates that tracker too — so the change looks like no change.
- * Going through the prototype's setter leaves the tracker alone, and the
- * dispatched event then reads as real input.
- */
-/**
- * Sets a React-controlled input's value the way a person would.
- *
- * Assigning `input.value` directly does not reach React: its onChange is driven
- * by a value tracker that records the last value React wrote, and a plain
- * assignment updates that tracker too — so the change looks like no change.
- * Going through the prototype's setter leaves the tracker alone, and the
- * dispatched event then reads as real input.
- */
 /**
  * One row of a language list.
  *

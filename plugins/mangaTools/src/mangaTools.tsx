@@ -235,7 +235,9 @@ function getQuery(): unknown {
       "query MangaToolsMap {",
       "  findGalleries(",
       "    gallery_filter: {",
-      '      custom_fields: [{ field: "language", modifier: NOT_NULL }]',
+      '      custom_fields: [{ field: "' +
+        FIELD_NAME +
+        '", modifier: NOT_NULL }]',
       "    }",
       "    filter: { per_page: -1 }",
       "  ) {",
