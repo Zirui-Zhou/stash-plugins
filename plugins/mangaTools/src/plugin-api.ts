@@ -84,19 +84,32 @@ export interface MangaToolsNamespace {
   parseFlag(raw: unknown, fallback: boolean): boolean;
 
   /**
-   * The language the gallery list is filtered to, read out of Stash's filter
-   * model — "" when it is not filtering by language. Populated by
-   * language-filter.tsx.
+   * The language part of Stash's filter model, as the sidebar section sees it.
+   * Populated by language-filter.tsx.
    */
-  selectedFilterLanguage(filter: MangaToolsFilterModel): string;
+  readLanguageFilter(filter: MangaToolsFilterModel): MangaToolsLanguageSelection;
   /**
-   * Query parameters for the filter with the language set (or cleared, for ""),
-   * or null when the list offers no custom-fields criterion to attach it to.
+   * Query parameters for the filter with this selection applied, or null when
+   * the list offers no custom-fields criterion to attach it to.
    */
-  filterLanguageQuery(
+  languageFilterQuery(
     filter: MangaToolsFilterModel,
-    code: string
+    selection: MangaToolsLanguageSelection
   ): string | null;
+}
+
+/**
+ * What the language filter is asking for.
+ *
+ * `modifier` is "any" (galleries carrying a language), "none" (those without)
+ * or "" when the include/exclude lists are what matter. `included` holds at
+ * most one code, matching the studio filter this mirrors, which is built with
+ * `singleValue: true`.
+ */
+export interface MangaToolsLanguageSelection {
+  modifier: "" | "any" | "none";
+  included: string[];
+  excluded: string[];
 }
 
 /** What react-intl's useIntl() gives us — only the fields this plugin touches */

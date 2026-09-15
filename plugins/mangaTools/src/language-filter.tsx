@@ -1,8 +1,11 @@
 /**
  * Manga Tools — filtering the gallery list by language.
  *
- * A "language" section in the gallery list's filter sidebar: pick a language and
- * the list narrows to it, in the same shape as Stash's own studio section.
+ * A "language" section in the gallery list's filter sidebar, built to work like
+ * Stash's own studio section: a searchable list of candidates offering both
+ * "include" and "exclude", a chosen value shown above the fold-away list, and
+ * two modifier entries — (Any) for galleries that have any language at all, and
+ * (None) for those that have none.
  *
  * WHY THE SIDEBAR AND NOT THE FILTER DIALOG. Stash's "edit filters" dialog is
  * the obvious home for a new criterion, and it is not reachable. The dialog's
@@ -24,13 +27,21 @@
  * of that is public API on the model: `clone`, `options.criterionOptions`,
  * `makeCriterion` and `makeQueryParameters`.
  *
- * WHY ONE LANGUAGE AT A TIME. The custom-fields criterion holds a list of
- * conditions, and Stash's own editor only ever gives one value to EQUALS — the
- * multi-value case is untested territory, and if those values were ANDed rather
- * than ORed, selecting two languages would silently return nothing. Single
- * selection cannot fail that way, and the alternative (two conditions on the
- * same field) would be ANDed by construction, since the criterion's list is a
- * conjunction.
+ * WHAT THE CONDITIONS MEAN, measured against a real library rather than assumed:
+ *
+ *   EQUALS     [a, b]       matches a OR b          (1 + 3 = 4 of 9 tagged)
+ *   NOT_EQUALS [a, b]       excludes both, and ALSO matches galleries with no
+ *                           language field at all   (1194 − 1 = 1193 for [a])
+ *   NOT_NULL                galleries with a language
+ *   IS_NULL                 galleries without one
+ *
+ * That last row is why the "exclude" here is a verbatim mirror of Stash's own
+ * rather than something cleverer: excluding one language on a mostly-untagged
+ * library still returns almost everything, and pretending otherwise would be
+ * less honest than matching the studio filter and documenting it.
+ *
+ * Conditions are combined with AND, so include and exclude compose: "equals X
+ * AND not-equals Y" is exactly "included X, excluded Y".
  */
 import { NS } from "./languages";
 import { requirePluginApi } from "./plugin-api";
@@ -41,6 +52,7 @@ import type {
   MangaToolsFilterModel,
   MangaToolsHistory,
   MangaToolsIntl,
+  MangaToolsOption,
 } from "./plugin-api";
 
 const PluginApi = requirePluginApi();
@@ -52,8 +64,30 @@ var React = PluginApi.React;
 /** The `type` Stash's ListFilterOptions gives the custom-fields criterion */
 var CUSTOM_FIELDS_TYPE = "custom_fields";
 
-/** The modifier meaning "the field equals this value" */
-var EQUALS = "EQUALS";
+/**
+ * What the section is currently asking for.
+ *
+ * `modifier` is "any" (galleries with a language), "none" (those without), or ""
+ * when the include/exclude lists are what matter — matching how Stash's own
+ * sidebar filter treats its modifier as one of several candidate values rather
+ * than as a separate control.
+ *
+ * `included` holds at most one code, because the studio filter this mirrors is
+ * built with `singleValue: true`. Multiple values are supported by the backend
+ * (EQUALS ORs them — see the header), so widening this is a matter of allowing
+ * more entries here and in the click handler, nothing deeper.
+ */
+export interface MangaToolsLanguageSelection {
+  modifier: "" | "any" | "none";
+  included: string[];
+  excluded: string[];
+}
+
+var EMPTY_SELECTION: MangaToolsLanguageSelection = {
+  modifier: "",
+  included: [],
+  excluded: [],
+};
 
 /**
  * Finds the filter's custom-fields criterion, if it has one.
@@ -73,53 +107,97 @@ function customFieldsCriterion(
   return null;
 }
 
-/** Is this condition about the language field? Field names are matched case-insensitively. */
+/** Is this condition about the language field? Field names match case-insensitively. */
 function isLanguageCondition(condition: MangaToolsCustomFieldCondition): boolean {
-  return (
-    !!condition &&
-    String(condition.field).toLowerCase() === NS.FIELD_NAME
-  );
+  return !!condition && String(condition.field).toLowerCase() === NS.FIELD_NAME;
+}
+
+/** The values of a condition, as codes */
+function conditionValues(condition: MangaToolsCustomFieldCondition): string[] {
+  var values = condition.value || [];
+  return values.map(function (v) {
+    return String(v);
+  });
 }
 
 /**
- * The language the gallery list is currently filtered to, or "" for none.
+ * Reads the language part of the filter.
  *
- * Read from the filter model rather than from the URL: the model is the decoded,
- * live form of exactly the same thing, and reading it needs no knowledge of how
- * Stash encodes the URL.
+ * Anything this does not recognise — another field, or a modifier that is not
+ * one of ours — is simply not reported, which is what makes the section safe to
+ * sit alongside a hand-built custom-field filter.
  */
-function selectedLanguage(filter: MangaToolsFilterModel): string {
+function readLanguageFilter(
+  filter: MangaToolsFilterModel
+): MangaToolsLanguageSelection {
   var criterion = customFieldsCriterion(filter);
-  if (!criterion) return "";
+  if (!criterion || !criterion.value) return EMPTY_SELECTION;
 
-  var conditions = criterion.value || [];
-  for (var i = 0; i < conditions.length; i++) {
-    if (!isLanguageCondition(conditions[i])) continue;
-    var values = conditions[i].value;
-    if (values && values.length) return String(values[0]);
-    return "";
+  var selection: MangaToolsLanguageSelection = {
+    modifier: "",
+    included: [],
+    excluded: [],
+  };
+
+  criterion.value.forEach(function (condition) {
+    if (!isLanguageCondition(condition)) return;
+
+    if (condition.modifier === "NOT_NULL") selection.modifier = "any";
+    else if (condition.modifier === "IS_NULL") selection.modifier = "none";
+    else if (condition.modifier === "EQUALS") {
+      selection.included = conditionValues(condition);
+    } else if (condition.modifier === "NOT_EQUALS") {
+      selection.excluded = conditionValues(condition);
+    }
+  });
+
+  return selection;
+}
+
+/** The conditions our selection turns into */
+function selectionConditions(
+  selection: MangaToolsLanguageSelection
+): MangaToolsCustomFieldCondition[] {
+  if (selection.modifier === "any") {
+    return [{ field: NS.FIELD_NAME, modifier: "NOT_NULL" }];
   }
-  return "";
+  if (selection.modifier === "none") {
+    return [{ field: NS.FIELD_NAME, modifier: "IS_NULL" }];
+  }
+
+  var conditions: MangaToolsCustomFieldCondition[] = [];
+  if (selection.included.length) {
+    conditions.push({
+      field: NS.FIELD_NAME,
+      modifier: "EQUALS",
+      value: selection.included.slice(),
+    });
+  }
+  if (selection.excluded.length) {
+    conditions.push({
+      field: NS.FIELD_NAME,
+      modifier: "NOT_EQUALS",
+      value: selection.excluded.slice(),
+    });
+  }
+  return conditions;
 }
 
 /**
- * The query parameters for the filter with the language set to `code` (or
- * cleared, for ""). Returns null when the filter offers no custom-fields
- * criterion to attach it to.
+ * The query parameters for the filter with this selection applied, or null when
+ * the filter offers no custom-fields criterion to attach it to.
  *
- * Everything else is left alone, including other custom-field conditions — the
- * language is merged into the existing criterion rather than replacing it, so a
- * language filter composes with a hand-made custom-field filter instead of
- * discarding it. Case variants of the field name are dropped on the way, so a
- * criterion a user typed as "Language" cannot end up holding two conditions for
- * one field and filtering everything out.
+ * Every language condition is replaced and the rest are kept, so this composes
+ * with a hand-made custom-field filter instead of discarding it. Case variants
+ * of the field name go too, so a criterion a user typed as "Language" cannot end
+ * up holding two conditions for one field.
  *
  * The model is cloned because it is Stash's live state object; mutating it in
  * place would change the filter without telling anything to re-render.
  */
 function languageFilterQuery(
   filter: MangaToolsFilterModel,
-  code: string
+  selection: MangaToolsLanguageSelection
 ): string | null {
   if (!filter || typeof filter.clone !== "function") return null;
 
@@ -140,11 +218,9 @@ function languageFilterQuery(
     }
   }
 
-  if (code) {
-    kept.push({ field: NS.FIELD_NAME, modifier: EQUALS, value: [code] });
-  }
+  var conditions = kept.concat(selectionConditions(selection));
 
-  if (!kept.length) {
+  if (!conditions.length) {
     // Nothing left to say: drop the criterion rather than leave an empty one,
     // which would show as a filter tag with no meaning.
     next.criteria = (next.criteria || []).filter(function (c) {
@@ -155,7 +231,7 @@ function languageFilterQuery(
       criterion = option.makeCriterion();
       next.criteria = (next.criteria || []).concat([criterion]);
     }
-    criterion.value = kept;
+    criterion.value = conditions;
   }
 
   return next.makeQueryParameters();
@@ -169,13 +245,16 @@ function languageFilterQuery(
  * tag, the result count, pagination and a bookmarkable URL all follow along for
  * free. `replace` rather than `push`, matching that hook, so changing a filter
  * does not fill up the back button.
+ *
+ * The sidebar's own filter sections take a `setFilter` callback instead, which a
+ * plugin is never handed; this reaches the same state through the other door.
  */
 function applyLanguage(
   filter: MangaToolsFilterModel,
   history: MangaToolsHistory,
-  code: string
+  selection: MangaToolsLanguageSelection
 ): void {
-  var search = languageFilterQuery(filter, code);
+  var search = languageFilterQuery(filter, selection);
   if (search === null) {
     console.error(
       "[mangaTools] this list has no custom-fields filter, so the language filter is unavailable"
@@ -187,10 +266,10 @@ function applyLanguage(
 }
 
 // Published on the namespace alongside the rest of the plugin's pure logic, so
-// the smoke tests can exercise the merge rules against a stub filter model
+// the smoke tests can exercise the read/merge rules against a stub filter model
 // without rendering anything.
-NS.selectedFilterLanguage = selectedLanguage;
-NS.filterLanguageQuery = languageFilterQuery;
+NS.readLanguageFilter = readLanguageFilter;
+NS.languageFilterQuery = languageFilterQuery;
 
 /** The language table's own label, from Stash's locale files (see mangaTools.tsx
  *  for the longer note; this is the same message, duplicated so this module
@@ -205,6 +284,11 @@ function fieldLabel(intl: MangaToolsIntl): string {
 /** A regional flag, drawn by flag-icons' CSS — the same markup the dropdowns use */
 function Flag(props: { flag: string }): ReactElement {
   return <span className={"fi fi-" + props.flag + " manga-tools-flag"} />;
+}
+
+/** Stash's own wording for the two list states, so nothing here reads as foreign */
+function message(intl: MangaToolsIntl, id: string, fallback: string): string {
+  return intl.formatMessage({ id: id, defaultMessage: fallback });
 }
 
 /** Class name of the section's mount point */
@@ -252,32 +336,32 @@ function ensureFilterHost(): HTMLElement | null {
 }
 
 /**
- * One entry of the list. `selected` renders Stash's checked style, `candidate`
- * its "click to add" style — the same two states, and the same class names, as
- * SelectedItem/CandidateItem in its SidebarListFilter.
+ * One entry of the candidate list, or of one of the two selected lists.
  *
- * The selected state swaps its icon for a cross on hover, which is how Stash
- * signals that clicking removes the entry rather than adding it.
+ * Mirrors SelectedItem/CandidateItem in Stash's SidebarListFilter, including the
+ * details that carry meaning: a selected entry's tick becomes a cross on hover
+ * (clicking removes it), and a candidate's exclude button stops the click from
+ * bubbling into the row's own "include" handler.
  */
 function LanguageItem(props: {
-  name: string;
-  flag: string | null;
-  selected: boolean;
+  label: string;
+  flag?: string | null;
+  state: "candidate" | "included" | "excluded";
+  canExclude?: boolean;
   onClick: () => void;
+  onExclude?: () => void;
 }) {
-  var state = React.useState(false);
-  var hovered = state[0];
-  var setHovered = state[1];
+  var hover = React.useState(false);
+  var hovered = hover[0];
+  var setHovered = hover[1];
 
   var Solid = PluginApi.libraries.FontAwesomeSolid || {};
   var Regular = PluginApi.libraries.FontAwesomeRegular || {};
   var Icon = PluginApi.components.Icon;
+  var Bootstrap = PluginApi.libraries.Bootstrap;
 
-  var icon = props.selected
-    ? hovered
-      ? Regular.faTimesCircle || Solid.faTimesCircle
-      : Solid.faCheckCircle
-    : Solid.faPlus;
+  var selected = props.state !== "candidate";
+  var excluded = props.state === "excluded";
 
   function setHover(next: boolean) {
     return function () {
@@ -285,8 +369,22 @@ function LanguageItem(props: {
     };
   }
 
+  var icon;
+  if (!selected) {
+    icon = Solid.faPlus;
+  } else if (hovered) {
+    // Stash swaps the tick for a cross under the cursor, which is how it says
+    // "clicking this takes it away again".
+    icon = Regular.faTimesCircle || Solid.faTimesCircle;
+  } else {
+    icon = excluded ? Solid.faTimesCircle : Solid.faCheckCircle;
+  }
+
+  var iconClass = excluded ? "exclude-icon" : "include-button";
+  var labelClass = excluded ? "excluded-object-label" : "selected-object-label";
+
   return (
-    <li className={props.selected ? "selected-object" : "unselected-object"}>
+    <li className={selected ? "selected-object" : "unselected-object"}>
       <a
         tabIndex={0}
         onClick={props.onClick}
@@ -296,19 +394,37 @@ function LanguageItem(props: {
         onBlur={setHover(false)}
       >
         <div className="label-group">
-          <Icon className="fa-fw include-button" icon={icon} />
+          <Icon
+            className={"fa-fw " + (selected ? iconClass : "include-button single-value")}
+            icon={icon}
+          />
           {props.flag ? <Flag flag={props.flag} /> : null}
           <span
             className={
               "TruncatedText inline " +
-              (props.selected
-                ? "selected-object-label"
-                : "unselected-object-label")
+              (selected ? labelClass : "unselected-object-label")
             }
           >
-            {props.name}
+            {props.label}
           </span>
         </div>
+        {props.canExclude && Bootstrap ? (
+          <div>
+            <Bootstrap.Button
+              className="minimal exclude-button"
+              onClick={function (e: { stopPropagation: () => void }) {
+                e.stopPropagation();
+                if (props.onExclude) props.onExclude();
+              }}
+              onKeyDown={function (e: { stopPropagation: () => void }) {
+                e.stopPropagation();
+              }}
+            >
+              <span className="exclude-button-text">exclude</span>
+              <Icon className="fa-fw exclude-icon single-value" icon={Solid.faMinus} />
+            </Bootstrap.Button>
+          </div>
+        ) : null}
       </a>
     </li>
   );
@@ -327,9 +443,13 @@ export function SidebarLanguageFilter(props: {
   var intl = PluginApi.libraries.Intl.useIntl();
   var history = PluginApi.libraries.ReactRouterDOM.useHistory();
 
-  var state = React.useState(true);
-  var open = state[0];
-  var setOpen = state[1];
+  var openState = React.useState(true);
+  var open = openState[0];
+  var setOpen = openState[1];
+
+  var queryState = React.useState("");
+  var query = queryState[0];
+  var setQuery = queryState[1];
 
   // A browser re-render can drop the mount point; one extra pass restores it,
   // the same dance LanguageRow does for the edit page's field.
@@ -357,25 +477,126 @@ export function SidebarLanguageFilter(props: {
   var Solid = PluginApi.libraries.FontAwesomeSolid || {};
   var Icon = PluginApi.components.Icon;
 
-  var selected = selectedLanguage(props.filter);
+  var selection = readLanguageFilter(props.filter);
+
+  function update(next: MangaToolsLanguageSelection) {
+    applyLanguage(props.filter, history, next);
+  }
+
+  /** Clicking an included value removes it; clicking a candidate includes it */
+  function toggleInclude(code: string) {
+    var already = selection.included.indexOf(code) !== -1;
+    update({
+      modifier: "",
+      included: already ? [] : [code],
+      excluded: selection.excluded.filter(function (c) {
+        return c !== code;
+      }),
+    });
+  }
+
+  function toggleExclude(code: string) {
+    var already = selection.excluded.indexOf(code) !== -1;
+    update({
+      modifier: "",
+      included: selection.included.filter(function (c) {
+        return c !== code;
+      }),
+      excluded: already
+        ? selection.excluded.filter(function (c) {
+            return c !== code;
+          })
+        : [code],
+    });
+  }
+
+  function setModifier(modifier: "any" | "none") {
+    update({
+      modifier: selection.modifier === modifier ? "" : modifier,
+      included: [],
+      excluded: [],
+    });
+  }
+
+  // The same "enabled languages" setting that limits the edit dropdown limits
+  // what can be filtered on, so the two never disagree about which languages
+  // this library uses. A value already in use stays visible even if it has since
+  // been disabled, since otherwise the list would be filtered by something
+  // invisible.
   var options = NS.languageOptions(intl.locale).filter(function (o) {
-    // Read-only restriction: the same "enabled languages" setting that limits
-    // the edit dropdown limits what can be filtered on, so the two never
-    // disagree about which languages this library uses. A language already
-    // filtered on stays visible even if it has since been disabled.
-    return !NS.enabledLanguages || NS.enabledLanguages.has(o.value) || o.value === selected;
+    return (
+      !NS.enabledLanguages ||
+      NS.enabledLanguages.has(o.value) ||
+      selection.included.indexOf(o.value) !== -1 ||
+      selection.excluded.indexOf(o.value) !== -1
+    );
   });
+
+  /** What the reader typed, against both the name and the code */
+  var needle = query.trim().toLowerCase();
+  var matches = function (o: MangaToolsOption) {
+    if (!needle) return true;
+    return (
+      o.label.toLowerCase().indexOf(needle) !== -1 ||
+      o.value.toLowerCase().indexOf(needle) !== -1
+    );
+  };
 
   var chosen = options.filter(function (o) {
-    return o.value === selected;
+    return selection.included.indexOf(o.value) !== -1;
+  });
+  var excludedChosen = options.filter(function (o) {
+    return selection.excluded.indexOf(o.value) !== -1;
   });
   var candidates = options.filter(function (o) {
-    return o.value !== selected;
+    return (
+      selection.included.indexOf(o.value) === -1 &&
+      selection.excluded.indexOf(o.value) === -1 &&
+      matches(o)
+    );
   });
 
-  function select(code: string) {
-    applyLanguage(props.filter, history, code === selected ? "" : code);
+  var flagFor = function (o: MangaToolsOption): string | null {
+    return NS.showFlags ? o.flag : null;
+  };
+
+  // The section above the fold-away list: whatever is being asked for, in the
+  // same "selected-object" shape as a chosen studio. The modifier entries are
+  // shown in parentheses, exactly as Stash labels its own.
+  var chosenItems: ReactElement[] = [];
+  if (selection.modifier) {
+    chosenItems.push(
+      <li className="selected-object modifier-object" key="modifier">
+        <a tabIndex={0} onClick={function () { setModifier(selection.modifier as "any"); }}>
+          <div className="label-group">
+            <Icon className="fa-fw include-button" icon={Solid.faCheckCircle} />
+            <span className="TruncatedText inline selected-object-label">
+              {"(" +
+                message(
+                  intl,
+                  "criterion_modifier_values." + selection.modifier,
+                  selection.modifier === "any" ? "Any" : "None"
+                ) +
+                ")"}
+            </span>
+          </div>
+        </a>
+      </li>
+    );
   }
+  chosen.map(function (o) {
+    chosenItems.push(
+      <LanguageItem
+        key={"in-" + o.value}
+        label={o.label}
+        flag={flagFor(o)}
+        state="included"
+        onClick={function () {
+          toggleInclude(o.value);
+        }}
+      />
+    );
+  });
 
   var section = (
     <div className="sidebar-section sidebar-list-filter">
@@ -390,38 +611,87 @@ export function SidebarLanguageFilter(props: {
           <span>{fieldLabel(intl)}</span>
         </Bootstrap.Button>
       </div>
+
       {/* Outside the collapse, like Stash's own sections: what is selected stays
           visible even when the list of choices is folded away. */}
-      {chosen.length ? (
-        <ul className="selected-list">
-          {chosen.map(function (o) {
+      {chosenItems.length ? (
+        <ul className="selected-list">{chosenItems}</ul>
+      ) : null}
+      {excludedChosen.length ? (
+        <ul className="selected-list excluded-list">
+          {excludedChosen.map(function (o) {
             return (
               <LanguageItem
-                key={o.value}
-                name={o.label}
-                flag={NS.showFlags ? o.flag : null}
-                selected
+                key={"ex-" + o.value}
+                label={o.label}
+                flag={flagFor(o)}
+                state="excluded"
                 onClick={function () {
-                  select(o.value);
+                  toggleExclude(o.value);
                 }}
               />
             );
           })}
         </ul>
       ) : null}
+
       <Bootstrap.Collapse in={open} mountOnEnter unmountOnExit>
         <div>
           <div className="queryable-candidate-list">
+            {/* Stash searches its candidates server-side and debounces the input;
+                these fourteen are already in memory, so filtering is immediate. */}
+            <div className="clearable-input-group">
+              <input
+                className="clearable-text-field form-control"
+                value={query}
+                placeholder={message(intl, "actions.search", "Search") + "…"}
+                onChange={function (e: { target: { value: string } }) {
+                  setQuery(e.target.value);
+                }}
+              />
+              {query ? (
+                <Bootstrap.Button
+                  className="clearable-text-field-clear"
+                  onClick={function () {
+                    setQuery("");
+                  }}
+                >
+                  <Icon icon={Solid.faTimes} />
+                </Bootstrap.Button>
+              ) : null}
+            </div>
             <ul>
+              {/* (Any) and (None) — the two states a language field can be in
+                  before any particular language is chosen. */}
+              <LanguageItem
+                label={"(" + message(intl, "criterion_modifier_values.any", "Any") + ")"}
+                state={selection.modifier === "any" ? "included" : "candidate"}
+                canExclude={false}
+                onClick={function () {
+                  setModifier("any");
+                }}
+              />
+              <LanguageItem
+                label={"(" + message(intl, "criterion_modifier_values.none", "None") + ")"}
+                state={selection.modifier === "none" ? "included" : "candidate"}
+                canExclude={false}
+                onClick={function () {
+                  setModifier("none");
+                }}
+              />
               {candidates.map(function (o) {
                 return (
                   <LanguageItem
                     key={o.value}
-                    name={o.label}
-                    flag={NS.showFlags ? o.flag : null}
-                    selected={false}
+                    label={o.label}
+                    flag={flagFor(o)}
+                    state="candidate"
+                    canExclude
                     onClick={function () {
-                      select(o.value);
+                      toggleInclude(o.value);
+                    }}
+                    onExclude={function () {
+                      toggleExclude(o.value);
                     }}
                   />
                 );

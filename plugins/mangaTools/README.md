@@ -146,13 +146,20 @@ wall are all covered by one hook.
 
 #### Filtering
 
-The gallery list's sidebar gains a **language** section — the same shape as
-Stash's own studio section: a heading you can fold away, the selected language
-above it, and every other language below. Clicking one narrows the list; clicking
-the selected one clears it.
+The gallery list's sidebar gains a **language** section, built to work the way
+Stash's own studio section does:
 
-There are three decisions in that paragraph worth knowing, because each rules out
-an approach that looks more obvious.
+- a heading you can fold away, with whatever is selected **above** it, so the
+  selection stays visible while the list of choices is folded
+- a search box over the candidates, matching both the name and the code
+- two modifier entries first — **(Any)**, galleries carrying a language at all,
+  and **(None)**, galleries carrying none
+- every language below, each with an **include** button and an **exclude** one
+- excluded values collected in their own list, marked with a cross rather than a
+  tick
+
+There are three decisions behind that worth knowing, because each rules out an
+approach that looks more obvious.
 
 **It is in the sidebar, not the "edit filters" dialog.** The dialog is where a
 criterion is normally added, and it is unreachable: its list of criteria comes
@@ -175,23 +182,36 @@ Stash's own state and the count disagreeing with what is on screen.
 Nothing here reimplements Stash's encoding. The obvious route in would be to
 build the query string by hand, but the format is private
 (`translateJSON`, which swaps braces for parentheses). Instead the plugin clones
-the live filter model and asks *it* for the query parameters, merging one
-condition into the existing custom-fields criterion. All of that is public API on
+the live filter model and asks *it* for the query parameters, merging its
+conditions into the existing custom-fields criterion. All of that is public API on
 the model: `clone`, `options.criterionOptions`, `makeCriterion`,
 `makeQueryParameters`.
 
-**One language at a time.** The criterion holds a list of conditions, and Stash's
-own editor only ever gives one value to `EQUALS`. Two conditions on the same
-field would be ANDed — this plugin already relies on that, in the query that
-builds the badge map — so picking two languages would match nothing. Single
-selection cannot fail that way. (Worth revisiting if `EQUALS` with several values
-turns out to OR them; that would need one query against a real library to
-confirm.)
+**What the conditions mean**, measured against a real library rather than assumed:
+
+| conditions | meaning |
+|---|---|
+| `EQUALS [a, b]` | matches `a` **or** `b` — several values are a union |
+| `NOT_EQUALS [a, b]` | excludes both, **and also matches galleries with no language field** |
+| `NOT_NULL` | galleries carrying a language |
+| `IS_NULL` | galleries carrying none |
+| `EQUALS [a]` + `NOT_EQUALS [b]` | include `a`, exclude `b` — the conditions are ANDed |
+
+That last row is what makes include and exclude compose: `EQUALS [a]` with
+`NOT_EQUALS [a]` returns nothing, which only AND semantics can produce. The
+second row is why **exclude mirrors Stash's own modifier verbatim** rather than
+being something cleverer — excluding one language on a mostly-untagged library
+still returns nearly everything, and matching the studio filter while documenting
+that is more honest than quietly meaning something else by the word.
 
 The section honours the **enabled languages** setting, so the two never disagree
-about which languages this library uses — with one exception: a language already
-being filtered on stays visible even if it has since been disabled, since
+about which languages this library uses — with one exception: a value already
+included or excluded stays visible even if it has since been disabled, since
 otherwise the list would be filtered by something invisible.
+
+**Widening it to select several languages is a small change**, since `EQUALS`
+already unions its values. It is single at the moment only because the studio
+filter it mirrors is built with `singleValue: true`.
 
 ### Settings
 
@@ -341,16 +361,22 @@ Against a real Stash:
 6. **Check the scope**: open any scene or performer edit page — there should be
    **no** language dropdown (the plugin only acts on gallery pages)
 7. **Check filtering**: gallery list → the sidebar should have a **语言** section
-   listing every language → click one and the list should narrow to it, with a
-   filter tag above the results and a changed URL. Click the selected language
-   again and the filter should clear.
-   - **Check it composes**: add a hand-made filter (filter panel → Custom Fields
-     → field `test`, value `123`), then pick a language. Both conditions should
-     survive — the language is merged into the custom-fields criterion, not
-     swapped in for it.
-   - The same condition is reachable by hand: filter panel → Custom Fields →
-     field `language`, modifier `=`, value `zh-Hans`. Both routes write the same
-     thing, so a filter set through one should show up in the other.
+   with a search box, **(任意)** and **(无)** first, then every language.
+   - **Include**: click a language → it moves above the fold-away list with a
+     tick, the list narrows, a filter tag appears, and the URL changes. Click it
+     again and the filter clears.
+   - **(无)** should list the galleries with no language set — the untagged ones.
+   - **Exclude**: hover a candidate and press its **exclude** button → the
+     language appears in a second list, marked with a cross. Note how many
+     results that leaves: every untagged gallery still matches.
+   - **Search**: type `日` and the candidates should narrow to the Japanese and
+     Chinese entries.
+   - **Check it composes**: include one language and exclude another; both
+     conditions are sent, and including and excluding the *same* language should
+     return nothing at all.
+   - The same conditions are reachable by hand: filter panel → Custom Fields →
+     field `language`. Both routes write the same thing, so a filter set through
+     one should show up in the other.
 8. **Check the settings**: Settings → Plugins → Manga Tools, tick only e.g.
    `日本語` and `English`, save, then open a gallery edit page — the dropdown
    should offer only those two, while a gallery already set to Vietnamese still
@@ -445,9 +471,14 @@ values through the plugin's dropdown never hits this, since that writes lowercas
   `.gallery-details` (detail page), `.form-group[data-field="studio_id"]` (edit
   page — confirmed to exist on v0.31.1), `[data-field="studio"]` (bulk dialog) and
   `.sidebar-saved-filters` (filter sidebar).
-- **The filter is one language at a time.** The custom-fields criterion holds a
-  list of conditions and the backend ANDs them, so two languages would match
-  nothing. See [Filtering](#filtering).
+- **The filter includes one language at a time**, mirroring the studio filter it
+  is modelled on (Stash builds that with `singleValue: true`). Excluding several
+  at once is not offered either. Both are expressible — see
+  [Filtering](#filtering).
+- **Excluding a language also matches galleries with no language set**, because
+  that is what Stash's `NOT_EQUALS` means. On a library where most galleries are
+  untagged, "not Japanese" therefore returns nearly everything; `(None)` asks for
+  the untagged ones directly.
 - **The filter is a sidebar section, not a criterion in the filter dialog.** The
   dialog's criterion list cannot be extended from a plugin — see
   [Filtering](#filtering) for the three reasons. It also means the language does

@@ -224,13 +224,35 @@ function makeEl(tag) {
 
 const documentRoot = makeEl("body");
 
-// Stands in for Stash's locale files: config.ui.language.heading exists in every
-// UI language. These strings are test data — do not translate them.
-const FIELD_LABELS = {
-  "zh-CN": "语言",
-  "zh-TW": "語言",
-  "en-US": "Language",
-  "ja-JP": "言語",
+// Stands in for Stash's locale files: every message this plugin reads, in the UI
+// languages the tests use. `config.ui.language.heading` exists in all of them,
+// which is why the plugin uses it for the label rather than carrying its own.
+// These strings are test data — do not translate them.
+const MESSAGES = {
+  "zh-CN": {
+    "config.ui.language.heading": "语言",
+    "actions.search": "搜索",
+    "criterion_modifier_values.any": "任意",
+    "criterion_modifier_values.none": "无",
+  },
+  "zh-TW": {
+    "config.ui.language.heading": "語言",
+    "actions.search": "搜尋",
+    "criterion_modifier_values.any": "任意",
+    "criterion_modifier_values.none": "無",
+  },
+  "en-US": {
+    "config.ui.language.heading": "Language",
+    "actions.search": "Search",
+    "criterion_modifier_values.any": "Any",
+    "criterion_modifier_values.none": "None",
+  },
+  "ja-JP": {
+    "config.ui.language.heading": "言語",
+    "actions.search": "検索",
+    "criterion_modifier_values.any": "任意",
+    "criterion_modifier_values.none": "なし",
+  },
 };
 
 const PluginApi = {
@@ -274,9 +296,7 @@ const PluginApi = {
         // Stands in for Stash's react-intl: a hit in the locale files returns the
         // translation, otherwise defaultMessage is used.
         formatMessage: ({ id, defaultMessage }) =>
-          id === "config.ui.language.heading"
-            ? FIELD_LABELS[currentLocale] || defaultMessage
-            : defaultMessage,
+          (MESSAGES[currentLocale] || {})[id] || defaultMessage,
       }),
     },
     FontAwesomeSolid: {
@@ -1086,105 +1106,148 @@ assert.ok(
 );
 console.log("✓ bundle shape (single script file, self-contained, JSX transformed)");
 
-// ── 10c. Gallery list: filtering by language ───────────────────────
+// ── 10c. Gallery list: what the language filter reads and writes ───
 // The filter works by rewriting the URL, which Stash's list hook re-reads on
 // every navigation. So what is worth testing is exactly what this plugin
 // contributes: which conditions it merges into the filter, that it leaves the
 // rest of the filter alone, and that the section looks like one of Stash's own.
 
-// Reads the current selection out of the model
-const withLanguage = (field, value) =>
-  makeFilterModel([customFieldsCriterion([{ field, modifier: "EQUALS", value }])]);
+const sel = (modifier, included, excluded) => ({
+  modifier: modifier || "",
+  included: included || [],
+  excluded: excluded || [],
+});
+const conditionsOf = (modifier, value) => {
+  const c = { field: "language", modifier };
+  if (value !== undefined) c.value = value;
+  return c;
+};
 
-assert.strictEqual(NS.selectedFilterLanguage(makeFilterModel()), "",
-  "a filter with no criteria means no language");
-assert.strictEqual(NS.selectedFilterLanguage(withLanguage("language", ["ja"])), "ja");
-assert.strictEqual(NS.selectedFilterLanguage(withLanguage("Language", ["ja"])), "ja",
-  "field names are matched case-insensitively, as everywhere else in this plugin");
-assert.strictEqual(NS.selectedFilterLanguage(withLanguage("author", ["x"])), "",
-  "another field's condition is not a language");
-assert.strictEqual(
-  NS.selectedFilterLanguage(makeFilterModel([
-    customFieldsCriterion([{ field: "language", modifier: "NOT_NULL" }]),
-  ])),
-  "",
-  "a modifier with no value reads as no language, not as a crash"
+// --- reading: every shape the model can be in ---------------------
+assert.deepStrictEqual(NS.readLanguageFilter(makeFilterModel()), sel(),
+  "a filter with no criteria means no language selection");
+assert.deepStrictEqual(
+  NS.readLanguageFilter(makeFilterModel([customFieldsCriterion([conditionsOf("NOT_NULL")])])),
+  sel("any"),
+  "NOT_NULL is the (Any) state"
+);
+assert.deepStrictEqual(
+  NS.readLanguageFilter(makeFilterModel([customFieldsCriterion([conditionsOf("IS_NULL")])])),
+  sel("none"),
+  "IS_NULL is the (None) state"
+);
+assert.deepStrictEqual(
+  NS.readLanguageFilter(makeFilterModel([customFieldsCriterion([conditionsOf("EQUALS", ["ja"])])])),
+  sel("", ["ja"]),
+  "EQUALS is an included value"
+);
+assert.deepStrictEqual(
+  NS.readLanguageFilter(makeFilterModel([customFieldsCriterion([conditionsOf("NOT_EQUALS", ["ko"])])])),
+  sel("", [], ["ko"]),
+  "NOT_EQUALS is an excluded value"
+);
+assert.deepStrictEqual(
+  NS.readLanguageFilter(makeFilterModel([customFieldsCriterion([
+    conditionsOf("EQUALS", ["ja"]),
+    conditionsOf("NOT_EQUALS", ["ko"]),
+  ])])),
+  sel("", ["ja"], ["ko"]),
+  "include and exclude are two conditions and both are read"
+);
+assert.deepStrictEqual(
+  NS.readLanguageFilter(makeFilterModel([customFieldsCriterion([
+    conditionsOf("EQUALS", ["ja"]),
+    { field: "author", modifier: "EQUALS", value: ["x"] },
+  ])])),
+  sel("", ["ja"]),
+  "another field's condition is not a language selection"
+);
+assert.deepStrictEqual(
+  NS.readLanguageFilter(makeFilterModel([customFieldsCriterion([
+    { field: "Language", modifier: "EQUALS", value: ["ja"] },
+  ])])),
+  sel("", ["ja"]),
+  "field names are matched case-insensitively, as everywhere else in this plugin"
+);
+assert.deepStrictEqual(
+  NS.readLanguageFilter(makeFilterModel([customFieldsCriterion([
+    conditionsOf("MATCHES_REGEX", ["ja"]),
+  ])])),
+  sel(),
+  "a modifier this plugin does not use is ignored rather than misread"
 );
 
+// --- writing ------------------------------------------------------
 /** Runs the merge and reports what it asked Stash to encode */
-function writeLanguage(code, conditions) {
+function writeFilter(selection, conditions) {
   const model = makeFilterModel(
     conditions === undefined ? [] : [customFieldsCriterion(conditions)]
   );
   encodedCriteria.length = 0;
-  const result = NS.filterLanguageQuery(model, code);
+  const result = NS.languageFilterQuery(model, selection);
   return {
     result,
     criteria: encodedCriteria.length ? encodedCriteria[encodedCriteria.length - 1] : null,
-    original: model,
   };
 }
-
 const languageConditions = (criteria) =>
   (criteria || [])
     .filter((c) => c.criterionOption && c.criterionOption.type === "custom_fields")
     .flatMap((c) => c.value || []);
 
-let w = writeLanguage("ja");
-assert.ok(w.result, "setting a language should produce query parameters");
-assert.deepStrictEqual(languageConditions(w.criteria),
-  [{ field: "language", modifier: "EQUALS", value: ["ja"] }]);
+let w = writeFilter(sel("", ["ja"]));
+assert.ok(w.result, "a selection should produce query parameters");
+assert.deepStrictEqual(languageConditions(w.criteria), [conditionsOf("EQUALS", ["ja"])]);
+
+// The two modifier states carry no value at all
+assert.deepStrictEqual(languageConditions(writeFilter(sel("any")).criteria),
+  [conditionsOf("NOT_NULL")], "(Any) should be NOT_NULL");
+assert.deepStrictEqual(languageConditions(writeFilter(sel("none")).criteria),
+  [conditionsOf("IS_NULL")], "(None) should be IS_NULL");
+
+// Include and exclude ride together, which works because the conditions are ANDed
+assert.deepStrictEqual(
+  languageConditions(writeFilter(sel("", ["ja"], ["ko"])).criteria),
+  [conditionsOf("EQUALS", ["ja"]), conditionsOf("NOT_EQUALS", ["ko"])],
+  "including one language and excluding another should send both conditions"
+);
 
 // The model is Stash's own live state object, so it must come out unchanged —
 // mutating it would change the filter without telling anything to re-render.
 const liveModel = makeFilterModel([
-  customFieldsCriterion([{ field: "language", modifier: "EQUALS", value: ["ja"] }]),
+  customFieldsCriterion([conditionsOf("EQUALS", ["ja"])]),
 ]);
-NS.filterLanguageQuery(liveModel, "ko");
-assert.deepStrictEqual(liveModel.criteria[0].value,
-  [{ field: "language", modifier: "EQUALS", value: ["ja"] }],
+NS.languageFilterQuery(liveModel, sel("", ["ko"]));
+assert.deepStrictEqual(liveModel.criteria[0].value, [conditionsOf("EQUALS", ["ja"])],
   "the live filter model must not be mutated");
 
-// Other custom-field conditions survive: a language filter composes with a
-// hand-made one instead of discarding it.
-w = writeLanguage("ja", [{ field: "author", modifier: "EQUALS", value: ["x"] }]);
-assert.deepStrictEqual(languageConditions(w.criteria),
-  [
-    { field: "author", modifier: "EQUALS", value: ["x"] },
-    { field: "language", modifier: "EQUALS", value: ["ja"] },
-  ],
-  "another custom field's condition should be kept");
-
-// Changing the language replaces ours rather than adding a second condition —
-// two conditions on one field would be ANDed by the backend and match nothing.
-w = writeLanguage("ko", [
-  { field: "language", modifier: "EQUALS", value: ["ja"] },
+// Another custom field's condition survives: this composes with a hand-made
+// filter rather than discarding it.
+w = writeFilter(sel("", ["ja"]), [
   { field: "author", modifier: "EQUALS", value: ["x"] },
+  conditionsOf("EQUALS", ["ko"]),
 ]);
 assert.deepStrictEqual(languageConditions(w.criteria),
-  [
-    { field: "author", modifier: "EQUALS", value: ["x"] },
-    { field: "language", modifier: "EQUALS", value: ["ko"] },
-  ]);
+  [{ field: "author", modifier: "EQUALS", value: ["x"] }, conditionsOf("EQUALS", ["ja"])],
+  "another custom field's condition should be kept, and the language replaced");
 
 // A case variant of the field name is dropped, for the same reason.
-w = writeLanguage("ko", [{ field: "Language", modifier: "EQUALS", value: ["ja"] }]);
-assert.deepStrictEqual(languageConditions(w.criteria),
-  [{ field: "language", modifier: "EQUALS", value: ["ko"] }],
+w = writeFilter(sel("", ["ja"]), [{ field: "Language", modifier: "EQUALS", value: ["ko"] }]);
+assert.deepStrictEqual(languageConditions(w.criteria), [conditionsOf("EQUALS", ["ja"])],
   "a capitalised field name must not leave a second condition behind");
 
-// Clearing removes the condition, and the criterion with it — an empty
+// Clearing removes the conditions, and the criterion with them — an empty
 // criterion would otherwise show up as a filter tag with nothing in it.
-w = writeLanguage("", [{ field: "language", modifier: "EQUALS", value: ["ja"] }]);
-assert.deepStrictEqual(w.criteria, [], "clearing should drop the criterion entirely");
-
-// But a criterion that still holds something else stays.
-w = writeLanguage("", [
-  { field: "language", modifier: "EQUALS", value: ["ja"] },
-  { field: "author", modifier: "EQUALS", value: ["x"] },
-]);
-assert.deepStrictEqual(languageConditions(w.criteria),
-  [{ field: "author", modifier: "EQUALS", value: ["x"] }]);
+assert.deepStrictEqual(writeFilter(sel(), [conditionsOf("EQUALS", ["ja"])]).criteria, [],
+  "clearing should drop the criterion entirely");
+assert.deepStrictEqual(
+  languageConditions(writeFilter(sel(), [
+    conditionsOf("EQUALS", ["ja"]),
+    { field: "author", modifier: "EQUALS", value: ["x"] },
+  ]).criteria),
+  [{ field: "author", modifier: "EQUALS", value: ["x"] }],
+  "…but a criterion that still holds something else stays"
+);
 
 // Only the custom-fields criterion is touched; other criteria pass through.
 // Compared by content, not identity: the model is cloned on the way, which is
@@ -1194,20 +1257,17 @@ const mixed = makeFilterModel([
   customFieldsCriterion([]),
 ]);
 encodedCriteria.length = 0;
-NS.filterLanguageQuery(mixed, "ja");
-assert.deepStrictEqual(
-  encodedCriteria[0].map((c) => c.criterionOption.type),
-  ["studios", "custom_fields"],
-  "unrelated criteria should be kept, with ours alongside"
-);
+NS.languageFilterQuery(mixed, sel("", ["ja"]));
+assert.deepStrictEqual(encodedCriteria[0].map((c) => c.criterionOption.type),
+  ["studios", "custom_fields"], "unrelated criteria should be kept, with ours alongside");
 assert.deepStrictEqual(encodedCriteria[0][0].value, [], "…and left untouched");
 
 // A filter that offers no custom-fields criterion cannot take one
 const noCustomFields = makeFilterModel([]);
 noCustomFields.options = { criterionOptions: [] };
-assert.strictEqual(NS.filterLanguageQuery(noCustomFields, "ja"), null,
+assert.strictEqual(NS.languageFilterQuery(noCustomFields, sel("", ["ja"])), null,
   "without the option there is nowhere to put the condition, and it says so");
-console.log("✓ filter conditions (read / set / merge / replace / clear / not mutated)");
+console.log("✓ filter conditions (read any/none/include/exclude, write, merge, clear, not mutated)");
 
 // ── 10d. The sidebar section itself ────────────────────────────────
 // Stand in for the gallery list's sidebar, in the shape the real one has: the
@@ -1230,9 +1290,13 @@ sidebarFooter.className = "sidebar-footer";
 sidebar.appendChild(sidebarFooter);
 
 /** Renders the section and follows the portal it makes */
-const renderLanguageFilter = (model) => {
-  const el = call("GalleryList", { filter: model || makeFilterModel(), selectedIds: new Set() })
-    .props.children[0];
+const renderLanguageFilter = (conditions) => {
+  const el = call("GalleryList", {
+    filter: makeFilterModel(
+      conditions === undefined ? [] : [customFieldsCriterion(conditions)]
+    ),
+    selectedIds: new Set(),
+  }).props.children[0];
   return el.type(el.props);
 };
 
@@ -1259,88 +1323,117 @@ assert.strictEqual(
   "语言",
   "the heading is Stash's own word for language, from its locale files"
 );
+assert.strictEqual(find(sectionEl, (n) => n.type === "Collapse").props.in, true,
+  "open by default");
+assert.strictEqual(find(sectionEl, (n) => n.type === "Collapse").props.mountOnEnter, true,
+  "the candidates should not be mounted until the section is opened");
+assert.strictEqual(typeof headerButton.props.onClick, "function",
+  "the header should be clickable — the transition itself is not asserted, since "
+  + "this stub's useState has a no-op setter and asserting it would test the stub");
 
-// Open by default, chevron pointing down; the candidate list holds every
-// language, since nothing is selected yet.
-const chevron = find(sectionEl, (n) => n.type === "Icon").props.icon;
-assert.strictEqual(chevron, "faChevronDown", "an open section points its chevron down");
-assert.strictEqual(find(sectionEl, (n) => n.type === "Collapse").props.in, true);
-assert.strictEqual(sectionEl.props.children[1], null,
-  "with nothing selected the selected-list is absent, not empty");
-
+// The candidate list: a search box, then Stash's two modifier entries, then
+// every language.
 const candidateList = find(sectionEl, (n) => {
   return n.props && n.props.className === "queryable-candidate-list";
 });
 assert.ok(candidateList, "the candidates should be in a queryable-candidate-list");
+
+const searchField = find(candidateList, (n) =>
+  n.props && n.props.className === "clearable-text-field form-control");
+assert.ok(searchField, "the candidates should be searchable, like Stash's own");
+assert.strictEqual(searchField.props.placeholder, "搜索…",
+  "with Stash's placeholder, localised");
+
 const candidateItems = [];
 find(candidateList, (n) => {
   if (n.props && n.props.className === "unselected-object") candidateItems.push(n);
   return false;
 });
-assert.strictEqual(candidateItems.length, Object.keys(NS.LANGUAGES).length,
-  "every language should be offered as a candidate");
+assert.strictEqual(candidateItems.length, Object.keys(NS.LANGUAGES).length + 2,
+  "every language should be offered, plus (Any) and (None)");
+const labelOf = (item) =>
+  find(item, (n) => n.props && typeof n.props.children === "string").props.children;
+assert.deepStrictEqual(candidateItems.slice(0, 2).map(labelOf), ["(任意)", "(无)"],
+  "the modifier entries come first, in Stash's own parenthesised wording, localised");
+assert.strictEqual(candidateItems.some((i) => labelOf(i) === "日语"), true,
+  "and the languages after them");
 
 // Flags are drawn in the sidebar like everywhere else
 assert.strictEqual(NS.showFlags, true, "precondition: flags are on");
-assert.ok(find(candidateList, (n) => /fi fi-/.test(n.props.className || "")),
-  "candidates should carry a flag");
+assert.ok(
+  find(candidateItems.find((i) => labelOf(i) === "日语"),
+    (n) => /fi fi-/.test(n.props.className || "")),
+  "candidates should carry a flag"
+);
 
 // Clicking a language rewrites the URL rather than keeping state of its own
-const jaCandidate = candidateItems.find((i) =>
-  find(i, (n) => n.props && n.props.children === "日语")
-);
-assert.ok(jaCandidate, "precondition: 日语 is offered");
-const jaLink = find(jaCandidate, (n) => n.type === "a");
+const jaCandidate = candidateItems.find((i) => labelOf(i) === "日语");
 historyReplaces.length = 0;
-jaLink.props.onClick();
+find(jaCandidate, (n) => n.type === "a").props.onClick();
 assert.strictEqual(historyReplaces.length, 1, "clicking should apply the filter");
 assert.strictEqual(historyReplaces[0].pathname, "/galleries", "on the same page");
-assert.ok(/^ENCODED\(.*"language".*"ja"/.test(historyReplaces[0].search),
-  "and the URL should carry the language condition");
-console.log("✓ sidebar section (placement / native markup / candidates / click applies)");
+assert.ok(/"field":"language","modifier":"EQUALS","value":\["ja"\]/.test(historyReplaces[0].search),
+  "and the URL should carry an EQUALS condition for that language");
 
-// With a language selected, it moves to the selected list — outside the
-// collapse, so it stays visible when the candidates are folded away.
-section = renderLanguageFilter(withLanguage("language", ["ja"]));
-const selectedList = find(section.node, (n) => {
-  return n.props && n.props.className === "selected-list";
-});
-assert.ok(selectedList, "a selected language should appear in the selected-list");
+// The exclude button sits inside the row, so it has to stop the click reaching
+// the row's own include handler.
+const jaExclude = find(jaCandidate, (n) =>
+  n.props && n.props.className === "minimal exclude-button");
+assert.ok(jaExclude, "a candidate should offer an exclude button");
+assert.strictEqual(find(jaExclude, (n) => n.props.children === "exclude") !== null, true,
+  "labelled the way Stash labels it");
+historyReplaces.length = 0;
+let stopped = false;
+jaExclude.props.onClick({ stopPropagation: () => { stopped = true; } });
+assert.strictEqual(stopped, true, "the exclude click must stop propagating");
+assert.strictEqual(historyReplaces.length, 1, "…and exclude rather than include");
+assert.ok(/"modifier":"NOT_EQUALS","value":\["ja"\]/.test(historyReplaces[0].search),
+  "the URL should carry a NOT_EQUALS condition");
+console.log("✓ sidebar section (placement / native markup / search / candidates / include / exclude)");
+
+// Clicking (Any) asks for galleries that have a language at all
+const anyItem = candidateItems.find((i) => labelOf(i) === "(任意)");
+historyReplaces.length = 0;
+find(anyItem, (n) => n.type === "a").props.onClick();
+assert.ok(/"modifier":"NOT_NULL"/.test(historyReplaces[0].search),
+  "(Any) should ask for galleries carrying a language");
+console.log("✓ sidebar section (modifier entries: any / none)");
+
+// With something selected, it moves above the fold-away list — outside the
+// collapse, so it stays visible — and the candidates no longer offer it.
+section = renderLanguageFilter([conditionsOf("EQUALS", ["ja"])]);
+const selectedList = find(section.node, (n) =>
+  n.props && n.props.className === "selected-list");
+assert.ok(selectedList, "a chosen language should appear in the selected-list");
+assert.strictEqual(section.node.props.children[1], selectedList,
+  "the selected list sits outside the collapse, where Stash puts it");
+assert.strictEqual(find(selectedList, (n) => n.type === "Icon").props.icon, "faCheckCircle",
+  "a chosen entry is ticked");
 assert.strictEqual(find(selectedList, (n) => n.props.children === "日语") !== null, true);
-assert.strictEqual(
-  section.node.props.children[1],
-  selectedList,
-  "the selected list sits outside the collapse, where Stash puts it"
-);
 
-// Clicking the selected language clears the filter
-const selectedItems = [];
-find(selectedList, (n) => {
-  if (n.props && n.props.className === "selected-object") selectedItems.push(n);
+const remaining = [];
+find(find(section.node, (n) =>
+  n.props && n.props.className === "queryable-candidate-list"), (n) => {
+  if (n.props && n.props.className === "unselected-object") remaining.push(n);
   return false;
 });
-assert.strictEqual(selectedItems.length, 1);
-const selectedLink = find(selectedItems[0], (n) => n.type === "a");
-assert.strictEqual(
-  find(selectedItems[0], (n) => n.type === "Icon").props.icon,
-  "faCheckCircle",
-  "a selected entry is ticked"
-);
-historyReplaces.length = 0;
-selectedLink.props.onClick();
-assert.ok(/^ENCODED\(\[\]\)$/.test(historyReplaces[0].search),
-  "clicking the selected language should clear the filter");
-console.log("✓ sidebar section (selected list / click again clears)");
+assert.strictEqual(remaining.length, Object.keys(NS.LANGUAGES).length + 2 - 1,
+  "a chosen language should not also be offered as a candidate");
 
-// The header is wired to fold the candidates away. The transition itself is not
-// asserted: this stub's useState has a no-op setter, so a click could not change
-// what renders, and a test of that would be testing the stub.
-const foldButton = find(section.node, (n) => n.type === "Button");
-assert.strictEqual(typeof foldButton.props.onClick, "function",
-  "the header should be clickable");
-assert.strictEqual(find(section.node, (n) => n.type === "Collapse").props.mountOnEnter, true,
-  "the candidates should not be mounted until the section is opened");
-console.log("✓ sidebar section (collapsible header)");
+// Clicking the chosen one clears it
+historyReplaces.length = 0;
+find(selectedList, (n) => n.type === "a").props.onClick();
+assert.strictEqual(historyReplaces[0].search, "ENCODED([])",
+  "clicking the chosen language should clear the filter");
+
+// An excluded language goes in its own list, which Stash marks excluded-list
+section = renderLanguageFilter([conditionsOf("NOT_EQUALS", ["ko"])]);
+const excludedList = find(section.node, (n) =>
+  n.props && n.props.className === "selected-list excluded-list");
+assert.ok(excludedList, "an excluded language should get the excluded-list");
+assert.strictEqual(find(excludedList, (n) => n.type === "Icon").props.icon, "faTimesCircle",
+  "and be marked with a cross rather than a tick");
+console.log("✓ sidebar section (selected list / click clears / excluded list)");
 
 setTimeout(() => {
   // ── 11. Badges (after the refresh promise settles) ───────────────
