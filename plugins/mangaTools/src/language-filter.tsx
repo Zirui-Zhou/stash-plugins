@@ -292,15 +292,17 @@ function message(intl: MangaToolsIntl, id: string, fallback: string): string {
 }
 
 /**
- * Whether the reader has opened or closed the section, remembered for the
- * session. null means no preference yet, and the section then follows whether
- * the filter is in use.
+ * Where the section's open/closed state is kept: the history entry's own state,
+ * which is where Stash keeps the same thing for its sections — under a
+ * `sectionOpen` object it owns. A separate key avoids colliding with it.
  *
- * Stash remembers this per section too — in the history entry's state, so it
- * survives navigation — but that state lives in a context a plugin cannot reach.
- * A module variable reproduces the effect within a session.
+ * The choice of place matters. `history.state` survives a reload, so a reader
+ * who opened the section to pick a language finds it still open afterwards,
+ * which is the behaviour Stash's own sections have. It is also readable
+ * synchronously on the first render, so there is nothing to correct afterwards
+ * and the section does not visibly move.
  */
-var sectionOpenPreference: boolean | null = null;
+var SECTION_STATE_KEY = "mangaToolsLanguageOpen";
 
 /** Class name of the section's mount point */
 var FILTER_HOST_CLASS = "manga-tools-field-host";
@@ -465,9 +467,17 @@ export function SidebarLanguageFilter(props: {
   var intl = PluginApi.libraries.Intl.useIntl();
   var history = PluginApi.libraries.ReactRouterDOM.useHistory();
 
-  var openState = React.useState(sectionOpenPreference);
-  var preference = openState[0];
-  var setPreference = openState[1];
+  // Read during the render rather than restored in an effect, so the first paint
+  // already has the right answer. Stash restores its sections in a `useEffect`,
+  // which is why they can appear to jump on a reload; there is no need to copy
+  // that part.
+  var openState = React.useState<boolean>(function () {
+    var state = history.location.state;
+    var stored = state ? state[SECTION_STATE_KEY] : undefined;
+    return typeof stored === "boolean" ? stored : false;
+  });
+  var open = openState[0];
+  var setOpen = openState[1];
 
   var queryState = React.useState("");
   var query = queryState[0];
@@ -595,25 +605,26 @@ export function SidebarLanguageFilter(props: {
     return NS.showFlags ? o.flag : null;
   };
 
-  var filterInUse =
-    !!selection.modifier ||
-    selection.included.length > 0 ||
-    selection.excluded.length > 0;
-
-  // Collapsed unless there is something to see: Stash's own sections start
-  // closed (CollapseButton defaults `open` to false, and the state it restores
-  // holds only what the reader toggled), and a sidebar of seven open sections is
-  // a wall. Opened when this filter is doing something, so the value narrowing
-  // the list is on screen rather than hidden behind a heading.
-  //
-  // That second half is this plugin's own: Stash does not open a section because
-  // its criterion is set. It is what makes the section useful for a filter that
-  // arrived by URL or from a saved filter, where nothing was clicked.
-  var open = preference === null ? filterInUse : preference;
-
+  /**
+   * Opens or closes the section, and records the choice where Stash records its
+   * own — so it survives a reload, which is what makes the section feel like it
+   * remembers rather than resetting every time.
+   *
+   * Deliberately *not* opened just because the filter is set. Stash does no such
+   * thing — nothing in it writes a section's open state except the reader's own
+   * click — and deriving it here would both diverge and flicker, since a filter
+   * arriving from the URL is known a render later than the first paint.
+   */
   function toggleOpen() {
-    sectionOpenPreference = !open;
-    setPreference(sectionOpenPreference);
+    var next = !open;
+    setOpen(next);
+    history.replace(
+      Object.assign({}, history.location, {
+        state: Object.assign({}, history.location.state, {
+          [SECTION_STATE_KEY]: next,
+        }),
+      })
+    );
   }
 
   // (Any) and (None) are the two states a language field can be in before any

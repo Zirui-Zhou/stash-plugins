@@ -37,7 +37,10 @@ const React = {
     else if (children.length > 1) next.children = children;
     return { type, props: next };
   },
-  useState: (init) => [init, () => {}],
+  // Matches React in the one way that matters here: a function argument is a
+  // lazy initialiser and gets called, not stored. The setter is inert — nothing
+  // in these tests can change state and read the result back.
+  useState: (init) => [typeof init === "function" ? init() : init, () => {}],
   // Effects are run immediately. The plugin uses them for mount-time work (the
   // bulk dialog's link hook-up), so an inert stub would never exercise it.
   // Cleanups are discarded: nothing in these tests unmounts a component.
@@ -1454,13 +1457,12 @@ section = renderLanguageFilter([
 const selectedList = find(section.node, (n) =>
   n.props && n.props.className === "selected-list");
 
-// The section opens itself when the filter is doing something, so whatever is
-// narrowing the list is visible — the case that matters when the filter arrived
-// from a URL or a saved filter rather than from a click here.
-assert.strictEqual(find(section.node, (n) => n.type === "Collapse").props.in, true,
-  "a filter in use should have its section open");
-assert.strictEqual(find(section.node, (n) => n.type === "Icon").props.icon, "faChevronDown",
-  "and the chevron should point down");
+// A filter being set does NOT open the section — Stash does no such thing
+// (nothing in it writes a section's open state but the reader's own click), and
+// deriving it here would flicker, since a filter arriving from the URL is known
+// a render later than the first paint.
+assert.strictEqual(find(section.node, (n) => n.type === "Collapse").props.in, false,
+  "a filter in use should not force the section open");
 
 assert.ok(selectedList, "a chosen language should appear in the selected-list");
 assert.strictEqual(section.node.props.children[1], selectedList,
@@ -1511,6 +1513,44 @@ assert.strictEqual(
   "with the excluded label class, as Stash has it"
 );
 console.log("✓ sidebar section (selected + excluded lists / row shapes / click clears)");
+
+// The open state lives in the history entry, where Stash keeps its own — so it
+// survives a reload, which is what a reader sees as "it remembers".
+fakeHistory.location.state = { mangaToolsLanguageOpen: true, somethingElse: 1 };
+section = renderLanguageFilter();
+assert.strictEqual(find(section.node, (n) => n.type === "Collapse").props.in, true,
+  "a remembered open state should be honoured on the first render");
+assert.strictEqual(find(section.node, (n) => n.type === "Icon").props.icon, "faChevronDown");
+
+// …and toggling records the choice in that same place, merging rather than
+// replacing whatever else the entry was holding.
+const searchBeforeToggle = fakeHistory.location.search;
+historyReplaces.length = 0;
+find(section.node, (n) => n.type === "Button").props.onClick();
+assert.strictEqual(historyReplaces.length, 1, "toggling should remember the choice");
+assert.deepStrictEqual(historyReplaces[0].state,
+  { mangaToolsLanguageOpen: false, somethingElse: 1 },
+  "the entry's other state must survive");
+assert.strictEqual(historyReplaces[0].search, searchBeforeToggle,
+  "and the URL's query must be left exactly as it was — this is not a filter change");
+fakeHistory.location.state = undefined;
+console.log("✓ sidebar section (open state remembered in the history entry)");
+
+// (Any) and (None) are absent while a value is chosen, and come back when it is
+// cleared — the state Stash offers them in.
+section = renderLanguageFilter([conditionsOf("NOT_NULL")]);
+const modifierItems = [];
+find(find(section.node, (n) =>
+  n.props && n.props.className === "queryable-candidate-list"), (n) => {
+  if (n.props && /modifier-object/.test(n.props.className || "")) modifierItems.push(n);
+  return false;
+});
+assert.strictEqual(modifierItems.length, 0,
+  "with the (Any) modifier set, the modifier entries belong above, not in the list");
+assert.strictEqual(
+  find(section.node, (n) => n.props && n.props.children === "(任意)") !== null, true,
+  "…and are shown as the chosen value"
+);
 
 // The search box's clear button cannot be reached from these tests: it only
 // renders once the box has text, and this stub's useState cannot type. Its one

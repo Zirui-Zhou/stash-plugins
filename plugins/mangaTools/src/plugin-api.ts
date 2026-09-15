@@ -209,10 +209,23 @@ export interface MangaToolsFilterModel {
   makeQueryParameters(): string;
 }
 
-/** react-router v5's history, as used by Stash's own filter hook */
+/**
+ * react-router v5's history, as used by Stash's own filter hook.
+ *
+ * `location.state` is the history entry's own state — the place Stash keeps its
+ * sidebar sections' open/closed state, and which survives a reload.
+ */
 export interface MangaToolsHistory {
-  location: { pathname?: string; search?: string };
-  replace(location: { pathname?: string; search?: string }): void;
+  location: {
+    pathname?: string;
+    search?: string;
+    state?: { [key: string]: unknown };
+  };
+  replace(location: {
+    pathname?: string;
+    search?: string;
+    state?: { [key: string]: unknown };
+  }): void;
 }
 
 /** The mutation StashService.useConfigurePlugin() returns */
