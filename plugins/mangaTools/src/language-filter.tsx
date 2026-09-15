@@ -60,10 +60,10 @@ const PluginApi = requirePluginApi();
 
 // Must stay: the classic JSX transform compiles every element to
 // React.createElement, which resolves to this binding.
-var React = PluginApi.React;
+const React = PluginApi.React;
 
 /** The `type` Stash's ListFilterOptions gives the custom-fields criterion */
-var CUSTOM_FIELDS_TYPE = "custom_fields";
+const CUSTOM_FIELDS_TYPE = "custom_fields";
 
 /**
  * The type this plugin registers its own criterion under, so the "edit filters"
@@ -72,7 +72,7 @@ var CUSTOM_FIELDS_TYPE = "custom_fields";
  * Deliberately a different type from `custom_fields`, and deliberately not what
  * gets written to the URL — see registerLanguageCriterionOption.
  */
-var LANGUAGE_TYPE = "language";
+const LANGUAGE_TYPE = "language";
 
 /**
  * What the section is currently asking for.
@@ -93,7 +93,7 @@ export interface MangaToolsLanguageSelection {
   excluded: string[];
 }
 
-var EMPTY_SELECTION: MangaToolsLanguageSelection = {
+const EMPTY_SELECTION: MangaToolsLanguageSelection = {
   modifier: "",
   included: [],
   excluded: [],
@@ -118,10 +118,10 @@ var EMPTY_SELECTION: MangaToolsLanguageSelection = {
 export function registerLanguageCriterionOption(
   filter: MangaToolsFilterModel
 ): void {
-  var options = filter?.options?.criterionOptions;
+  const options = filter?.options?.criterionOptions;
   if (!options) return;
 
-  var found: MangaToolsCriterionOption | null = null;
+  let found: MangaToolsCriterionOption | null = null;
   for (let i = 0; i < options.length; i++) {
     // Guarding on the array rather than a flag of our own: it is Stash's list
     // and it outlives this call, so asking it is both simpler and correct even
@@ -132,16 +132,16 @@ export function registerLanguageCriterionOption(
   if (!found) return;
 
   // Bound to a const so the closure below keeps the non-null type.
-  var customFieldsOption = found;
+  const customFieldsOption = found;
 
-  var option: MangaToolsCriterionOption = {
+  const option: MangaToolsCriterionOption = {
     type: LANGUAGE_TYPE,
     messageID: "config.ui.language.heading",
     makeCriterion: () => {
       // A real CustomFieldsCriterion, so CriterionEditor renders the editor
       // Stash wrote for it and the query it produces is the one the sidebar
       // already writes.
-      var criterion = customFieldsOption.makeCriterion();
+      const criterion = customFieldsOption.makeCriterion();
 
       // …relabelled as ours. Stash decides whether the card is in use by
       // comparing the criterion's option *type* against the card's, so without
@@ -193,7 +193,7 @@ export function registerLanguageCriterionOption(
 function customFieldsCriterion(
   filter: MangaToolsFilterModel
 ): MangaToolsFilterCriterion | null {
-  var criteria = filter?.criteria || [];
+  const criteria = filter?.criteria || [];
   for (let i = 0; i < criteria.length; i++) {
     const option = criteria[i]?.criterionOption;
     if (!option) continue;
@@ -213,7 +213,7 @@ function isLanguageCondition(
 
 /** The values of a condition, as codes */
 function conditionValues(condition: MangaToolsCustomFieldCondition): string[] {
-  var values = condition.value || [];
+  const values = condition.value || [];
   return values.map((v) => String(v));
 }
 
@@ -232,7 +232,7 @@ function conditionValues(condition: MangaToolsCustomFieldCondition): string[] {
 function isLanguageCriterion(
   criterion: MangaToolsFilterCriterion | null
 ): boolean {
-  var conditions = criterion?.value || [];
+  const conditions = criterion?.value || [];
   if (!conditions.length) return false;
 
   for (let i = 0; i < conditions.length; i++) {
@@ -246,7 +246,7 @@ function isLanguageCriterion(
 function languageCriterionOf(
   filter: MangaToolsFilterModel
 ): MangaToolsFilterCriterion | null {
-  var criterion = customFieldsCriterion(filter);
+  const criterion = customFieldsCriterion(filter);
   return criterion && isLanguageCriterion(criterion) ? criterion : null;
 }
 
@@ -278,7 +278,7 @@ function languageCriterionOf(
  * instead; see relabelTags.
  */
 function adoptLanguageCriterion(filter: MangaToolsFilterModel): void {
-  var criterion = languageCriterionOf(filter);
+  const criterion = languageCriterionOf(filter);
   if (!criterion) return;
   if (
     criterion.criterionOption &&
@@ -287,8 +287,8 @@ function adoptLanguageCriterion(filter: MangaToolsFilterModel): void {
     return;
   }
 
-  var options = filter.options?.criterionOptions || [];
-  var option: MangaToolsCriterionOption | null = null;
+  const options = filter.options?.criterionOptions || [];
+  let option: MangaToolsCriterionOption | null = null;
   for (let i = 0; i < options.length; i++) {
     if (options[i].type === LANGUAGE_TYPE) option = options[i];
   }
@@ -310,10 +310,10 @@ function adoptLanguageCriterion(filter: MangaToolsFilterModel): void {
 function readLanguageFilter(
   filter: MangaToolsFilterModel
 ): MangaToolsLanguageSelection {
-  var criterion = customFieldsCriterion(filter);
+  const criterion = customFieldsCriterion(filter);
   if (!criterion?.value) return EMPTY_SELECTION;
 
-  var selection: MangaToolsLanguageSelection = {
+  const selection: MangaToolsLanguageSelection = {
     modifier: "",
     included: [],
     excluded: [],
@@ -351,7 +351,7 @@ export function toggleIncluded(
   selection: MangaToolsLanguageSelection,
   code: string
 ): MangaToolsLanguageSelection {
-  var already = selection.included.indexOf(code) !== -1;
+  const already = selection.included.indexOf(code) !== -1;
 
   return {
     modifier: "",
@@ -369,7 +369,7 @@ export function toggleExcluded(
   selection: MangaToolsLanguageSelection,
   code: string
 ): MangaToolsLanguageSelection {
-  var already = selection.excluded.indexOf(code) !== -1;
+  const already = selection.excluded.indexOf(code) !== -1;
 
   return {
     modifier: "",
@@ -432,8 +432,8 @@ export function sameSelection(
 function sameCodes(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
 
-  var x = a.slice().sort();
-  var y = b.slice().sort();
+  const x = a.slice().sort();
+  const y = b.slice().sort();
   for (let i = 0; i < x.length; i++) {
     if (x[i] !== y[i]) return false;
   }
@@ -486,7 +486,7 @@ export function conditionLabel(
   intl: MangaToolsIntl,
   condition: MangaToolsCustomFieldCondition
 ): string | null {
-  var word = modifierWord(intl, condition.modifier);
+  const word = modifierWord(intl, condition.modifier);
   if (word === null) return null;
 
   return intl.formatMessage(
@@ -510,8 +510,8 @@ export function tagLabels(
   intl: MangaToolsIntl,
   criterion: MangaToolsFilterCriterion
 ): string[] | null {
-  var conditions = criterion.value || [];
-  var labels: string[] = [];
+  const conditions = criterion.value || [];
+  const labels: string[] = [];
 
   for (let i = 0; i < conditions.length; i++) {
     const label = conditionLabel(intl, conditions[i]);
@@ -533,7 +533,7 @@ function selectionConditions(
     return [{ field: NS.FIELD_NAME, modifier: "IS_NULL" }];
   }
 
-  var conditions: MangaToolsCustomFieldCondition[] = [];
+  const conditions: MangaToolsCustomFieldCondition[] = [];
   if (selection.included.length) {
     conditions.push({
       field: NS.FIELD_NAME,
@@ -572,19 +572,19 @@ function languageFilterQuery(
   // Ours if the dialog's Language card registered one, so a filter set here
   // shows as that card rather than as a generic custom field. Falls back to the
   // custom-fields option, which is the same criterion underneath.
-  var options = filter.options?.criterionOptions || [];
-  var option: MangaToolsCriterionOption | null = null;
+  const options = filter.options?.criterionOptions || [];
+  let option: MangaToolsCriterionOption | null = null;
   for (let i = 0; i < options.length; i++) {
     if (options[i].type === CUSTOM_FIELDS_TYPE) option = options[i];
     if (options[i].type === LANGUAGE_TYPE) option = options[i];
   }
   if (!option) return null;
-  var criterionOption = option;
+  const criterionOption = option;
 
-  var next = filter.clone();
-  var criterion = customFieldsCriterion(next);
+  const next = filter.clone();
+  let criterion = customFieldsCriterion(next);
 
-  var kept: MangaToolsCustomFieldCondition[] = [];
+  const kept: MangaToolsCustomFieldCondition[] = [];
   if (criterion?.value) {
     for (let j = 0; j < criterion.value.length; j++) {
       if (!isLanguageCondition(criterion.value[j]))
@@ -592,7 +592,7 @@ function languageFilterQuery(
     }
   }
 
-  var conditions = kept.concat(selectionConditions(selection));
+  const conditions = kept.concat(selectionConditions(selection));
 
   if (!conditions.length) {
     // Nothing left to say: drop the criterion rather than leave an empty one,
@@ -626,7 +626,7 @@ function applyLanguage(
   history: MangaToolsHistory,
   selection: MangaToolsLanguageSelection
 ): void {
-  var search = languageFilterQuery(filter, selection);
+  const search = languageFilterQuery(filter, selection);
   if (search === null) {
     console.error(
       "[mangaTools] this list has no custom-fields filter, so the language filter is unavailable"
@@ -694,7 +694,7 @@ function message(intl: MangaToolsIntl, id: string, fallback: string): string {
  * synchronously on the first render, so there is nothing to correct afterwards
  * and the section does not visibly move.
  */
-var SECTION_STATE_KEY = "mangaToolsLanguageOpen";
+const SECTION_STATE_KEY = "mangaToolsLanguageOpen";
 
 /**
  * Whether the reader is on a touch device.
@@ -709,10 +709,10 @@ function isTouchDevice(): boolean {
 }
 
 /** Class name of the section's mount point */
-var FILTER_HOST_CLASS = "manga-tools-field-host";
+const FILTER_HOST_CLASS = "manga-tools-field-host";
 
 /** The mount point, held at module scope so re-renders reuse the same node */
-var filterHost: HTMLElement | null = null;
+let filterHost: HTMLElement | null = null;
 
 /**
  * Sets a React-controlled input's value the way a person would.
@@ -762,19 +762,19 @@ function LanguageRow(props: {
   onClick: () => void;
   onExclude?: () => void;
 }) {
-  var Solid = PluginApi.libraries.FontAwesomeSolid || {};
-  var Regular = PluginApi.libraries.FontAwesomeRegular || {};
-  var Icon = PluginApi.components.Icon;
-  var Bootstrap = PluginApi.libraries.Bootstrap;
-  var intl = PluginApi.libraries.Intl.useIntl();
+  const Solid = PluginApi.libraries.FontAwesomeSolid || {};
+  const Regular = PluginApi.libraries.FontAwesomeRegular || {};
+  const Icon = PluginApi.components.Icon;
+  const Bootstrap = PluginApi.libraries.Bootstrap;
+  const intl = PluginApi.libraries.Intl.useIntl();
 
-  var hover = React.useState(false);
-  var hovered = hover[0];
-  var setHovered = hover[1];
+  const hover = React.useState(false);
+  const hovered = hover[0];
+  const setHovered = hover[1];
 
-  var selected = props.state !== "candidate";
-  var excluded = props.state === "excluded";
-  var sidebar = props.variant === "sidebar";
+  const selected = props.state !== "candidate";
+  const excluded = props.state === "excluded";
+  const sidebar = props.variant === "sidebar";
 
   function setHover(next: boolean) {
     return () => {
@@ -785,7 +785,7 @@ function LanguageRow(props: {
   // A plus to add, a tick once added, a cross once excluded — and under the
   // cursor the tick or cross becomes a hollow cross, which is how Stash says
   // that clicking takes it away again.
-  var icon = !selected
+  const icon = !selected
     ? Solid.faPlus
     : hovered
       ? Regular.faTimesCircle || Solid.faTimesCircle
@@ -793,7 +793,7 @@ function LanguageRow(props: {
         ? Solid.faTimesCircle
         : Solid.faCheckCircle;
 
-  var labelClass = excluded
+  const labelClass = excluded
     ? "excluded-object-label"
     : selected
       ? "selected-object-label"
@@ -862,7 +862,7 @@ function LanguageRow(props: {
 }
 
 /** Every tag Stash draws, in both of the rows that show a filter's criteria */
-var TAG_SELECTOR = ".filter-tags .tag-item";
+const TAG_SELECTOR = ".filter-tags .tag-item";
 
 /**
  * Set on a Stash tag this plugin has worded, holding the wording it put there.
@@ -878,10 +878,10 @@ var TAG_SELECTOR = ".filter-tags .tag-item";
  * keys collide; when it does, it rewrites the text and the attribute no longer
  * matches it — so the tag is treated as whatever it now is.
  */
-var TAG_MARK = "data-manga-tools-language";
+const TAG_MARK = "data-manga-tools-language";
 
 /** And this one, on the tags this plugin draws itself, so it never mistakes them for Stash's */
-var OWN_TAG_MARK = "data-manga-tools-own-tag";
+const OWN_TAG_MARK = "data-manga-tools-own-tag";
 
 /**
  * Is this tag Stash's tag for the language criterion?
@@ -896,13 +896,13 @@ var OWN_TAG_MARK = "data-manga-tools-own-tag";
  */
 function isLanguageTag(tag: Element): boolean {
   // The label is the tag's first child — `{label}` ahead of the ✗ button.
-  var text = tag.firstChild;
+  const text = tag.firstChild;
   if (text?.nodeType !== 3 /* TEXT_NODE */) return false;
 
-  var value = String(text.nodeValue).trim();
+  const value = String(text.nodeValue).trim();
   if (tag.getAttribute(TAG_MARK) === value) return true;
 
-  var prefix = NS.FIELD_NAME.toLowerCase() + " ";
+  const prefix = NS.FIELD_NAME.toLowerCase() + " ";
   return value.toLowerCase().indexOf(prefix) === 0;
 }
 
@@ -921,8 +921,8 @@ function tagText(tag: Element): Node {
  * working copy, which may be ahead of it. See manageDialogTags for that one.
  */
 function listLanguageTags(): Element[] {
-  var all = document.querySelectorAll(TAG_SELECTOR);
-  var ours: Element[] = [];
+  const all = document.querySelectorAll(TAG_SELECTOR);
+  const ours: Element[] = [];
 
   for (let i = 0; i < all.length; i++) {
     if (all[i].closest(".edit-filter-dialog")) continue;
@@ -940,8 +940,8 @@ function listLanguageTags(): Element[] {
  * holds rather than part of the row that reports the filter.
  */
 function dialogLanguageTags(): HTMLElement[] {
-  var all = document.querySelectorAll(TAG_SELECTOR);
-  var ours: HTMLElement[] = [];
+  const all = document.querySelectorAll(TAG_SELECTOR);
+  const ours: HTMLElement[] = [];
 
   for (let i = 0; i < all.length; i++) {
     if (!all[i].closest(".edit-filter-dialog")) continue;
@@ -1000,7 +1000,7 @@ function relabelTags(labels: string[]): void {
 }
 
 /** Class of the box the dialog's card is drawn in, inside Stash's editor area */
-var DIALOG_HOST_CLASS = "manga-tools-dialog-host";
+const DIALOG_HOST_CLASS = "manga-tools-dialog-host";
 
 /**
  * The box Stash renders for our criterion's editor — and only while the card is
@@ -1014,7 +1014,7 @@ function dialogEditorBox(): Element | null {
 }
 
 /** Our own row, held so the same node is reused and can be taken away again */
-var dialogTagsFallback: HTMLElement | null = null;
+let dialogTagsFallback: HTMLElement | null = null;
 
 /**
  * The row Stash draws for the criteria it knows about, or null if there is none.
@@ -1028,10 +1028,10 @@ var dialogTagsFallback: HTMLElement | null = null;
  * this module remove the very row it is about to draw into.
  */
 function stashDialogTagsRow(): Element | null {
-  var content = document.querySelector(".edit-filter-dialog .dialog-content");
+  const content = document.querySelector(".edit-filter-dialog .dialog-content");
   if (!content) return null;
 
-  var rows = content.querySelectorAll(".filter-tags");
+  const rows = content.querySelectorAll(".filter-tags");
   for (let i = 0; i < rows.length; i++) {
     if (rows[i] === dialogTagsFallback) continue;
     if (!rows[i].closest(".criterion-list")) return rows[i];
@@ -1053,13 +1053,13 @@ function stashDialogTagsRow(): Element | null {
  * then have nowhere to be shown, which is the case this exists for.
  */
 function dialogTagsRow(): Element | null {
-  var stash = stashDialogTagsRow();
+  const stash = stashDialogTagsRow();
   if (stash) {
     dropFallbackRow();
     return stash;
   }
 
-  var content = document.querySelector(".edit-filter-dialog .dialog-content");
+  const content = document.querySelector(".edit-filter-dialog .dialog-content");
   if (!content) {
     dropFallbackRow();
     return null;
@@ -1109,7 +1109,7 @@ function dropFallbackRow(): void {
  * re-render it, and one it still owns is one it will not miss.
  */
 function manageDialogTags(labels: string[]): void {
-  var tags = dialogLanguageTags();
+  const tags = dialogLanguageTags();
 
   for (let i = 0; i < tags.length; i++) {
     const label = i < labels.length ? labels[i] : null;
@@ -1153,7 +1153,7 @@ function clickedTagRemove(target: Element | null): boolean {
   if (!target.closest(".edit-filter-dialog")) return false;
   if (!target.closest(".filter-tags .tag-item button")) return false;
 
-  var tag = target.closest(".tag-item");
+  const tag = target.closest(".tag-item");
   return !!tag && !tag.closest(".criterion-list") && isLanguageTag(tag);
 }
 
@@ -1169,9 +1169,9 @@ function clickedTagRemove(target: Element | null): boolean {
  * appears while the dialog is open, with the card right beside it.
  */
 function LanguageTag(props: { label: string; onRemove: () => void }) {
-  var Solid = PluginApi.libraries.FontAwesomeSolid || {};
-  var Icon = PluginApi.components.Icon;
-  var Bootstrap = PluginApi.libraries.Bootstrap;
+  const Solid = PluginApi.libraries.FontAwesomeSolid || {};
+  const Icon = PluginApi.components.Icon;
+  const Bootstrap = PluginApi.libraries.Bootstrap;
 
   // Deliberately no row around this. It joins Stash's own row, and a wrapper
   // would nest a second flex row inside it, whose margin would inflate the height
@@ -1208,7 +1208,7 @@ function LanguageTag(props: { label: string; onRemove: () => void }) {
  * keeps the common case — no dialog open — to a single query on every mutation.
  */
 function dialogDomState(): string {
-  var dialog = document.querySelector(".edit-filter-dialog");
+  const dialog = document.querySelector(".edit-filter-dialog");
   if (!dialog) return "";
 
   return (
@@ -1240,29 +1240,29 @@ function dialogDomState(): string {
  * sat beside Stash's.
  */
 export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
-  var intl = PluginApi.libraries.Intl.useIntl();
-  var history = PluginApi.libraries.ReactRouterDOM.useHistory();
+  const intl = PluginApi.libraries.Intl.useIntl();
+  const history = PluginApi.libraries.ReactRouterDOM.useHistory();
 
-  var bumpState = React.useState(0);
-  var bump = bumpState[1];
+  const bumpState = React.useState(0);
+  const bump = bumpState[1];
 
   // What is applied right now, read from the model on every render rather than
   // snapshotted once: Apply replaces the model, and a snapshot taken at mount
   // would go on describing the filter as it was before.
-  var applied = readLanguageFilter(props.filter);
+  const applied = readLanguageFilter(props.filter);
 
   // What the reader has chosen here, which is what the list below draws and what
   // Apply writes. Both are compared as sets, so picking a value and then picking
   // it again leaves no trace.
-  var choiceState = React.useState<MangaToolsLanguageSelection>(applied);
-  var choice = choiceState[0];
-  var setChoice = choiceState[1];
+  const choiceState = React.useState<MangaToolsLanguageSelection>(applied);
+  const choice = choiceState[0];
+  const setChoice = choiceState[1];
 
-  var queryState = React.useState("");
-  var query = queryState[0];
-  var setQuery = queryState[1];
+  const queryState = React.useState("");
+  const query = queryState[0];
+  const setQuery = queryState[1];
 
-  var searchRef = React.useRef<HTMLInputElement | null>(null);
+  const searchRef = React.useRef<HTMLInputElement | null>(null);
 
   /**
    * Set when Apply is pressed, cleared once the merge has run.
@@ -1272,7 +1272,7 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
    * unapplied selection merged into it, which is not what pressing nothing
    * means.
    */
-  var applyPending = React.useRef(false);
+  const applyPending = React.useRef(false);
 
   /**
    * What this component draws depends on DOM Stash owns and React never reports:
@@ -1292,12 +1292,12 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
    * change made outside an event handler synchronously — so what this asks for is
    * in place before any of it is on screen.
    */
-  var dialogDom = React.useRef("");
+  const dialogDom = React.useRef("");
   React.useEffect(() => {
     if (typeof MutationObserver !== "function") return;
 
-    var observer = new MutationObserver(() => {
-      var state = dialogDomState();
+    const observer = new MutationObserver(() => {
+      const state = dialogDomState();
       if (state === dialogDom.current) return;
 
       dialogDom.current = state;
@@ -1313,7 +1313,7 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
   /** Apply, and the ways Stash itself takes the language away */
   React.useEffect(() => {
     function onClick(event: Event) {
-      var clicked = event.target as Element | null;
+      const clicked = event.target as Element | null;
       if (!clicked || typeof clicked.closest !== "function") return;
       if (!clicked.closest(".edit-filter-dialog")) return;
 
@@ -1400,10 +1400,10 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
    * identity and so never compares equal to a freshly decoded one. If it somehow
    * does not arrive, the timer says so rather than merging later and wrongly.
    */
-  var lastModel = React.useRef<MangaToolsFilterModel | null>(null);
+  const lastModel = React.useRef<MangaToolsFilterModel | null>(null);
   React.useEffect(() => {
-    var model = props.filter;
-    var previous = lastModel.current;
+    const model = props.filter;
+    const previous = lastModel.current;
     lastModel.current = model;
 
     if (!applyPending.current) return;
@@ -1415,11 +1415,11 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
     if (!previous || previous === model) return;
 
     applyPending.current = false;
-    var unchanged = sameSelection(choice, readLanguageFilter(model));
+    const unchanged = sameSelection(choice, readLanguageFilter(model));
 
     if (unchanged) return;
 
-    var search = languageFilterQuery(model, choice);
+    const search = languageFilterQuery(model, choice);
     if (search === null) {
       console.error(
         "[mangaTools] this list has no custom-fields criterion, so the language filter could not be applied"
@@ -1432,6 +1432,21 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
     history.replace(Object.assign({}, history.location, { search: search }));
   });
 
+  // The dialog's tags, and what is left for the card to draw itself — see
+  // manageDialogTags and ownTagLabels. The labels are the card's own, because the
+  // dialog's row is the one that reports the working copy; an empty card has
+  // nothing to say, which is what takes the tags away.
+  //
+  // Worked out above the effect that uses them rather than further down with the
+  // rest of what the card draws: they were `var`s once and only reachable from
+  // the effect because of hoisting, which is exactly the kind of thing that stops
+  // being true the moment the declaration changes.
+  const dialogTagLabels = isEmptySelection(choice)
+    ? []
+    : tagLabels(intl, { value: selectionConditions(choice) }) || [];
+  const ownTags = ownTagLabels(dialogTagLabels);
+  const ownTagsRow = ownTags.length ? dialogTagsRow() : null;
+
   /**
    * The dialog's tags, worded from the card — and its row taken away again when
    * the card has nothing of its own to draw.
@@ -1442,11 +1457,6 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
    * runs on every commit, which is what keeps the row up to date as the card is
    * edited, and every write in it is guarded on the value actually changing — so
    * a commit that has nothing to do leaves the DOM alone.
-   *
-   * What it is handed is worked out further down with the rest of what the card
-   * draws. That is fine for a `var` in the same render body — the effect runs
-   * after the body has finished — and it keeps this among the other hooks, where
-   * an early return can never come between them.
    */
   React.useLayoutEffect(() => {
     manageDialogTags(dialogTagLabels);
@@ -1467,8 +1477,8 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
    * and opening it again cannot discard a selection that has not been applied
    * yet. A layout effect so the card's first paint already shows the right rows.
    */
-  var sessionRef = React.useRef(0);
-  var syncedRef = React.useRef(-1);
+  const sessionRef = React.useRef(0);
+  const syncedRef = React.useRef(-1);
   React.useLayoutEffect(() => {
     if (!document.querySelector(".edit-filter-dialog")) {
       sessionRef.current += 1;
@@ -1483,7 +1493,7 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
     // selection has not in fact moved, so this effect cannot ask for a re-render
     // it does not need — a setState in a layout effect is a synchronous render,
     // and one that changes nothing every time is a loop.
-    var applied = readLanguageFilter(props.filter);
+    const applied = readLanguageFilter(props.filter);
     setChoice((previous) =>
       sameSelection(previous, applied) ? previous : applied
     );
@@ -1493,7 +1503,7 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
   // What the list is drawn from, following the sidebar's rules: the enabled
   // languages setting limits the choices, and a value already in use stays
   // visible even if it has since been disabled.
-  var options = NS.languageOptions(intl.locale).filter(
+  const options = NS.languageOptions(intl.locale).filter(
     (o) =>
       !NS.enabledLanguages ||
       NS.enabledLanguages.has(o.value) ||
@@ -1501,8 +1511,8 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
       choice.excluded.indexOf(o.value) !== -1
   );
 
-  var needle = query.trim().toLowerCase();
-  var matches = (o: MangaToolsOption) => {
+  const needle = query.trim().toLowerCase();
+  const matches = (o: MangaToolsOption) => {
     if (!needle) return true;
     return (
       o.label.toLowerCase().indexOf(needle) !== -1 ||
@@ -1512,39 +1522,29 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
 
   // Nothing to choose while (Any) or (None) is set: there is no particular value
   // to pick in those states, which is Stash's own rule for its lists.
-  var selectable = choice.modifier ? [] : options;
+  const selectable = choice.modifier ? [] : options;
 
-  var chosen = selectable.filter(
+  const chosen = selectable.filter(
     (o) => choice.included.indexOf(o.value) !== -1
   );
-  var excludedChosen = selectable.filter(
+  const excludedChosen = selectable.filter(
     (o) => choice.excluded.indexOf(o.value) !== -1
   );
-  var candidates = selectable.filter(
+  const candidates = selectable.filter(
     (o) =>
       choice.included.indexOf(o.value) === -1 &&
       choice.excluded.indexOf(o.value) === -1 &&
       matches(o)
   );
 
-  var showModifiers = isEmptySelection(choice);
+  const showModifiers = isEmptySelection(choice);
 
-  var flagFor = (o: MangaToolsOption): string | null =>
+  const flagFor = (o: MangaToolsOption): string | null =>
     NS.showFlags ? o.flag : null;
 
-  // The dialog's tags, and what is left for the card to draw itself — see
-  // manageDialogTags and ownTagLabels. The labels are the card's own, because the
-  // dialog's row is the one that reports the working copy; an empty card has
-  // nothing to say, which is what takes the tags away.
-  var dialogTagLabels = isEmptySelection(choice)
-    ? []
-    : tagLabels(intl, { value: selectionConditions(choice) }) || [];
-  var ownTags = ownTagLabels(dialogTagLabels);
-  var ownTagsRow = ownTags.length ? dialogTagsRow() : null;
-
   // The card's box, which Stash renders only while the card is open.
-  var box = dialogEditorBox();
-  var host: Element | null = null;
+  const box = dialogEditorBox();
+  let host: Element | null = null;
   if (box) {
     host = box.querySelector("." + DIALOG_HOST_CLASS);
     if (!host) {
@@ -1554,7 +1554,7 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
     }
   }
 
-  var list = (
+  const list = (
     <div className="manga-tools-dialog-card">
       <div className="selectable-filter">
         <div className="clearable-input-group">
@@ -1705,7 +1705,7 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
  * third caller appears.
  */
 function ensureFilterHost(): HTMLElement | null {
-  var anchor = document.querySelector(".sidebar-saved-filters");
+  const anchor = document.querySelector(".sidebar-saved-filters");
   if (!anchor?.parentNode) {
     filterHost = null;
     return null;
@@ -1741,27 +1741,27 @@ function ensureFilterHost(): HTMLElement | null {
 export function SidebarLanguageFilter(props: {
   filter: MangaToolsFilterModel;
 }) {
-  var intl = PluginApi.libraries.Intl.useIntl();
-  var history = PluginApi.libraries.ReactRouterDOM.useHistory();
+  const intl = PluginApi.libraries.Intl.useIntl();
+  const history = PluginApi.libraries.ReactRouterDOM.useHistory();
 
   // Read during the render rather than restored in an effect, so the first paint
   // already has the right answer. Stash restores its sections in a `useEffect`,
   // which is why they can appear to jump on a reload; there is no need to copy
   // that part.
-  var openState = React.useState<boolean>(() => {
-    var state = history.location.state;
-    var stored = state ? state[SECTION_STATE_KEY] : undefined;
+  const openState = React.useState<boolean>(() => {
+    const state = history.location.state;
+    const stored = state ? state[SECTION_STATE_KEY] : undefined;
     return typeof stored === "boolean" ? stored : false;
   });
-  var open = openState[0];
-  var setOpen = openState[1];
+  const open = openState[0];
+  const setOpen = openState[1];
 
-  var queryState = React.useState("");
-  var query = queryState[0];
-  var setQuery = queryState[1];
+  const queryState = React.useState("");
+  const query = queryState[0];
+  const setQuery = queryState[1];
 
   /** The search box, so focus can be put back into it after a change */
-  var searchRef = React.useRef<HTMLInputElement | null>(null);
+  const searchRef = React.useRef<HTMLInputElement | null>(null);
 
   // A React re-render can drop the mount point, and the first render never finds
   // it: this component is a sibling rendered before the list that owns the
@@ -1771,17 +1771,17 @@ export function SidebarLanguageFilter(props: {
   // before the browser paints — which means this correction adds no visible step
   // of its own. It does not remove the brief flash the section still shows on
   // load; that has another cause, not identified. See the README.
-  var bump = React.useState(0)[1];
-  var host = ensureFilterHost();
+  const bump = React.useState(0)[1];
+  const host = ensureFilterHost();
 
-  var selection = readLanguageFilter(props.filter);
+  const selection = readLanguageFilter(props.filter);
 
   // Stash's tags for this criterion, re-worded as this plugin words them. Only
   // for a criterion that is wholly ours: a hand-built one that carries another
   // field as well keeps Stash's wording, which says everything it holds, rather
   // than labels that would hide the rest.
-  var criterion = languageCriterionOf(props.filter);
-  var tagLabelsFor = criterion ? tagLabels(intl, criterion) : null;
+  const criterion = languageCriterionOf(props.filter);
+  const tagLabelsFor = criterion ? tagLabels(intl, criterion) : null;
 
   // Both of the repairs to the filter Stash owns live here, in the one surface
   // that is mounted for as long as the list is: the criterion is handed over to
@@ -1799,7 +1799,7 @@ export function SidebarLanguageFilter(props: {
 
   if (!host) return null;
 
-  var Bootstrap = PluginApi.libraries.Bootstrap;
+  const Bootstrap = PluginApi.libraries.Bootstrap;
   if (!Bootstrap) {
     console.error(
       "[mangaTools] react-bootstrap not available, cannot draw the language filter"
@@ -1807,8 +1807,8 @@ export function SidebarLanguageFilter(props: {
     return null;
   }
 
-  var Solid = PluginApi.libraries.FontAwesomeSolid || {};
-  var Icon = PluginApi.components.Icon;
+  const Solid = PluginApi.libraries.FontAwesomeSolid || {};
+  const Icon = PluginApi.components.Icon;
 
   function update(next: MangaToolsLanguageSelection) {
     applyLanguage(props.filter, history, next);
@@ -1849,7 +1849,7 @@ export function SidebarLanguageFilter(props: {
   // this library uses. A value already in use stays visible even if it has since
   // been disabled, since otherwise the list would be filtered by something
   // invisible.
-  var options = NS.languageOptions(intl.locale).filter(
+  const options = NS.languageOptions(intl.locale).filter(
     (o) =>
       !NS.enabledLanguages ||
       NS.enabledLanguages.has(o.value) ||
@@ -1862,11 +1862,11 @@ export function SidebarLanguageFilter(props: {
   // an empty list for IsNull and NotNull — and it is why choosing (None) in the
   // studio filter makes the studio list disappear. The search box stays, standing
   // over nothing, exactly as it does there.
-  var selectable = selection.modifier ? [] : options;
+  const selectable = selection.modifier ? [] : options;
 
   /** What the reader typed, against both the name and the code */
-  var needle = query.trim().toLowerCase();
-  var matches = (o: MangaToolsOption) => {
+  const needle = query.trim().toLowerCase();
+  const matches = (o: MangaToolsOption) => {
     if (!needle) return true;
     return (
       o.label.toLowerCase().indexOf(needle) !== -1 ||
@@ -1874,20 +1874,20 @@ export function SidebarLanguageFilter(props: {
     );
   };
 
-  var chosen = options.filter(
+  const chosen = options.filter(
     (o) => selection.included.indexOf(o.value) !== -1
   );
-  var excludedChosen = options.filter(
+  const excludedChosen = options.filter(
     (o) => selection.excluded.indexOf(o.value) !== -1
   );
-  var candidates = selectable.filter(
+  const candidates = selectable.filter(
     (o) =>
       selection.included.indexOf(o.value) === -1 &&
       selection.excluded.indexOf(o.value) === -1 &&
       matches(o)
   );
 
-  var flagFor = (o: MangaToolsOption): string | null =>
+  const flagFor = (o: MangaToolsOption): string | null =>
     NS.showFlags ? o.flag : null;
 
   /**
@@ -1901,7 +1901,7 @@ export function SidebarLanguageFilter(props: {
    * arriving from the URL is known a render later than the first paint.
    */
   function toggleOpen() {
-    var next = !open;
+    const next = !open;
     setOpen(next);
     history.replace(
       Object.assign({}, history.location, {
@@ -1917,7 +1917,7 @@ export function SidebarLanguageFilter(props: {
   // chosen — confirmed against a real section, where choosing two studios and
   // excluding a third left just the one hierarchical entry and neither of
   // these. Once one is picked it shows above, in the chosen list.
-  var showModifiers =
+  const showModifiers =
     !selection.modifier &&
     !selection.included.length &&
     !selection.excluded.length;
@@ -1925,7 +1925,7 @@ export function SidebarLanguageFilter(props: {
   // The section above the fold-away list: whatever is being asked for, in the
   // same "selected-object" shape as a chosen studio. The modifier entries are
   // shown in parentheses, exactly as Stash labels its own.
-  var chosenItems: ReactElement[] = [];
+  const chosenItems: ReactElement[] = [];
   if (selection.modifier) {
     chosenItems.push(
       <li className="selected-object modifier-object" key="modifier">
@@ -1961,7 +1961,7 @@ export function SidebarLanguageFilter(props: {
     );
   });
 
-  var section = (
+  const section = (
     <div className="sidebar-section sidebar-list-filter">
       <div className="collapse-header">
         <Bootstrap.Button

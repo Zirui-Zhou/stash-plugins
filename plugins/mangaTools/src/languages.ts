@@ -97,13 +97,14 @@ NS.FALLBACK_LOCALE = "en";
  * Held at module scope because the dropdown asks for all 14 names on every
  * render, and constructing a formatter is by far the expensive part of that.
  */
-var displayNamesCache: { [locale: string]: MangaToolsDisplayNames | null } = {};
+const displayNamesCache: { [locale: string]: MangaToolsDisplayNames | null } =
+  {};
 
 /**
  * One collator per locale, kept for the same reason as the formatters above:
  * these are built per render, not once.
  */
-var collatorCache: { [locale: string]: Intl.Collator } = {};
+const collatorCache: { [locale: string]: Intl.Collator } = {};
 
 /**
  * A collator for a UI locale, for ordering the dropdown's options.
@@ -199,7 +200,7 @@ NS.findCanonical = (code?: string | null): string => {
  */
 NS.normalize = (raw: unknown): string => {
   if (raw === null || raw === undefined) return "";
-  var s = String(raw).trim();
+  const s = String(raw).trim();
   if (s === "") return "";
 
   // Whitespace and case are the only tolerance; there is no alias mapping.
@@ -237,13 +238,13 @@ NS.name = (code: unknown, locale?: string | null): string => {
   // Go through normalize rather than findCanonical directly, so that
   // case-insensitive matches resolve to the canonical code; anything that
   // does not match comes back as the code itself.
-  var normalized = NS.normalize(code);
-  var canonical = NS.findCanonical(normalized);
+  const normalized = NS.normalize(code);
+  const canonical = NS.findCanonical(normalized);
   if (!canonical) {
     return normalized;
   }
 
-  var names = displayNamesFor(locale || NS.FALLBACK_LOCALE);
+  const names = displayNamesFor(locale || NS.FALLBACK_LOCALE);
   if (!names) return canonical;
 
   // of() echoes a code it cannot resolve, so the fallback here covers
@@ -263,10 +264,10 @@ NS.describe = (
   raw: unknown,
   locale?: string | null
 ): MangaToolsDescription | null => {
-  var code = NS.normalize(raw);
+  const code = NS.normalize(raw);
   if (code === "") return null;
 
-  var canonical = NS.findCanonical(code);
+  const canonical = NS.findCanonical(code);
   if (canonical) {
     return {
       code: canonical,
@@ -299,8 +300,8 @@ NS.describe = (
  * plain-text label).
  */
 NS.languageOptions = (locale?: string | null): MangaToolsOption[] => {
-  var uiLocale = locale || NS.FALLBACK_LOCALE;
-  var collator = collatorFor(uiLocale);
+  const uiLocale = locale || NS.FALLBACK_LOCALE;
+  const collator = collatorFor(uiLocale);
 
   return Object.keys(NS.LANGUAGES)
     .map((code) => ({
@@ -334,12 +335,12 @@ NS.enabledLanguages = null;
  */
 NS.parseEnabledLanguages = (raw: unknown): Set<string> | null => {
   if (raw === null || raw === undefined) return null;
-  var s = String(raw).trim();
+  const s = String(raw).trim();
   if (s === "") return null;
 
-  var out = new Set<string>();
+  const out = new Set<string>();
   s.split(",").forEach((piece) => {
-    var canonical = NS.findCanonical(piece.trim());
+    const canonical = NS.findCanonical(piece.trim());
     if (canonical) out.add(canonical);
   });
 
@@ -391,7 +392,7 @@ NS.parseFlag = (raw: unknown, fallback: boolean): boolean => {
   if (raw === null || raw === undefined || raw === "") return fallback;
   if (typeof raw === "boolean") return raw;
 
-  var s = String(raw).trim().toLowerCase();
+  const s = String(raw).trim().toLowerCase();
   if (s === "false" || s === "0" || s === "no" || s === "off") return false;
   if (s === "true" || s === "1" || s === "yes" || s === "on") return true;
 

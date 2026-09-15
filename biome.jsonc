@@ -68,7 +68,14 @@
       },
       "suspicious": {
         // this is used extensively, and there's no obvious fix
-        "noArrayIndexKey": "off"
+        "noArrayIndexKey": "off",
+        // The one rule here that Stash does not have on, and the only deliberate
+        // difference from its config. Stash's own source still has a handful of
+        // `var`s, so its set does not police them; this plugin would rather not
+        // keep any, and `var`'s function scoping and hoisting have already cost
+        // this codebase one confusing bug (a `var` read before its line, which
+        // only worked because of the hoisting).
+        "noVar": "error"
       }
     }
   },

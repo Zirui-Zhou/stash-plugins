@@ -50,10 +50,10 @@ const PluginApi = requirePluginApi();
 
 // Must stay: the classic JSX transform compiles every element to
 // React.createElement, which resolves to this binding.
-var React = PluginApi.React;
+const React = PluginApi.React;
 
-var FIELD_NAME = NS.FIELD_NAME;
-var PLUGIN_ID = "mangaTools";
+const FIELD_NAME = NS.FIELD_NAME;
+const PLUGIN_ID = "mangaTools";
 
 /**
  * Anchors for the two places a language field is inserted.
@@ -67,10 +67,10 @@ var PLUGIN_ID = "mangaTools";
  * They are deliberately different strings, so the two lookups can never
  * match each other's row.
  */
-var EDIT_ANCHOR = '.form-group[data-field="studio_id"]';
-var BULK_ANCHOR = '[data-field="studio"]';
+const EDIT_ANCHOR = '.form-group[data-field="studio_id"]';
+const BULK_ANCHOR = '[data-field="studio"]';
 
-var REFRESH_MS = 60000;
+const REFRESH_MS = 60000;
 
 /** The Gallery custom_fields map as it comes back from GraphQL */
 type CustomFieldsMap = { [key: string]: unknown };
@@ -100,7 +100,7 @@ function originalFrom(args: unknown[]): any {
  * This log is direct evidence that a patch took effect; it fires once per
  * target.
  */
-var firedOnce: { [target: string]: boolean } = {};
+const firedOnce: { [target: string]: boolean } = {};
 
 function noteFired(target: string): void {
   if (firedOnce[target]) return;
@@ -111,20 +111,20 @@ function noteFired(target: string): void {
 // ───────────────────────────── State ─────────────────────────────
 
 /** galleryId -> the raw language value from custom fields */
-var store: Map<string, string> = new Map();
+let store: Map<string, string> = new Map();
 
 /** Subscribers: re-render when the store or the route changes */
-var listeners: Set<() => void> = new Set();
+const listeners: Set<() => void> = new Set();
 
-var inFlight: Promise<unknown> | null = null;
-var started = false;
-var lastLoggedSize = -1;
+let inFlight: Promise<unknown> | null = null;
+let started = false;
+let lastLoggedSize = -1;
 
 /**
  * Current path. CustomFieldsInput is shared by every entity type, so this is
  * how we tell a gallery page apart from the rest.
  */
-var currentPath = window.location.pathname || "";
+let currentPath = window.location.pathname || "";
 
 function emit(): void {
   listeners.forEach((fn) => {
@@ -141,9 +141,9 @@ function subscribe(fn: () => void): () => void {
 
 /** Subscribes to global state (data or route) and re-renders on change. */
 function useGlobalVersion(): number {
-  var state = React.useState(0);
-  var version = state[0];
-  var setVersion = state[1];
+  const state = React.useState(0);
+  const version = state[0];
+  const setVersion = state[1];
 
   React.useEffect(
     () =>
@@ -178,8 +178,8 @@ function isGalleryContext(): boolean {
 function pickLanguage(customFields: unknown): string {
   if (!customFields || typeof customFields !== "object") return "";
 
-  var map = customFields as CustomFieldsMap;
-  var keys = Object.keys(map);
+  const map = customFields as CustomFieldsMap;
+  const keys = Object.keys(map);
   for (let i = 0; i < keys.length; i++) {
     if (keys[i].toLowerCase() === FIELD_NAME) {
       const v = map[keys[i]];
@@ -196,7 +196,7 @@ function pickLanguage(customFields: unknown): string {
  * key — matching the delete semantics of the native CustomFieldInput.
  */
 function setLanguage(customFields: unknown, code: string): CustomFieldsMap {
-  var next = Object.assign({}, customFields || {}) as CustomFieldsMap;
+  const next = Object.assign({}, customFields || {}) as CustomFieldsMap;
   Object.keys(next).forEach((k) => {
     if (k.toLowerCase() === FIELD_NAME) delete next[k];
   });
@@ -218,13 +218,13 @@ function setLanguage(customFields: unknown, code: string): CustomFieldsMap {
  * So lowercase is a hard constraint, guaranteed by the dropdown. Reads remain
  * case-insensitive, so a capitalised key already in the library still renders.
  */
-var QUERY: unknown = null;
+let QUERY: unknown = null;
 
 function getQuery(): unknown {
   if (QUERY) return QUERY;
 
-  var Apollo = PluginApi.libraries.Apollo;
-  var gql = Apollo?.gql || PluginApi.GQL?.gql;
+  const Apollo = PluginApi.libraries.Apollo;
+  const gql = Apollo?.gql || PluginApi.GQL?.gql;
   if (!gql) {
     console.error("[mangaTools] gql not available, cannot build the query");
     return null;
@@ -261,7 +261,7 @@ type GalleriesPayload = {
 function refresh(): Promise<unknown> {
   if (inFlight) return inFlight;
 
-  var query = getQuery();
+  const query = getQuery();
   if (!query) return Promise.resolve();
 
   let client: MangaToolsApolloClient;
@@ -275,15 +275,15 @@ function refresh(): Promise<unknown> {
   inFlight = client
     .query({ query: query, fetchPolicy: "network-only" })
     .then((res) => {
-      var data = res?.data;
-      var result = data
+      const data = res?.data;
+      const result = data
         ? (data.findGalleries as GalleriesPayload | undefined)
         : undefined;
-      var galleries = result?.galleries || [];
+      const galleries = result?.galleries || [];
 
-      var next: Map<string, string> = new Map();
+      const next: Map<string, string> = new Map();
       galleries.forEach((g) => {
-        var value = pickLanguage(g.custom_fields);
+        const value = pickLanguage(g.custom_fields);
         if (value) next.set(String(g.id), value);
       });
 
@@ -328,13 +328,13 @@ function refresh(): Promise<unknown> {
  * Only the `plugins` field is fetched — not the rest of Configuration, which
  * is a large object. This is the same minimal-query approach as getQuery().
  */
-var SETTINGS_QUERY: unknown = null;
+let SETTINGS_QUERY: unknown = null;
 
 function getSettingsQuery(): unknown {
   if (SETTINGS_QUERY) return SETTINGS_QUERY;
 
-  var Apollo = PluginApi.libraries.Apollo;
-  var gql = Apollo?.gql || PluginApi.GQL?.gql;
+  const Apollo = PluginApi.libraries.Apollo;
+  const gql = Apollo?.gql || PluginApi.GQL?.gql;
   if (!gql) {
     console.error("[mangaTools] gql not available, cannot read settings");
     return null;
@@ -370,7 +370,7 @@ type SettingsPayload = {
  * the source of truth.)
  */
 function refreshSettings(): void {
-  var query = getSettingsQuery();
+  const query = getSettingsQuery();
   if (!query) return;
 
   let client: MangaToolsApolloClient;
@@ -384,9 +384,9 @@ function refreshSettings(): void {
   client
     .query({ query: query, fetchPolicy: "network-only" })
     .then((res) => {
-      var data = res?.data as SettingsPayload | undefined;
-      var plugins = data?.configuration?.plugins;
-      var pluginCfg = plugins?.[PLUGIN_ID];
+      const data = res?.data as SettingsPayload | undefined;
+      const plugins = data?.configuration?.plugins;
+      const pluginCfg = plugins?.[PLUGIN_ID];
       NS.enabledLanguages = NS.parseEnabledLanguages(
         pluginCfg ? pluginCfg.enabledLanguages : null
       );
@@ -425,8 +425,8 @@ function start(): void {
 
   if (PluginApi.Event?.addEventListener) {
     PluginApi.Event.addEventListener("stash:location", (e) => {
-      var ev = e as LocationEvent;
-      var loc = ev?.detail?.data?.location;
+      const ev = e as LocationEvent;
+      const loc = ev?.detail?.data?.location;
       currentPath = loc?.pathname || window.location.pathname || "";
       refresh();
       refreshSettings();
@@ -448,7 +448,7 @@ function start(): void {
  *     request was built before the write.
  */
 function refreshAfterWrite(): void {
-  var pending = inFlight;
+  const pending = inFlight;
   if (pending) {
     // inFlight is cleared by this promise's own final handler, which runs
     // before this callback, so refresh() starts a genuinely new request.
@@ -498,9 +498,9 @@ function Flag(props: { flag: string; className?: string }) {
 /** Reads the in-memory store only; issues no requests. */
 function LanguageBadge(props: { galleryId: string }) {
   useGlobalVersion();
-  var locale = useLocale();
+  const locale = useLocale();
 
-  var info = NS.describe(store.get(String(props.galleryId)), locale);
+  const info = NS.describe(store.get(String(props.galleryId)), locale);
   if (!info) return null;
 
   // No flag to show, for one of two reasons — and they are not the same chip:
@@ -534,13 +534,13 @@ function LanguageBadge(props: { galleryId: string }) {
  * type to give it.
  */
 // biome-ignore lint/suspicious/noExplicitAny: react-select is reached through a namespace import at runtime, so its component has no static type.
-var SELECT: any = null;
+let SELECT: any = null;
 
 // biome-ignore lint/suspicious/noExplicitAny: as above — the component itself.
 function resolveSelect(): any {
   if (SELECT) return SELECT;
 
-  var RS = PluginApi.libraries.ReactSelect;
+  const RS = PluginApi.libraries.ReactSelect;
   if (!RS) {
     console.error("[mangaTools] react-select not available");
     return null;
@@ -582,11 +582,11 @@ function formatLanguageOption(option: MangaToolsOption) {
 function readNativeFieldClasses(
   anchorSelector: string
 ): NativeFieldClasses | null {
-  var anchor = document.querySelector(anchorSelector);
+  const anchor = document.querySelector(anchorSelector);
   if (!anchor) return null;
 
-  var label = anchor.querySelector("label");
-  var control = label?.nextElementSibling;
+  const label = anchor.querySelector("label");
+  const control = label?.nextElementSibling;
   if (!label || !control) return null;
 
   return {
@@ -616,14 +616,14 @@ function LanguageRow(props: {
 }) {
   useGlobalVersion();
 
-  var intl = PluginApi.libraries.Intl.useIntl();
-  var Select = resolveSelect();
+  const intl = PluginApi.libraries.Intl.useIntl();
+  const Select = resolveSelect();
 
   // The mount point is read during render (same approach as the detail page).
   // ensureFieldHost is idempotent and returns null when the anchor is absent.
-  var host = isGalleryContext() ? ensureFieldHost() : null;
+  const host = isGalleryContext() ? ensureFieldHost() : null;
 
-  var bump = React.useState(0)[1];
+  const bump = React.useState(0)[1];
 
   // On first mount the studio row **has not been committed to the DOM yet**:
   // CustomFieldsInput sits at the very end of the edit form, so when it renders
@@ -645,8 +645,8 @@ function LanguageRow(props: {
 
   if (!isGalleryContext() || !Select || !host) return null;
 
-  var current = NS.describe(props.value, intl.locale);
-  var options: MangaToolsOption[] = NS.languageOptions(intl.locale).filter(
+  const current = NS.describe(props.value, intl.locale);
+  let options: MangaToolsOption[] = NS.languageOptions(intl.locale).filter(
     (o) => {
       // NS.enabledLanguages is null for "no restriction", otherwise the
       // dropdown is limited to exactly these codes. Display (badge / detail
@@ -666,18 +666,18 @@ function LanguageRow(props: {
     ];
   }
 
-  var selected = current
+  const selected = current
     ? { value: current.code, label: current.name, flag: current.flag }
     : null;
 
   // Column widths come from the native field; this is the fallback.
-  var cls = readNativeFieldClasses(EDIT_ANCHOR) || {
+  const cls = readNativeFieldClasses(EDIT_ANCHOR) || {
     group: "form-group row",
     label: "form-label col-form-label col-sm-3",
     control: "col-sm-9",
   };
 
-  var field = (
+  const field = (
     // Plain div/label carrying the copied class names, rather than
     // Form.Group/Form.Label/Col: those components regenerate the width classes
     // from their own defaults, which is what broke the alignment before.
@@ -744,7 +744,7 @@ function BooleanSetting(props: {
   checked: boolean;
   onChange: (next: boolean) => void;
 }) {
-  var Bootstrap = PluginApi.libraries.Bootstrap;
+  const Bootstrap = PluginApi.libraries.Bootstrap;
   if (!Bootstrap) {
     console.error(
       "[mangaTools] react-bootstrap not available, cannot render the settings switches"
@@ -774,10 +774,10 @@ function BooleanSetting(props: {
 function MangaToolsSettings(props: { pluginID: string }) {
   useGlobalVersion();
 
-  var intl = PluginApi.libraries.Intl.useIntl();
-  var Select = resolveSelect();
+  const intl = PluginApi.libraries.Intl.useIntl();
+  const Select = resolveSelect();
 
-  var savePlugin = PluginApi.utils.StashService.useConfigurePlugin()[0];
+  const savePlugin = PluginApi.utils.StashService.useConfigurePlugin()[0];
 
   /**
    * Writes every setting at once.
@@ -804,12 +804,12 @@ function MangaToolsSettings(props: { pluginID: string }) {
     });
   }
 
-  var options: MangaToolsOption[] = NS.languageOptions(intl.locale);
-  var enabled = NS.enabledLanguages;
+  const options: MangaToolsOption[] = NS.languageOptions(intl.locale);
+  const enabled = NS.enabledLanguages;
   // null (no restriction) renders an empty box whose placeholder reads
   // "All languages", rather than filling the box with every tag. A non-empty
   // selection renders exactly those tags.
-  var value = enabled ? options.filter((o) => enabled?.has(o.value)) : [];
+  const value = enabled ? options.filter((o) => enabled?.has(o.value)) : [];
 
   if (!Select) return null;
 
@@ -838,7 +838,7 @@ function MangaToolsSettings(props: { pluginID: string }) {
               formatOptionLabel={formatLanguageOption}
               components={{ IndicatorSeparator: () => null }}
               onChange={(selected: MangaToolsOption[] | null) => {
-                var codes = (selected || []).map((o) => o.value);
+                const codes = (selected || []).map((o) => o.value);
 
                 // Reflect the change immediately (the dropdown and this UI
                 // both read NS.enabledLanguages), then persist it.
@@ -901,10 +901,10 @@ type BulkLanguagePending = { kind: "set"; value: string } | { kind: "cleared" };
  * There is deliberately no "remove" state: the field mirrors Stash's own studio
  * selector, where clearing the box means "do not change this", not "empty it".
  */
-var bulkPending: BulkLanguagePending | null = null;
+let bulkPending: BulkLanguagePending | null = null;
 
 /** Ids currently selected in the gallery list, captured from GalleryList */
-var selectedGalleryIds: string[] = [];
+let selectedGalleryIds: string[] = [];
 
 /**
  * Records which galleries are selected.
@@ -920,7 +920,7 @@ var selectedGalleryIds: string[] = [];
  * the modal is open.
  */
 function captureSelection(selectedIds: unknown): void {
-  var next: string[] = [];
+  const next: string[] = [];
   if (
     selectedIds &&
     typeof (selectedIds as { forEach?: unknown }).forEach === "function"
@@ -930,7 +930,7 @@ function captureSelection(selectedIds: unknown): void {
     });
   }
 
-  var unchanged =
+  const unchanged =
     next.length === selectedGalleryIds.length &&
     next.every((id, i) => id === selectedGalleryIds[i]);
 
@@ -950,7 +950,7 @@ function captureSelection(selectedIds: unknown): void {
 function selectedLanguageAggregate(): string | null {
   if (!selectedGalleryIds.length) return null;
 
-  var first = store.get(selectedGalleryIds[0]) || "";
+  const first = store.get(selectedGalleryIds[0]) || "";
   for (let i = 1; i < selectedGalleryIds.length; i++) {
     if ((store.get(selectedGalleryIds[i]) || "") !== first) return null;
   }
@@ -959,7 +959,7 @@ function selectedLanguageAggregate(): string | null {
 }
 
 /** Set once, so the link chain is never wrapped twice */
-var bulkLinkInstalled = false;
+let bulkLinkInstalled = false;
 
 /**
  * Is this operation Stash's gallery bulk update?
@@ -971,19 +971,21 @@ var bulkLinkInstalled = false;
  * scenes is not this plugin's business.
  */
 function isGalleryBulkUpdate(query: unknown): boolean {
-  var defs = query ? (query as { definitions?: unknown[] }).definitions : null;
+  const defs = query
+    ? (query as { definitions?: unknown[] }).definitions
+    : null;
   if (!defs?.length) return false;
 
-  var op = defs[0] as {
+  const op = defs[0] as {
     kind?: string;
     selectionSet?: { selections?: Array<{ name?: { value?: string } }> };
   };
   if (op?.kind !== "OperationDefinition") return false;
 
-  var selections = op.selectionSet?.selections;
+  const selections = op.selectionSet?.selections;
   if (!selections?.length) return false;
 
-  var first = selections[0];
+  const first = selections[0];
   return !!(first?.name && first.name.value === "bulkGalleryUpdate");
 }
 
@@ -1007,12 +1009,12 @@ function applyPendingLanguage(operation: MangaToolsApolloOperation): boolean {
 
   if (!isGalleryBulkUpdate(operation.query)) return false;
 
-  var input = operation.variables
+  const input = operation.variables
     ? (operation.variables.input as { ids?: unknown } | undefined)
     : undefined;
   if (!input || !Array.isArray(input.ids)) return false;
 
-  var fields = { partial: { [FIELD_NAME]: bulkPending.value } };
+  const fields = { partial: { [FIELD_NAME]: bulkPending.value } };
 
   operation.variables = Object.assign({}, operation.variables, {
     input: Object.assign({}, input, {
@@ -1043,7 +1045,7 @@ function applyPendingLanguage(operation: MangaToolsApolloOperation): boolean {
 function installBulkLink(): void {
   if (bulkLinkInstalled) return;
 
-  var Apollo = PluginApi.libraries.Apollo;
+  const Apollo = PluginApi.libraries.Apollo;
   let client: MangaToolsApolloClient;
   try {
     client = PluginApi.utils.StashService.getClient();
@@ -1065,7 +1067,7 @@ function installBulkLink(): void {
 
   // Replace the chain with ours in front of the existing one. setLink replaces
   // the whole chain, so the current link must be passed through explicitly.
-  var previous = client.link;
+  const previous = client.link;
 
   client.setLink(
     Apollo.ApolloLink.from([
@@ -1110,11 +1112,11 @@ function installBulkLink(): void {
 function BulkLanguageRow() {
   useGlobalVersion();
 
-  var intl = PluginApi.libraries.Intl.useIntl();
-  var Select = resolveSelect();
+  const intl = PluginApi.libraries.Intl.useIntl();
+  const Select = resolveSelect();
 
-  var host = isGalleryContext() ? ensureBulkFieldHost() : null;
-  var bump = React.useState(0)[1];
+  const host = isGalleryContext() ? ensureBulkFieldHost() : null;
+  const bump = React.useState(0)[1];
 
   // Same first-render problem as LanguageRow: the dialog mounts this component
   // from its rating row, which renders **before** the studio row it has to
@@ -1144,27 +1146,27 @@ function BulkLanguageRow() {
 
   if (!isGalleryContext() || !Select || !host) return null;
 
-  var options: MangaToolsOption[] = NS.languageOptions(intl.locale).filter(
+  let options: MangaToolsOption[] = NS.languageOptions(intl.locale).filter(
     (o) => !NS.enabledLanguages || NS.enabledLanguages.has(o.value)
   );
 
-  var pending = bulkPending;
+  const pending = bulkPending;
 
   // Show exactly what is about to happen: what the user picked, otherwise the
   // selection's shared language. A mixed selection shows the placeholder — the
   // same way the studio field behaves.
-  var shown =
+  const shown =
     pending && pending.kind === "set"
       ? pending.value
       : pending
         ? ""
         : selectedLanguageAggregate() || "";
 
-  var current = shown ? NS.describe(shown, intl.locale) : null;
+  const current = shown ? NS.describe(shown, intl.locale) : null;
 
   // A code that is not in the enabled list still has to be shown while it is
   // sitting in the row, or the selection would look like it was ignored.
-  var currentCode = current ? current.code : "";
+  const currentCode = current ? current.code : "";
   if (current && !options.some((o) => o.value === currentCode)) {
     options = [
       { value: current.code, label: current.name, flag: current.flag },
@@ -1172,17 +1174,17 @@ function BulkLanguageRow() {
     ];
   }
 
-  var selected = current
+  const selected = current
     ? { value: current.code, label: current.name, flag: current.flag }
     : null;
 
-  var cls = readNativeFieldClasses(BULK_ANCHOR) || {
+  const cls = readNativeFieldClasses(BULK_ANCHOR) || {
     group: "row",
     label: "col-form-label col-3",
     control: "col-9",
   };
 
-  var field = (
+  const field = (
     <div className={cls.group} data-field="manga_tools_language">
       <label className={cls.label} htmlFor="manga_tools_language">
         {fieldLabel(intl)}
@@ -1226,12 +1228,12 @@ function BulkLanguageRow() {
 //    GalleryCard.Overlays uses useMemo internally, and calling it directly
 //    breaks the rules of hooks.
 PluginApi.patch.instead("GalleryCard.Overlays", (...args: unknown[]) => {
-  var props = args[0] as { gallery?: { id?: string } };
-  var Original = originalFrom(args);
+  const props = args[0] as { gallery?: { id?: string } };
+  const Original = originalFrom(args);
   noteFired("GalleryCard.Overlays");
 
-  var id = props.gallery?.id;
-  var value = id ? store.get(String(id)) : "";
+  const id = props.gallery?.id;
+  const value = id ? store.get(String(id)) : "";
 
   // Nothing to add: the gallery has no language, or the badge is turned off.
   if (!value || !NS.showCoverBadge) return <Original {...props} />;
@@ -1247,11 +1249,11 @@ PluginApi.patch.instead("GalleryCard.Overlays", (...args: unknown[]) => {
 // 2. Edit page: render the language field (it portals itself after the studio
 //    row, so it contributes nothing at this position).
 PluginApi.patch.instead("CustomFieldsInput", (...args: unknown[]) => {
-  var props = args[0] as {
+  const props = args[0] as {
     values?: CustomFieldsMap;
     onChange?: (values: CustomFieldsMap) => void;
   };
-  var Original = originalFrom(args);
+  const Original = originalFrom(args);
   noteFired("CustomFieldsInput");
 
   return (
@@ -1277,11 +1279,11 @@ PluginApi.patch.instead("CustomFieldsInput", (...args: unknown[]) => {
 //    in the middle of typing "language" as the field name. Returning null would
 //    make the whole row vanish mid-keystroke.
 PluginApi.patch.instead("CustomFieldInput", (...args: unknown[]) => {
-  var props = args[0] as { field?: string; isNew?: boolean };
-  var Original = originalFrom(args);
+  const props = args[0] as { field?: string; isNew?: boolean };
+  const Original = originalFrom(args);
   noteFired("CustomFieldInput");
 
-  var isLanguageField =
+  const isLanguageField =
     !!props.field && String(props.field).toLowerCase() === FIELD_NAME;
 
   if (!props.isNew && isLanguageField) {
@@ -1292,13 +1294,13 @@ PluginApi.patch.instead("CustomFieldInput", (...args: unknown[]) => {
 });
 
 /** Class name of the detail row's mount point */
-var DETAIL_HOST_CLASS = "manga-tools-detail-host";
+const DETAIL_HOST_CLASS = "manga-tools-detail-host";
 
 /**
  * The mount point. Held at module scope so a React re-render that drops it
  * reuses the same node instead of creating a new one every render.
  */
-var detailHost: HTMLElement | null = null;
+let detailHost: HTMLElement | null = null;
 
 /**
  * Finds (creating if needed) the mount point for the detail-page language row.
@@ -1311,7 +1313,7 @@ var detailHost: HTMLElement | null = null;
  * and before "details" — the latter belongs to renderDetails() in the next .row.
  */
 function ensureDetailHost(): HTMLElement | null {
-  var panel = document.querySelector(".gallery-details");
+  const panel = document.querySelector(".gallery-details");
   if (!panel) {
     detailHost = null;
     return null;
@@ -1334,10 +1336,10 @@ function ensureDetailHost(): HTMLElement | null {
 }
 
 /** Class name of the edit field's mount point */
-var FIELD_HOST_CLASS = "manga-tools-field-host";
+const FIELD_HOST_CLASS = "manga-tools-field-host";
 
 /** As above, held at module scope so the same node is reused */
-var fieldHosts: { [key: string]: HTMLElement | null } = {
+const fieldHosts: { [key: string]: HTMLElement | null } = {
   edit: null,
   bulk: null,
 };
@@ -1362,13 +1364,13 @@ function ensureHostAfter(
   anchorSelector: string,
   key: string
 ): HTMLElement | null {
-  var anchor = document.querySelector(anchorSelector);
+  const anchor = document.querySelector(anchorSelector);
   if (!anchor?.parentNode) {
     fieldHosts[key] = null;
     return null;
   }
 
-  var host = fieldHosts[key];
+  let host = fieldHosts[key];
   if (!host) {
     host = document.createElement("div");
     host.className = FIELD_HOST_CLASS;
@@ -1427,8 +1429,8 @@ function fieldLabel(intl: MangaToolsIntl): string {
 function DetailLanguageRow(props: { value: unknown }) {
   useGlobalVersion();
 
-  var intl = PluginApi.libraries.Intl.useIntl();
-  var info = NS.describe(props.value, intl.locale);
+  const intl = PluginApi.libraries.Intl.useIntl();
+  const info = NS.describe(props.value, intl.locale);
   if (!info) return null;
 
   // The mount point is synced during render. ensureDetailHost is idempotent
@@ -1440,7 +1442,7 @@ function DetailLanguageRow(props: { value: unknown }) {
   // you open a gallery. Stash runs React 17, so there is no concurrent
   // rendering to be interrupted, and only our own node is touched — never a
   // sibling React manages.
-  var host = ensureDetailHost();
+  const host = ensureDetailHost();
   if (!host) return null;
 
   // A flag is drawn only when flags are on and the value is recognised.
@@ -1451,7 +1453,7 @@ function DetailLanguageRow(props: { value: unknown }) {
   // The gap comes entirely from that space; the CSS adds no margin-right, so
   // the space before and after the flag match, and the row lines up with
   // "photographer: ..." above it.
-  var showFlag = NS.showFlags && !!info.flag;
+  const showFlag = NS.showFlags && !!info.flag;
 
   return PluginApi.ReactDOM.createPortal(
     <h6 className="manga-tools-detail">
@@ -1476,20 +1478,20 @@ function DetailLanguageRow(props: { value: unknown }) {
 //    rendered twice) and everything else is handed to the original unchanged;
 //    DetailLanguageRow renders that one entry under "photographer".
 PluginApi.patch.instead("CustomFields", (...args: unknown[]) => {
-  var props = args[0] as { values?: CustomFieldsMap; fullWidth?: boolean };
-  var Original = originalFrom(args);
+  const props = args[0] as { values?: CustomFieldsMap; fullWidth?: boolean };
+  const Original = originalFrom(args);
   noteFired("CustomFields");
 
-  var values = props.values;
+  const values = props.values;
   if (!values || typeof values !== "object") return <Original {...props} />;
 
-  var key: string | null = null;
+  let key: string | null = null;
   Object.keys(values).forEach((k) => {
     if (key === null && k.toLowerCase() === FIELD_NAME) key = k;
   });
   if (key === null) return <Original {...props} />;
 
-  var rest = Object.assign({}, values);
+  const rest = Object.assign({}, values);
   delete rest[key];
 
   return (
@@ -1504,8 +1506,8 @@ PluginApi.patch.instead("CustomFields", (...args: unknown[]) => {
 //    but only for this plugin — every other plugin's settings go straight back
 //    to the original component untouched.
 PluginApi.patch.instead("PluginSettings", (...args: unknown[]) => {
-  var props = args[0] as { pluginID?: string };
-  var Original = originalFrom(args);
+  const props = args[0] as { pluginID?: string };
+  const Original = originalFrom(args);
   noteFired("PluginSettings");
 
   if (props.pluginID === PLUGIN_ID) {
@@ -1520,7 +1522,7 @@ PluginApi.patch.instead("PluginSettings", (...args: unknown[]) => {
 //    would without the plugin. This is the only way to see the selection: the
 //    dialog that uses it is not patchable.
 PluginApi.patch.before("GalleryList", (...args: unknown[]) => {
-  var props = args[0] as { selectedIds?: unknown };
+  const props = args[0] as { selectedIds?: unknown };
   noteFired("GalleryList");
   captureSelection(props ? props.selectedIds : null);
   return args;
@@ -1546,8 +1548,8 @@ PluginApi.patch.before("GalleryList", (...args: unknown[]) => {
 //    coexist — Stash runs before-functions first and passes their result on, so
 //    the selection above is still captured.
 PluginApi.patch.instead("GalleryList", (...args: unknown[]) => {
-  var props = args[0] as { filter?: MangaToolsFilterModel };
-  var Original = originalFrom(args);
+  const props = args[0] as { filter?: MangaToolsFilterModel };
+  const Original = originalFrom(args);
   noteFired("GalleryList.filter");
 
   // The filter dialog builds its cards from a shared options array that the
@@ -1570,8 +1572,8 @@ PluginApi.patch.instead("GalleryList", (...args: unknown[]) => {
 //    positioned by the DOM anchor and its value reaches the mutation through
 //    installBulkLink, not through the dialog.
 PluginApi.patch.instead("RatingSystem", (...args: unknown[]) => {
-  var props = args[0] as object;
-  var Original = originalFrom(args);
+  const props = args[0] as object;
+  const Original = originalFrom(args);
   noteFired("RatingSystem");
 
   return (
