@@ -37,6 +37,7 @@ import {
 } from "./language-filter";
 import type { MangaToolsFilterModel } from "./plugin-api";
 import type {
+  MangaToolsApolloClient,
   MangaToolsApolloOperation,
   MangaToolsIntl,
   MangaToolsOption,
@@ -80,17 +81,14 @@ type NativeFieldClasses = { group: string; label: string; control: string };
 /**
  * Pulls the original component out of a patch.instead callback's arguments.
  *
- * The official example writes `function (props, _, original)`, but the number
- * of arguments passed depends on whether React supplies the legacy context, so
- * a hard-coded index can come back undefined. The last argument is always the
+ * The official example writes `(props, _, original)`, but the number of
+ * arguments passed depends on whether React supplies the legacy context, so a
+ * hard-coded index can come back undefined. The last argument is always the
  * original component — reading it that way is safe either way.
  */
+// biome-ignore lint/suspicious/noExplicitAny: the component a patch is handed // has no nameable type — its props differ per target, and it is used as JSX.
 function originalFrom(args: unknown[]): any {
   return args[args.length - 1];
-}
-
-function argsToArray(args: IArguments): unknown[] {
-  return Array.prototype.slice.call(args) as unknown[];
 }
 
 /**
@@ -129,14 +127,14 @@ var lastLoggedSize = -1;
 var currentPath = window.location.pathname || "";
 
 function emit(): void {
-  listeners.forEach(function (fn) {
+  listeners.forEach((fn) => {
     fn();
   });
 }
 
 function subscribe(fn: () => void): () => void {
   listeners.add(fn);
-  return function () {
+  return () => {
     listeners.delete(fn);
   };
 }
@@ -147,13 +145,13 @@ function useGlobalVersion(): number {
   var version = state[0];
   var setVersion = state[1];
 
-  React.useEffect(function () {
-    return subscribe(function () {
-      setVersion(function (v) {
-        return v + 1;
-      });
-    });
-  }, []);
+  React.useEffect(
+    () =>
+      subscribe(() => {
+        setVersion((v) => v + 1);
+      }),
+    []
+  );
 
   return version;
 }
@@ -182,9 +180,9 @@ function pickLanguage(customFields: unknown): string {
 
   var map = customFields as CustomFieldsMap;
   var keys = Object.keys(map);
-  for (var i = 0; i < keys.length; i++) {
+  for (let i = 0; i < keys.length; i++) {
     if (keys[i].toLowerCase() === FIELD_NAME) {
-      var v = map[keys[i]];
+      const v = map[keys[i]];
       if (v === null || v === undefined) return "";
       return String(v);
     }
@@ -199,7 +197,7 @@ function pickLanguage(customFields: unknown): string {
  */
 function setLanguage(customFields: unknown, code: string): CustomFieldsMap {
   var next = Object.assign({}, customFields || {}) as CustomFieldsMap;
-  Object.keys(next).forEach(function (k) {
+  Object.keys(next).forEach((k) => {
     if (k.toLowerCase() === FIELD_NAME) delete next[k];
   });
   if (code) next[FIELD_NAME] = code;
@@ -226,7 +224,7 @@ function getQuery(): unknown {
   if (QUERY) return QUERY;
 
   var Apollo = PluginApi.libraries.Apollo;
-  var gql = (Apollo && Apollo.gql) || (PluginApi.GQL && PluginApi.GQL.gql);
+  var gql = Apollo?.gql || PluginApi.GQL?.gql;
   if (!gql) {
     console.error("[mangaTools] gql not available, cannot build the query");
     return null;
@@ -266,7 +264,7 @@ function refresh(): Promise<unknown> {
   var query = getQuery();
   if (!query) return Promise.resolve();
 
-  var client;
+  let client: MangaToolsApolloClient;
   try {
     client = PluginApi.utils.StashService.getClient();
   } catch (e) {
@@ -276,15 +274,15 @@ function refresh(): Promise<unknown> {
 
   inFlight = client
     .query({ query: query, fetchPolicy: "network-only" })
-    .then(function (res) {
-      var data = res && res.data;
+    .then((res) => {
+      var data = res?.data;
       var result = data
         ? (data.findGalleries as GalleriesPayload | undefined)
         : undefined;
-      var galleries = (result && result.galleries) || [];
+      var galleries = result?.galleries || [];
 
       var next: Map<string, string> = new Map();
-      galleries.forEach(function (g) {
+      galleries.forEach((g) => {
         var value = pickLanguage(g.custom_fields);
         if (value) next.set(String(g.id), value);
       });
@@ -303,7 +301,7 @@ function refresh(): Promise<unknown> {
         );
       }
     })
-    .catch(function (e) {
+    .catch((e) => {
       // Deliberately do not clear what we already have — stale values beat
       // none, and the next refresh will try again. Query syntax errors land
       // here too (Apollo throws GraphQL errors), so this log has to be loud.
@@ -312,11 +310,12 @@ function refresh(): Promise<unknown> {
         e
       );
     })
-    .then(function () {
+    .then(() => {
       inFlight = null;
     });
 
-  return inFlight;
+  // Assigned in the try above: every path through the catch has returned.
+  return inFlight!;
 }
 
 /**
@@ -335,7 +334,7 @@ function getSettingsQuery(): unknown {
   if (SETTINGS_QUERY) return SETTINGS_QUERY;
 
   var Apollo = PluginApi.libraries.Apollo;
-  var gql = (Apollo && Apollo.gql) || (PluginApi.GQL && PluginApi.GQL.gql);
+  var gql = Apollo?.gql || PluginApi.GQL?.gql;
   if (!gql) {
     console.error("[mangaTools] gql not available, cannot read settings");
     return null;
@@ -374,7 +373,7 @@ function refreshSettings(): void {
   var query = getSettingsQuery();
   if (!query) return;
 
-  var client;
+  let client: MangaToolsApolloClient;
   try {
     client = PluginApi.utils.StashService.getClient();
   } catch (e) {
@@ -384,10 +383,10 @@ function refreshSettings(): void {
 
   client
     .query({ query: query, fetchPolicy: "network-only" })
-    .then(function (res) {
-      var data = (res && res.data) as SettingsPayload | undefined;
-      var plugins = data && data.configuration && data.configuration.plugins;
-      var pluginCfg = plugins && plugins[PLUGIN_ID];
+    .then((res) => {
+      var data = res?.data as SettingsPayload | undefined;
+      var plugins = data?.configuration?.plugins;
+      var pluginCfg = plugins?.[PLUGIN_ID];
       NS.enabledLanguages = NS.parseEnabledLanguages(
         pluginCfg ? pluginCfg.enabledLanguages : null
       );
@@ -400,7 +399,7 @@ function refreshSettings(): void {
       );
       emit();
     })
-    .catch(function (e) {
+    .catch((e) => {
       // Keep whatever was last read; a stale enabled set beats none.
       console.error("[mangaTools] failed to fetch plugin settings:", e);
     });
@@ -420,15 +419,15 @@ function start(): void {
 
   // Saving an edit does not change the route, so a slow poll acts as a
   // backstop. The query only pulls id + custom_fields, so it is small.
-  window.setInterval(function () {
+  window.setInterval(() => {
     if (document.visibilityState === "visible") refresh();
   }, REFRESH_MS);
 
-  if (PluginApi.Event && PluginApi.Event.addEventListener) {
-    PluginApi.Event.addEventListener("stash:location", function (e) {
+  if (PluginApi.Event?.addEventListener) {
+    PluginApi.Event.addEventListener("stash:location", (e) => {
       var ev = e as LocationEvent;
-      var loc = ev && ev.detail && ev.detail.data && ev.detail.data.location;
-      currentPath = (loc && loc.pathname) || window.location.pathname || "";
+      var loc = ev?.detail?.data?.location;
+      currentPath = loc?.pathname || window.location.pathname || "";
       refresh();
       refreshSettings();
       // Tell subscribers to recompute isGalleryContext()
@@ -453,7 +452,7 @@ function refreshAfterWrite(): void {
   if (pending) {
     // inFlight is cleared by this promise's own final handler, which runs
     // before this callback, so refresh() starts a genuinely new request.
-    pending.then(function () {
+    pending.then(() => {
       refresh();
     });
   } else {
@@ -534,8 +533,10 @@ function LanguageBadge(props: { galleryId: string }) {
  * is its default export. It is looked up at runtime, so there is no static
  * type to give it.
  */
+// biome-ignore lint/suspicious/noExplicitAny: react-select is reached through a namespace import at runtime, so its component has no static type.
 var SELECT: any = null;
 
+// biome-ignore lint/suspicious/noExplicitAny: as above — the component itself.
 function resolveSelect(): any {
   if (SELECT) return SELECT;
 
@@ -585,7 +586,7 @@ function readNativeFieldClasses(
   if (!anchor) return null;
 
   var label = anchor.querySelector("label");
-  var control = label && label.nextElementSibling;
+  var control = label?.nextElementSibling;
   if (!label || !control) return null;
 
   return {
@@ -636,11 +637,9 @@ function LanguageRow(props: {
   // A layout effect, so the extra pass is flushed after React writes the DOM but
   // before the browser paints, and this correction adds no visible step of its
   // own.
-  React.useLayoutEffect(function () {
+  React.useLayoutEffect(() => {
     if (isGalleryContext() && ensureFieldHost() !== host) {
-      bump(function (v) {
-        return v + 1;
-      });
+      bump((v) => v + 1);
     }
   });
 
@@ -648,7 +647,7 @@ function LanguageRow(props: {
 
   var current = NS.describe(props.value, intl.locale);
   var options: MangaToolsOption[] = NS.languageOptions(intl.locale).filter(
-    function (o) {
+    (o) => {
       // NS.enabledLanguages is null for "no restriction", otherwise the
       // dropdown is limited to exactly these codes. Display (badge / detail
       // row) is not affected — it always uses the full table via describe().
@@ -707,7 +706,7 @@ function LanguageRow(props: {
           formatOptionLabel={formatLanguageOption}
           // An empty value deletes the field, matching the native
           // onChange("", "") semantics.
-          onChange={function (opt: MangaToolsOption | null) {
+          onChange={(opt: MangaToolsOption | null) => {
             props.onChange(opt ? opt.value : "");
           }}
         />
@@ -763,7 +762,7 @@ function BooleanSetting(props: {
         <Bootstrap.Form.Switch
           id={props.id}
           checked={props.checked}
-          onChange={function () {
+          onChange={() => {
             props.onChange(!props.checked);
           }}
         />
@@ -800,7 +799,7 @@ function MangaToolsSettings(props: { pluginID: string }) {
           showCoverBadge: NS.showCoverBadge,
         },
       },
-    }).catch(function (e) {
+    }).catch((e) => {
       console.error("[mangaTools] failed to save plugin settings:", e);
     });
   }
@@ -810,11 +809,7 @@ function MangaToolsSettings(props: { pluginID: string }) {
   // null (no restriction) renders an empty box whose placeholder reads
   // "All languages", rather than filling the box with every tag. A non-empty
   // selection renders exactly those tags.
-  var value = enabled
-    ? options.filter(function (o) {
-        return enabled !== null && enabled.has(o.value);
-      })
-    : [];
+  var value = enabled ? options.filter((o) => enabled?.has(o.value)) : [];
 
   if (!Select) return null;
 
@@ -842,10 +837,8 @@ function MangaToolsSettings(props: { pluginID: string }) {
               options={options}
               formatOptionLabel={formatLanguageOption}
               components={{ IndicatorSeparator: () => null }}
-              onChange={function (selected: MangaToolsOption[] | null) {
-                var codes = (selected || []).map(function (o) {
-                  return o.value;
-                });
+              onChange={(selected: MangaToolsOption[] | null) => {
+                var codes = (selected || []).map((o) => o.value);
 
                 // Reflect the change immediately (the dropdown and this UI
                 // both read NS.enabledLanguages), then persist it.
@@ -865,7 +858,7 @@ function MangaToolsSettings(props: { pluginID: string }) {
         heading="Show flags"
         subHeading="Draw the flag beside the language name. Turn this off to show the name on its own."
         checked={NS.showFlags}
-        onChange={function (next) {
+        onChange={(next) => {
           NS.showFlags = next;
           emit();
           persist();
@@ -877,7 +870,7 @@ function MangaToolsSettings(props: { pluginID: string }) {
         heading="Show the language on gallery covers"
         subHeading="The badge in the bottom-right of a gallery's cover. With flags turned off it shows the language name instead of a flag."
         checked={NS.showCoverBadge}
-        onChange={function (next) {
+        onChange={(next) => {
           NS.showCoverBadge = next;
           emit();
           persist();
@@ -932,16 +925,14 @@ function captureSelection(selectedIds: unknown): void {
     selectedIds &&
     typeof (selectedIds as { forEach?: unknown }).forEach === "function"
   ) {
-    (selectedIds as Set<string>).forEach(function (id) {
+    (selectedIds as Set<string>).forEach((id) => {
       next.push(String(id));
     });
   }
 
   var unchanged =
     next.length === selectedGalleryIds.length &&
-    next.every(function (id, i) {
-      return id === selectedGalleryIds[i];
-    });
+    next.every((id, i) => id === selectedGalleryIds[i]);
 
   if (!unchanged) selectedGalleryIds = next;
 }
@@ -960,7 +951,7 @@ function selectedLanguageAggregate(): string | null {
   if (!selectedGalleryIds.length) return null;
 
   var first = store.get(selectedGalleryIds[0]) || "";
-  for (var i = 1; i < selectedGalleryIds.length; i++) {
+  for (let i = 1; i < selectedGalleryIds.length; i++) {
     if ((store.get(selectedGalleryIds[i]) || "") !== first) return null;
   }
 
@@ -981,19 +972,19 @@ var bulkLinkInstalled = false;
  */
 function isGalleryBulkUpdate(query: unknown): boolean {
   var defs = query ? (query as { definitions?: unknown[] }).definitions : null;
-  if (!defs || !defs.length) return false;
+  if (!defs?.length) return false;
 
   var op = defs[0] as {
     kind?: string;
     selectionSet?: { selections?: Array<{ name?: { value?: string } }> };
   };
-  if (!op || op.kind !== "OperationDefinition") return false;
+  if (op?.kind !== "OperationDefinition") return false;
 
-  var selections = op.selectionSet && op.selectionSet.selections;
-  if (!selections || !selections.length) return false;
+  var selections = op.selectionSet?.selections;
+  if (!selections?.length) return false;
 
   var first = selections[0];
-  return !!(first && first.name && first.name.value === "bulkGalleryUpdate");
+  return !!(first?.name && first.name.value === "bulkGalleryUpdate");
 }
 
 /**
@@ -1007,7 +998,7 @@ function isGalleryBulkUpdate(query: unknown): boolean {
  * @returns true when the operation was modified
  */
 function applyPendingLanguage(operation: MangaToolsApolloOperation): boolean {
-  if (!bulkPending || bulkPending.kind !== "set") return false;
+  if (bulkPending?.kind !== "set") return false;
 
   // The route is checked here as well as by the row's mount, so "a language is
   // only ever written on a gallery page" is a stated constraint rather than a
@@ -1053,7 +1044,7 @@ function installBulkLink(): void {
   if (bulkLinkInstalled) return;
 
   var Apollo = PluginApi.libraries.Apollo;
-  var client;
+  let client: MangaToolsApolloClient;
   try {
     client = PluginApi.utils.StashService.getClient();
   } catch (e) {
@@ -1062,8 +1053,7 @@ function installBulkLink(): void {
   }
 
   if (
-    !Apollo ||
-    !Apollo.ApolloLink ||
+    !Apollo?.ApolloLink ||
     typeof client.setLink !== "function" ||
     !client.link
   ) {
@@ -1079,7 +1069,7 @@ function installBulkLink(): void {
 
   client.setLink(
     Apollo.ApolloLink.from([
-      new Apollo.ApolloLink(function (operation, forward) {
+      new Apollo.ApolloLink((operation, forward) => {
         if (!applyPendingLanguage(operation)) {
           return forward(operation);
         }
@@ -1090,7 +1080,7 @@ function installBulkLink(): void {
 
         // Cleared only once the update actually succeeded, so a failed Apply
         // can simply be retried with the row still filled in.
-        return forward(operation).map(function (result) {
+        return forward(operation).map((result) => {
           bulkPending = null;
 
           // The badges read the plugin's own store, which this update has just
@@ -1131,13 +1121,11 @@ function BulkLanguageRow() {
   // anchor on has been committed to the DOM. The effect runs after the commit,
   // and one extra render is all it takes.
   // As in LanguageRow: before paint, so this pass adds no step of its own.
-  React.useLayoutEffect(function () {
+  React.useLayoutEffect(() => {
     if (isGalleryContext()) {
       installBulkLink();
       if (ensureBulkFieldHost() !== host) {
-        bump(function (v) {
-          return v + 1;
-        });
+        bump((v) => v + 1);
       }
     }
   });
@@ -1145,20 +1133,19 @@ function BulkLanguageRow() {
   // Losing the row means the dialog closed, so the pending value is no longer
   // wanted. Checked against the DOM rather than unconditionally, so an
   // unrelated re-render cannot throw the value away while the dialog is open.
-  React.useEffect(function () {
-    return function () {
+  React.useEffect(
+    () => () => {
       if (!document.querySelector(BULK_ANCHOR)) {
         bulkPending = null;
       }
-    };
-  }, []);
+    },
+    []
+  );
 
   if (!isGalleryContext() || !Select || !host) return null;
 
   var options: MangaToolsOption[] = NS.languageOptions(intl.locale).filter(
-    function (o) {
-      return !NS.enabledLanguages || NS.enabledLanguages.has(o.value);
-    }
+    (o) => !NS.enabledLanguages || NS.enabledLanguages.has(o.value)
   );
 
   var pending = bulkPending;
@@ -1178,12 +1165,7 @@ function BulkLanguageRow() {
   // A code that is not in the enabled list still has to be shown while it is
   // sitting in the row, or the selection would look like it was ignored.
   var currentCode = current ? current.code : "";
-  if (
-    current &&
-    !options.some(function (o) {
-      return o.value === currentCode;
-    })
-  ) {
+  if (current && !options.some((o) => o.value === currentCode)) {
     options = [
       { value: current.code, label: current.name, flag: current.flag },
       ...options,
@@ -1221,7 +1203,7 @@ function BulkLanguageRow() {
           components={{ IndicatorSeparator: () => null }}
           // Clearing means "leave the language alone", exactly as clearing the
           // studio field means "leave the studio alone" — neither sends a value.
-          onChange={function (opt: MangaToolsOption | null) {
+          onChange={(opt: MangaToolsOption | null) => {
             bulkPending = opt
               ? { kind: "set", value: opt.value }
               : { kind: "cleared" };
@@ -1243,13 +1225,12 @@ function BulkLanguageRow() {
 //    original(props) directly the way the official example does —
 //    GalleryCard.Overlays uses useMemo internally, and calling it directly
 //    breaks the rules of hooks.
-PluginApi.patch.instead("GalleryCard.Overlays", function () {
-  var args = argsToArray(arguments);
+PluginApi.patch.instead("GalleryCard.Overlays", (...args: unknown[]) => {
   var props = args[0] as { gallery?: { id?: string } };
   var Original = originalFrom(args);
   noteFired("GalleryCard.Overlays");
 
-  var id = props.gallery && props.gallery.id;
+  var id = props.gallery?.id;
   var value = id ? store.get(String(id)) : "";
 
   // Nothing to add: the gallery has no language, or the badge is turned off.
@@ -1265,8 +1246,7 @@ PluginApi.patch.instead("GalleryCard.Overlays", function () {
 
 // 2. Edit page: render the language field (it portals itself after the studio
 //    row, so it contributes nothing at this position).
-PluginApi.patch.instead("CustomFieldsInput", function () {
-  var args = argsToArray(arguments);
+PluginApi.patch.instead("CustomFieldsInput", (...args: unknown[]) => {
   var props = args[0] as {
     values?: CustomFieldsMap;
     onChange?: (values: CustomFieldsMap) => void;
@@ -1278,7 +1258,7 @@ PluginApi.patch.instead("CustomFieldsInput", function () {
     <>
       <LanguageRow
         value={pickLanguage(props.values)}
-        onChange={function (code) {
+        onChange={(code) => {
           if (props.onChange) {
             props.onChange(setLanguage(props.values, code));
           }
@@ -1296,8 +1276,7 @@ PluginApi.patch.instead("CustomFieldsInput", function () {
 //    isNew must pass through: that is the "new field" row, and the user may be
 //    in the middle of typing "language" as the field name. Returning null would
 //    make the whole row vanish mid-keystroke.
-PluginApi.patch.instead("CustomFieldInput", function () {
-  var args = argsToArray(arguments);
+PluginApi.patch.instead("CustomFieldInput", (...args: unknown[]) => {
   var props = args[0] as { field?: string; isNew?: boolean };
   var Original = originalFrom(args);
   noteFired("CustomFieldInput");
@@ -1384,7 +1363,7 @@ function ensureHostAfter(
   key: string
 ): HTMLElement | null {
   var anchor = document.querySelector(anchorSelector);
-  if (!anchor || !anchor.parentNode) {
+  if (!anchor?.parentNode) {
     fieldHosts[key] = null;
     return null;
   }
@@ -1496,8 +1475,7 @@ function DetailLanguageRow(props: { value: unknown }) {
 //    The language entry is lifted out of `values` (otherwise it would be
 //    rendered twice) and everything else is handed to the original unchanged;
 //    DetailLanguageRow renders that one entry under "photographer".
-PluginApi.patch.instead("CustomFields", function () {
-  var args = argsToArray(arguments);
+PluginApi.patch.instead("CustomFields", (...args: unknown[]) => {
   var props = args[0] as { values?: CustomFieldsMap; fullWidth?: boolean };
   var Original = originalFrom(args);
   noteFired("CustomFields");
@@ -1506,7 +1484,7 @@ PluginApi.patch.instead("CustomFields", function () {
   if (!values || typeof values !== "object") return <Original {...props} />;
 
   var key: string | null = null;
-  Object.keys(values).forEach(function (k) {
+  Object.keys(values).forEach((k) => {
     if (key === null && k.toLowerCase() === FIELD_NAME) key = k;
   });
   if (key === null) return <Original {...props} />;
@@ -1525,8 +1503,7 @@ PluginApi.patch.instead("CustomFields", function () {
 // 5. Settings page: swap the stock per-setting input for the multiselect above,
 //    but only for this plugin — every other plugin's settings go straight back
 //    to the original component untouched.
-PluginApi.patch.instead("PluginSettings", function () {
-  var args = argsToArray(arguments);
+PluginApi.patch.instead("PluginSettings", (...args: unknown[]) => {
   var props = args[0] as { pluginID?: string };
   var Original = originalFrom(args);
   noteFired("PluginSettings");
@@ -1542,8 +1519,7 @@ PluginApi.patch.instead("PluginSettings", function () {
 //    the props are handed straight back, so GalleryList renders exactly as it
 //    would without the plugin. This is the only way to see the selection: the
 //    dialog that uses it is not patchable.
-PluginApi.patch.before("GalleryList", function () {
-  var args = argsToArray(arguments);
+PluginApi.patch.before("GalleryList", (...args: unknown[]) => {
   var props = args[0] as { selectedIds?: unknown };
   noteFired("GalleryList");
   captureSelection(props ? props.selectedIds : null);
@@ -1569,8 +1545,7 @@ PluginApi.patch.before("GalleryList", function () {
 //    `instead` here rather than `before`: this one has to render. The two
 //    coexist — Stash runs before-functions first and passes their result on, so
 //    the selection above is still captured.
-PluginApi.patch.instead("GalleryList", function () {
-  var args = argsToArray(arguments);
+PluginApi.patch.instead("GalleryList", (...args: unknown[]) => {
   var props = args[0] as { filter?: MangaToolsFilterModel };
   var Original = originalFrom(args);
   noteFired("GalleryList.filter");
@@ -1594,8 +1569,7 @@ PluginApi.patch.instead("GalleryList", function () {
 //    component it renders — is used purely as a mount point; the row is
 //    positioned by the DOM anchor and its value reaches the mutation through
 //    installBulkLink, not through the dialog.
-PluginApi.patch.instead("RatingSystem", function () {
-  var args = argsToArray(arguments);
+PluginApi.patch.instead("RatingSystem", (...args: unknown[]) => {
   var props = args[0] as object;
   var Original = originalFrom(args);
   noteFired("RatingSystem");

@@ -37,7 +37,8 @@ import type {
 
 // The namespace is filled in immediately below; the cast is only needed
 // because window.MangaTools is optional in the type declaration.
-var NS = (window.MangaTools = window.MangaTools || ({} as MangaToolsNamespace));
+window.MangaTools = window.MangaTools || ({} as MangaToolsNamespace);
+const NS = window.MangaTools;
 
 /**
  * Canonical code → { flag }
@@ -117,7 +118,7 @@ function collatorFor(locale: string): Intl.Collator {
   if (!(locale in collatorCache)) {
     try {
       collatorCache[locale] = new Intl.Collator(locale);
-    } catch (e) {
+    } catch {
       collatorCache[locale] = new Intl.Collator(NS.FALLBACK_LOCALE);
     }
   }
@@ -140,7 +141,7 @@ function buildDisplayNames(
 ): MangaToolsDisplayNames | null {
   try {
     return new ctor(locales, { type: "language" });
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -159,7 +160,7 @@ function buildDisplayNames(
  */
 function displayNamesFor(locale: string): MangaToolsDisplayNames | null {
   if (!(locale in displayNamesCache)) {
-    var ctor = (
+    const ctor = (
       Intl as unknown as { DisplayNames?: MangaToolsDisplayNamesCtor }
     ).DisplayNames;
 
@@ -177,12 +178,12 @@ function displayNamesFor(locale: string): MangaToolsDisplayNames | null {
  * Case-insensitive lookup in LANGUAGES. Returns the canonical key, or "" if
  * nothing matches.
  */
-NS.findCanonical = function (code?: string | null): string {
+NS.findCanonical = (code?: string | null): string => {
   if (!code) return "";
-  var lower = String(code).trim().toLowerCase();
+  const lower = String(code).trim().toLowerCase();
   if (lower === "") return "";
-  var keys = Object.keys(NS.LANGUAGES);
-  for (var i = 0; i < keys.length; i++) {
+  const keys = Object.keys(NS.LANGUAGES);
+  for (let i = 0; i < keys.length; i++) {
     if (keys[i].toLowerCase() === lower) return keys[i];
   }
   return "";
@@ -196,7 +197,7 @@ NS.findCanonical = function (code?: string | null): string {
  * unknown — the plugin does not guess intent, and does not quietly rewrite
  * your library.
  */
-NS.normalize = function (raw: unknown): string {
+NS.normalize = (raw: unknown): string => {
   if (raw === null || raw === undefined) return "";
   var s = String(raw).trim();
   if (s === "") return "";
@@ -232,7 +233,7 @@ NS.normalize = function (raw: unknown): string {
  *     English: an engine without DisplayNames yields the raw code, which is the
  *     same thing the plugin shows for a value no table recognises.
  */
-NS.name = function (code: unknown, locale?: string | null): string {
+NS.name = (code: unknown, locale?: string | null): string => {
   // Go through normalize rather than findCanonical directly, so that
   // case-insensitive matches resolve to the canonical code; anything that
   // does not match comes back as the code itself.
@@ -258,10 +259,10 @@ NS.name = function (code: unknown, locale?: string | null): string {
  * value the table does not recognise — the shape itself is MangaToolsDescription
  * in plugin-api.ts.
  */
-NS.describe = function (
+NS.describe = (
   raw: unknown,
   locale?: string | null
-): MangaToolsDescription | null {
+): MangaToolsDescription | null => {
   var code = NS.normalize(raw);
   if (code === "") return null;
 
@@ -297,21 +298,17 @@ NS.describe = function (
  * from `option.flag` (flag-icons draws with CSS, so it cannot go inside a
  * plain-text label).
  */
-NS.languageOptions = function (locale?: string | null): MangaToolsOption[] {
+NS.languageOptions = (locale?: string | null): MangaToolsOption[] => {
   var uiLocale = locale || NS.FALLBACK_LOCALE;
   var collator = collatorFor(uiLocale);
 
   return Object.keys(NS.LANGUAGES)
-    .map(function (code) {
-      return {
-        value: code,
-        label: NS.name(code, uiLocale),
-        flag: NS.LANGUAGES[code].flag,
-      };
-    })
-    .sort(function (a, b) {
-      return collator.compare(a.label, b.label);
-    });
+    .map((code) => ({
+      value: code,
+      label: NS.name(code, uiLocale),
+      flag: NS.LANGUAGES[code].flag,
+    }))
+    .sort((a, b) => collator.compare(a.label, b.label));
 };
 
 /**
@@ -335,13 +332,13 @@ NS.enabledLanguages = null;
  * findCanonical is dropped, so a hand-edited value can never corrupt the list,
  * and duplicates collapse to one entry.
  */
-NS.parseEnabledLanguages = function (raw: unknown): Set<string> | null {
+NS.parseEnabledLanguages = (raw: unknown): Set<string> | null => {
   if (raw === null || raw === undefined) return null;
   var s = String(raw).trim();
   if (s === "") return null;
 
   var out = new Set<string>();
-  s.split(",").forEach(function (piece) {
+  s.split(",").forEach((piece) => {
     var canonical = NS.findCanonical(piece.trim());
     if (canonical) out.add(canonical);
   });
@@ -359,9 +356,8 @@ NS.parseEnabledLanguages = function (raw: unknown): Set<string> | null {
  * follows the UI language now. Code order is stable and still readable
  * ("de,en,ja").
  */
-NS.serializeEnabledLanguages = function (codes: Iterable<string>): string {
-  return Array.from(codes).sort().join(",");
-};
+NS.serializeEnabledLanguages = (codes: Iterable<string>): string =>
+  Array.from(codes).sort().join(",");
 
 /**
  * Whether flags are drawn at all — the cover badge, the dropdowns and the
@@ -391,7 +387,7 @@ NS.showCoverBadge = true;
  * string is understood too, so a value hand-edited in the config cannot
  * silently read as true when false was meant.
  */
-NS.parseFlag = function (raw: unknown, fallback: boolean): boolean {
+NS.parseFlag = (raw: unknown, fallback: boolean): boolean => {
   if (raw === null || raw === undefined || raw === "") return fallback;
   if (typeof raw === "boolean") return raw;
 

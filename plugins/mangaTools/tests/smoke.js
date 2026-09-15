@@ -1,7 +1,7 @@
 /* Manga Tools smoke test: no browser needed, everything runs against stubs */
-const path = require("path");
-const fs = require("fs");
-const assert = require("assert");
+const path = require("node:path");
+const fs = require("node:fs");
+const assert = require("node:assert");
 
 // This spec sits beside the plugin it tests — src/, tests/ and build/ all live
 // under plugins/mangaTools/ — so nothing here has to name the plugin: the path
@@ -20,7 +20,7 @@ const patchedBefore = {};
  *  successful bulk update triggers a refresh (and that a no-op one does not). */
 let galleryQueryCount = 0;
 const capturedQueries = [];
-let settingsEnabled = ""; // the stored enabledLanguages setting, mutated by tests
+const settingsEnabled = ""; // the stored enabledLanguages setting, mutated by tests
 let capturedConfigWrite = null; // last configurePlugin write, captured by the stub
 let currentLocale = "zh-CN";
 
@@ -28,10 +28,7 @@ const React = {
   Fragment: Symbol("Fragment"),
   // Matches React: createElement only builds an element, it does not call the
   // component function, and a single child is not wrapped in an array.
-  // Must be a normal function — inside an arrow function `arguments` refers to
-  // the enclosing module's arguments.
-  createElement: function (type, props) {
-    const children = Array.prototype.slice.call(arguments, 2);
+  createElement: (type, props, ...children) => {
     const next = Object.assign({}, props);
     if (children.length === 1) next.children = children[0];
     else if (children.length > 1) next.children = children;
@@ -318,7 +315,7 @@ const PluginApi = {
       },
       // Enough of ApolloLink to compose and invoke a chain: the instance keeps
       // its request function, and from() records the links it was given.
-      ApolloLink: (function () {
+      ApolloLink: (() => {
         function FakeLink(request) {
           this.request = request;
         }
@@ -343,7 +340,7 @@ const PluginApi = {
         // Stands in for Stash's react-intl: a hit in the locale files returns the
         // translation, otherwise defaultMessage is used.
         formatMessage: ({ id, defaultMessage }, values) => {
-          const text = (MESSAGES[currentLocale] || {})[id] || defaultMessage;
+          const text = MESSAGES[currentLocale]?.[id] || defaultMessage;
           if (!values || typeof text !== "string") return text;
           // Enough of ICU for the messages the plugin reads: {name} placeholders.
           return text.replace(/\{(\w+)\}/g, (whole, name) =>
@@ -481,9 +478,9 @@ const FAKE_NAMES = {
 
 /** Every locale the stub has any data for, so "unsupported" can be modelled */
 const FAKE_LOCALES = new Set();
-Object.keys(FAKE_NAMES).forEach((code) =>
-  Object.keys(FAKE_NAMES[code]).forEach((loc) => FAKE_LOCALES.add(loc))
-);
+for (const code of Object.keys(FAKE_NAMES)) {
+  for (const loc of Object.keys(FAKE_NAMES[code])) FAKE_LOCALES.add(loc);
+}
 
 /** Every construction the plugin performed: { locales, options } */
 const displayNamesCalls = [];
@@ -501,7 +498,7 @@ function FakeDisplayNames(locales, options) {
 // of() echoes a code it cannot resolve, exactly as the real implementation does
 FakeDisplayNames.prototype.of = function (code) {
   const perLocale = FAKE_NAMES[code];
-  return (perLocale && perLocale[this.resolvedLocale]) || code;
+  return perLocale?.[this.resolvedLocale] || code;
 };
 
 /** The genuine article, kept so the "engine has no DisplayNames" path can be
@@ -568,7 +565,7 @@ function find(node, pred) {
   }
 
   if (pred(node)) return node;
-  return find(node.props && node.props.children, pred);
+  return find(node.props?.children, pred);
 }
 
 // ── 1. Normalisation ───────────────────────────────────────────────
@@ -596,13 +593,13 @@ const cases = [
   [null, ""],
   [undefined, ""],
 ];
-cases.forEach(([input, want]) =>
+for (const [input, want] of cases) {
   assert.strictEqual(
     NS.normalize(input),
     want,
     `normalize(${JSON.stringify(input)})`
-  )
-);
+  );
+}
 console.log(`✓ normalisation: all ${cases.length} cases pass`);
 
 // ── 2. The locale handed to Intl.DisplayNames ──────────────────────
@@ -860,21 +857,24 @@ console.log("✓ dropdown order (by displayed name, in the reader's collation)")
 // Note it is CustomFields (plural, the container), not CustomField — the latter
 // is a plain React.FC, so patching it reports no error and simply never runs.
 // That is a real bug this project hit.
-[
+const requiredPatches = [
   "GalleryCard.Overlays",
   "CustomFieldsInput",
   "CustomFieldInput",
   "CustomFields",
   "PluginSettings",
   "RatingSystem",
-].forEach((t) => assert.ok(patched[t], `missing patch: ${t}`));
+];
+for (const t of requiredPatches) {
+  assert.ok(patched[t], `missing patch: ${t}`);
+}
 
 // GalleryList carries two patches, which is allowed: Stash runs the
 // before-functions first and passes their result on to any instead-functions
 // (see patch.tsx). It is observed for the selection the bulk dialog needs, and
 // wrapped so the sidebar language filter has somewhere to mount.
-assert.ok(patchedBefore["GalleryList"], "missing patch: GalleryList (before)");
-assert.ok(patched["GalleryList"], "missing patch: GalleryList (instead)");
+assert.ok(patchedBefore.GalleryList, "missing patch: GalleryList (before)");
+assert.ok(patched.GalleryList, "missing patch: GalleryList (instead)");
 
 // The wrapper has to hand the list through untouched — the plugin adds siblings,
 // it does not replace anything. Two of them now: the sidebar section, and the
@@ -1263,7 +1263,7 @@ assert.ok(
 currentLocale = "zh-CN";
 
 // No language field at all → hands off completely
-let noLang = call("CustomFields", { values: { author: "x" } });
+const noLang = call("CustomFields", { values: { author: "x" } });
 assert.strictEqual(
   noLang.type,
   original,
@@ -1400,7 +1400,7 @@ studioRow.appendChild(studioLabel);
 studioRow.appendChild(studioControl);
 
 // The dropdown itself
-const editSelect = find(fg, (n) => n.props && n.props.options);
+const editSelect = find(fg, (n) => n.props?.options);
 assert.strictEqual(editSelect.props.value.value, "ja");
 assert.strictEqual(editSelect.props.value.flag, "jp");
 // The order is asserted in 5b; here it is only the selected value echoing back.
@@ -2980,6 +2980,7 @@ console.log(
 // The tag text, assembled from Stash's own messages so a tag reads like one
 // Stash draws. Per condition, because Stash draws a tag per condition — which is
 // how a filter with exclusions comes out as two sentences rather than one.
+// biome-ignore lint/correctness/useHookAtTopLevel: the stub named useIntl is not a React hook — the tests call the plugin's helpers directly.
 const intl = PluginApi.libraries.Intl.useIntl();
 const condition = (modifier, value) => ({ field: "language", modifier, value });
 assert.strictEqual(
@@ -3049,7 +3050,7 @@ setTimeout(() => {
   };
   const flagOf = (id) => {
     const badge = badgeOf(id);
-    if (!badge || badge.type !== "div") return null;
+    if (badge?.type !== "div") return null;
     const inner = badge.props.children;
     // The unknown-value branch holds plain text, not a Flag element
     if (!inner || typeof inner.type !== "function") return null;
@@ -3209,10 +3210,7 @@ setTimeout(() => {
   // but the currently-selected value still echoes even if it is outside the set
   // (display is unaffected — only the option list is filtered).
   NS.enabledLanguages = new Set(["ja", "en"]);
-  const filtered = find(
-    renderRow({ language: "vi" }),
-    (n) => n.props && n.props.options
-  );
+  const filtered = find(renderRow({ language: "vi" }), (n) => n.props?.options);
   assert.deepStrictEqual(
     filtered.props.options.map((o) => o.value),
     ["ja", "en"],
@@ -3227,10 +3225,7 @@ setTimeout(() => {
   NS.enabledLanguages = null; // restore
 
   // Selected value echo: a canonical code in the wrong case echoes back canonical
-  const sel = find(
-    renderRow({ language: "ZH-HANT" }),
-    (n) => n.props && n.props.options
-  );
+  const sel = find(renderRow({ language: "ZH-HANT" }), (n) => n.props?.options);
   assert.strictEqual(
     sel.props.value.label,
     "繁体中文",
@@ -3248,7 +3243,7 @@ setTimeout(() => {
   // make them unreachable.
   const selUnknown = find(
     renderRow({ language: "chs" }),
-    (n) => n.props && n.props.options
+    (n) => n.props?.options
   );
   assert.strictEqual(selUnknown.props.options[0].value, "chs");
   assert.strictEqual(
@@ -3418,7 +3413,7 @@ setTimeout(() => {
   // The selection is read from GalleryList, which the plugin observes rather
   // than replaces.
   const selectGalleries = (ids) =>
-    patchedBefore["GalleryList"]({ selectedIds: new Set(ids) }, undefined);
+    patchedBefore.GalleryList({ selectedIds: new Set(ids) }, undefined);
 
   // The row is mounted by the RatingSystem patch; render the fragment it returns
   // and follow the portal it makes.
@@ -3433,7 +3428,7 @@ setTimeout(() => {
       (n) => n.props && n.props.inputId === "manga_tools_language"
     );
 
-  let b14 = bulkRow();
+  const b14 = bulkRow();
   assert.strictEqual(
     b14.__portal,
     true,

@@ -388,7 +388,7 @@ function renderIndex(entries) {
         ];
         if (e.requires.length) {
           lines.push("  requires:");
-          e.requires.forEach((r) => lines.push(`    - ${q(r)}`));
+          for (const r of e.requires) lines.push(`    - ${q(r)}`);
         }
         return lines.join("\n");
       })

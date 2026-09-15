@@ -118,11 +118,11 @@ var EMPTY_SELECTION: MangaToolsLanguageSelection = {
 export function registerLanguageCriterionOption(
   filter: MangaToolsFilterModel
 ): void {
-  var options = filter && filter.options && filter.options.criterionOptions;
+  var options = filter?.options?.criterionOptions;
   if (!options) return;
 
   var found: MangaToolsCriterionOption | null = null;
-  for (var i = 0; i < options.length; i++) {
+  for (let i = 0; i < options.length; i++) {
     // Guarding on the array rather than a flag of our own: it is Stash's list
     // and it outlives this call, so asking it is both simpler and correct even
     // if Stash ever keeps more than one.
@@ -137,7 +137,7 @@ export function registerLanguageCriterionOption(
   var option: MangaToolsCriterionOption = {
     type: LANGUAGE_TYPE,
     messageID: "config.ui.language.heading",
-    makeCriterion: function () {
+    makeCriterion: () => {
       // A real CustomFieldsCriterion, so CriterionEditor renders the editor
       // Stash wrote for it and the query it produces is the one the sidebar
       // already writes.
@@ -193,9 +193,9 @@ export function registerLanguageCriterionOption(
 function customFieldsCriterion(
   filter: MangaToolsFilterModel
 ): MangaToolsFilterCriterion | null {
-  var criteria = (filter && filter.criteria) || [];
-  for (var i = 0; i < criteria.length; i++) {
-    var option = criteria[i] && criteria[i].criterionOption;
+  var criteria = filter?.criteria || [];
+  for (let i = 0; i < criteria.length; i++) {
+    const option = criteria[i]?.criterionOption;
     if (!option) continue;
     if (option.type === CUSTOM_FIELDS_TYPE || option.type === LANGUAGE_TYPE) {
       return criteria[i];
@@ -214,9 +214,7 @@ function isLanguageCondition(
 /** The values of a condition, as codes */
 function conditionValues(condition: MangaToolsCustomFieldCondition): string[] {
   var values = condition.value || [];
-  return values.map(function (v) {
-    return String(v);
-  });
+  return values.map((v) => String(v));
 }
 
 /**
@@ -234,10 +232,10 @@ function conditionValues(condition: MangaToolsCustomFieldCondition): string[] {
 function isLanguageCriterion(
   criterion: MangaToolsFilterCriterion | null
 ): boolean {
-  var conditions = (criterion && criterion.value) || [];
+  var conditions = criterion?.value || [];
   if (!conditions.length) return false;
 
-  for (var i = 0; i < conditions.length; i++) {
+  for (let i = 0; i < conditions.length; i++) {
     if (!isLanguageCondition(conditions[i])) return false;
   }
 
@@ -289,9 +287,9 @@ function adoptLanguageCriterion(filter: MangaToolsFilterModel): void {
     return;
   }
 
-  var options = (filter.options && filter.options.criterionOptions) || [];
+  var options = filter.options?.criterionOptions || [];
   var option: MangaToolsCriterionOption | null = null;
-  for (var i = 0; i < options.length; i++) {
+  for (let i = 0; i < options.length; i++) {
     if (options[i].type === LANGUAGE_TYPE) option = options[i];
   }
   if (!option) return;
@@ -313,7 +311,7 @@ function readLanguageFilter(
   filter: MangaToolsFilterModel
 ): MangaToolsLanguageSelection {
   var criterion = customFieldsCriterion(filter);
-  if (!criterion || !criterion.value) return EMPTY_SELECTION;
+  if (!criterion?.value) return EMPTY_SELECTION;
 
   var selection: MangaToolsLanguageSelection = {
     modifier: "",
@@ -321,7 +319,7 @@ function readLanguageFilter(
     excluded: [],
   };
 
-  criterion.value.forEach(function (condition) {
+  criterion.value.forEach((condition) => {
     if (!isLanguageCondition(condition)) return;
 
     if (condition.modifier === "NOT_NULL") selection.modifier = "any";
@@ -358,15 +356,11 @@ export function toggleIncluded(
   return {
     modifier: "",
     included: already
-      ? selection.included.filter(function (c) {
-          return c !== code;
-        })
+      ? selection.included.filter((c) => c !== code)
       : selection.included.concat([code]),
     // A language is included or excluded, never both: EQUALS and NOT_EQUALS for
     // one value is a contradiction and matches nothing.
-    excluded: selection.excluded.filter(function (c) {
-      return c !== code;
-    }),
+    excluded: selection.excluded.filter((c) => c !== code),
   };
 }
 
@@ -379,13 +373,9 @@ export function toggleExcluded(
 
   return {
     modifier: "",
-    included: selection.included.filter(function (c) {
-      return c !== code;
-    }),
+    included: selection.included.filter((c) => c !== code),
     excluded: already
-      ? selection.excluded.filter(function (c) {
-          return c !== code;
-        })
+      ? selection.excluded.filter((c) => c !== code)
       : selection.excluded.concat([code]),
   };
 }
@@ -399,7 +389,7 @@ export function toggleExcluded(
  * discarding them later would be worse than making the choice visible now.
  */
 export function withModifier(
-  selection: MangaToolsLanguageSelection,
+  _selection: MangaToolsLanguageSelection,
   modifier: "any" | "none"
 ): MangaToolsLanguageSelection {
   return { modifier: modifier, included: [], excluded: [] };
@@ -444,7 +434,7 @@ function sameCodes(a: string[], b: string[]): boolean {
 
   var x = a.slice().sort();
   var y = b.slice().sort();
-  for (var i = 0; i < x.length; i++) {
+  for (let i = 0; i < x.length; i++) {
     if (x[i] !== y[i]) return false;
   }
   return true;
@@ -505,9 +495,7 @@ export function conditionLabel(
       criterion: fieldLabel(intl),
       modifierString: word,
       valueString: conditionValues(condition)
-        .map(function (code) {
-          return NS.name(code, intl.locale);
-        })
+        .map((code) => NS.name(code, intl.locale))
         .join(", "),
     }
   );
@@ -525,8 +513,8 @@ export function tagLabels(
   var conditions = criterion.value || [];
   var labels: string[] = [];
 
-  for (var i = 0; i < conditions.length; i++) {
-    var label = conditionLabel(intl, conditions[i]);
+  for (let i = 0; i < conditions.length; i++) {
+    const label = conditionLabel(intl, conditions[i]);
     if (label === null) return null;
     labels.push(label);
   }
@@ -584,9 +572,9 @@ function languageFilterQuery(
   // Ours if the dialog's Language card registered one, so a filter set here
   // shows as that card rather than as a generic custom field. Falls back to the
   // custom-fields option, which is the same criterion underneath.
-  var options = (filter.options && filter.options.criterionOptions) || [];
+  var options = filter.options?.criterionOptions || [];
   var option: MangaToolsCriterionOption | null = null;
-  for (var i = 0; i < options.length; i++) {
+  for (let i = 0; i < options.length; i++) {
     if (options[i].type === CUSTOM_FIELDS_TYPE) option = options[i];
     if (options[i].type === LANGUAGE_TYPE) option = options[i];
   }
@@ -597,8 +585,8 @@ function languageFilterQuery(
   var criterion = customFieldsCriterion(next);
 
   var kept: MangaToolsCustomFieldCondition[] = [];
-  if (criterion && criterion.value) {
-    for (var j = 0; j < criterion.value.length; j++) {
+  if (criterion?.value) {
+    for (let j = 0; j < criterion.value.length; j++) {
       if (!isLanguageCondition(criterion.value[j]))
         kept.push(criterion.value[j]);
     }
@@ -609,9 +597,7 @@ function languageFilterQuery(
   if (!conditions.length) {
     // Nothing left to say: drop the criterion rather than leave an empty one,
     // which would show as a filter tag with no meaning.
-    next.criteria = (next.criteria || []).filter(function (c) {
-      return c !== criterion;
-    });
+    next.criteria = (next.criteria || []).filter((c) => c !== criterion);
   } else {
     if (!criterion) {
       criterion = criterionOption.makeCriterion();
@@ -791,7 +777,7 @@ function LanguageRow(props: {
   var sidebar = props.variant === "sidebar";
 
   function setHover(next: boolean) {
-    return function () {
+    return () => {
       setHovered(next);
     };
   }
@@ -852,11 +838,11 @@ function LanguageRow(props: {
                 // note on the search box's clear button.
                 variant="secondary"
                 className="minimal exclude-button"
-                onClick={function (e: { stopPropagation: () => void }) {
+                onClick={(e: { stopPropagation: () => void }) => {
                   e.stopPropagation();
                   if (props.onExclude) props.onExclude();
                 }}
-                onKeyDown={function (e: { stopPropagation: () => void }) {
+                onKeyDown={(e: { stopPropagation: () => void }) => {
                   e.stopPropagation();
                 }}
               >
@@ -911,7 +897,7 @@ var OWN_TAG_MARK = "data-manga-tools-own-tag";
 function isLanguageTag(tag: Element): boolean {
   // The label is the tag's first child — `{label}` ahead of the ✗ button.
   var text = tag.firstChild;
-  if (!text || text.nodeType !== 3 /* TEXT_NODE */) return false;
+  if (text?.nodeType !== 3 /* TEXT_NODE */) return false;
 
   var value = String(text.nodeValue).trim();
   if (tag.getAttribute(TAG_MARK) === value) return true;
@@ -938,7 +924,7 @@ function listLanguageTags(): Element[] {
   var all = document.querySelectorAll(TAG_SELECTOR);
   var ours: Element[] = [];
 
-  for (var i = 0; i < all.length; i++) {
+  for (let i = 0; i < all.length; i++) {
     if (all[i].closest(".edit-filter-dialog")) continue;
     if (isLanguageTag(all[i])) ours.push(all[i]);
   }
@@ -957,7 +943,7 @@ function dialogLanguageTags(): HTMLElement[] {
   var all = document.querySelectorAll(TAG_SELECTOR);
   var ours: HTMLElement[] = [];
 
-  for (var i = 0; i < all.length; i++) {
+  for (let i = 0; i < all.length; i++) {
     if (!all[i].closest(".edit-filter-dialog")) continue;
     if (all[i].closest(".criterion-list")) continue;
     // Never the tags this plugin draws: they are the ones that must stay visible
@@ -974,7 +960,7 @@ function dialogLanguageTags(): HTMLElement[] {
 
 /** Writes labels into tags, in order, one per tag */
 function writeTagLabels(tags: Element[], labels: string[]): void {
-  for (var i = 0; i < tags.length && i < labels.length; i++) {
+  for (let i = 0; i < tags.length && i < labels.length; i++) {
     tagText(tags[i]).nodeValue = labels[i];
     tags[i].setAttribute(TAG_MARK, labels[i]);
   }
@@ -1046,7 +1032,7 @@ function stashDialogTagsRow(): Element | null {
   if (!content) return null;
 
   var rows = content.querySelectorAll(".filter-tags");
-  for (var i = 0; i < rows.length; i++) {
+  for (let i = 0; i < rows.length; i++) {
     if (rows[i] === dialogTagsFallback) continue;
     if (!rows[i].closest(".criterion-list")) return rows[i];
   }
@@ -1096,7 +1082,7 @@ function dialogTagsRow(): Element | null {
 
 /** Takes our row away again once Stash is drawing one of its own */
 function dropFallbackRow(): void {
-  if (dialogTagsFallback && dialogTagsFallback.parentNode) {
+  if (dialogTagsFallback?.parentNode) {
     dialogTagsFallback.parentNode.removeChild(dialogTagsFallback);
   }
 }
@@ -1125,16 +1111,16 @@ function dropFallbackRow(): void {
 function manageDialogTags(labels: string[]): void {
   var tags = dialogLanguageTags();
 
-  for (var i = 0; i < tags.length; i++) {
-    var label = i < labels.length ? labels[i] : null;
+  for (let i = 0; i < tags.length; i++) {
+    const label = i < labels.length ? labels[i] : null;
 
-    var text = tagText(tags[i]);
+    const text = tagText(tags[i]);
     if (label !== null && text.nodeValue !== label) {
       text.nodeValue = label;
       tags[i].setAttribute(TAG_MARK, label);
     }
 
-    var display = label === null ? "none" : "";
+    const display = label === null ? "none" : "";
     if (tags[i].style.display !== display) tags[i].style.display = display;
   }
 }
@@ -1307,27 +1293,25 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
    * in place before any of it is on screen.
    */
   var dialogDom = React.useRef("");
-  React.useEffect(function () {
+  React.useEffect(() => {
     if (typeof MutationObserver !== "function") return;
 
-    var observer = new MutationObserver(function () {
+    var observer = new MutationObserver(() => {
       var state = dialogDomState();
       if (state === dialogDom.current) return;
 
       dialogDom.current = state;
-      bump(function (v) {
-        return v + 1;
-      });
+      bump((v) => v + 1);
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
-    return function () {
+    return () => {
       observer.disconnect();
     };
   }, []);
 
   /** Apply, and the ways Stash itself takes the language away */
-  React.useEffect(function () {
+  React.useEffect(() => {
     function onClick(event: Event) {
       var clicked = event.target as Element | null;
       if (!clicked || typeof clicked.closest !== "function") return;
@@ -1350,7 +1334,7 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
         // Choosing a language and nothing else leaves that filter untouched, so
         // there is nothing for the merge to wait for and the language is not
         // applied. Changing it from the sidebar is what works.
-        window.setTimeout(function () {
+        window.setTimeout(() => {
           if (!applyPending.current) return;
           applyPending.current = false;
 
@@ -1383,7 +1367,7 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
     }
 
     document.addEventListener("click", onClick, true);
-    return function () {
+    return () => {
       document.removeEventListener("click", onClick, true);
     };
   }, []);
@@ -1417,7 +1401,7 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
    * does not arrive, the timer says so rather than merging later and wrongly.
    */
   var lastModel = React.useRef<MangaToolsFilterModel | null>(null);
-  React.useEffect(function () {
+  React.useEffect(() => {
     var model = props.filter;
     var previous = lastModel.current;
     lastModel.current = model;
@@ -1464,7 +1448,7 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
    * after the body has finished — and it keeps this among the other hooks, where
    * an early return can never come between them.
    */
-  React.useLayoutEffect(function () {
+  React.useLayoutEffect(() => {
     manageDialogTags(dialogTagLabels);
     if (!ownTagsRow) dropFallbackRow();
   });
@@ -1485,7 +1469,7 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
    */
   var sessionRef = React.useRef(0);
   var syncedRef = React.useRef(-1);
-  React.useLayoutEffect(function () {
+  React.useLayoutEffect(() => {
     if (!document.querySelector(".edit-filter-dialog")) {
       sessionRef.current += 1;
       syncedRef.current = -1;
@@ -1500,26 +1484,25 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
     // it does not need — a setState in a layout effect is a synchronous render,
     // and one that changes nothing every time is a loop.
     var applied = readLanguageFilter(props.filter);
-    setChoice(function (previous) {
-      return sameSelection(previous, applied) ? previous : applied;
-    });
+    setChoice((previous) =>
+      sameSelection(previous, applied) ? previous : applied
+    );
     setQuery("");
   });
 
   // What the list is drawn from, following the sidebar's rules: the enabled
   // languages setting limits the choices, and a value already in use stays
   // visible even if it has since been disabled.
-  var options = NS.languageOptions(intl.locale).filter(function (o) {
-    return (
+  var options = NS.languageOptions(intl.locale).filter(
+    (o) =>
       !NS.enabledLanguages ||
       NS.enabledLanguages.has(o.value) ||
       choice.included.indexOf(o.value) !== -1 ||
       choice.excluded.indexOf(o.value) !== -1
-    );
-  });
+  );
 
   var needle = query.trim().toLowerCase();
-  var matches = function (o: MangaToolsOption) {
+  var matches = (o: MangaToolsOption) => {
     if (!needle) return true;
     return (
       o.label.toLowerCase().indexOf(needle) !== -1 ||
@@ -1531,25 +1514,23 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
   // to pick in those states, which is Stash's own rule for its lists.
   var selectable = choice.modifier ? [] : options;
 
-  var chosen = selectable.filter(function (o) {
-    return choice.included.indexOf(o.value) !== -1;
-  });
-  var excludedChosen = selectable.filter(function (o) {
-    return choice.excluded.indexOf(o.value) !== -1;
-  });
-  var candidates = selectable.filter(function (o) {
-    return (
+  var chosen = selectable.filter(
+    (o) => choice.included.indexOf(o.value) !== -1
+  );
+  var excludedChosen = selectable.filter(
+    (o) => choice.excluded.indexOf(o.value) !== -1
+  );
+  var candidates = selectable.filter(
+    (o) =>
       choice.included.indexOf(o.value) === -1 &&
       choice.excluded.indexOf(o.value) === -1 &&
       matches(o)
-    );
-  });
+  );
 
   var showModifiers = isEmptySelection(choice);
 
-  var flagFor = function (o: MangaToolsOption): string | null {
-    return NS.showFlags ? o.flag : null;
-  };
+  var flagFor = (o: MangaToolsOption): string | null =>
+    NS.showFlags ? o.flag : null;
 
   // The dialog's tags, and what is left for the card to draw itself — see
   // manageDialogTags and ownTagLabels. The labels are the card's own, because the
@@ -1582,10 +1563,10 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
             className="clearable-text-field form-control"
             value={query}
             placeholder={message(intl, "actions.search", "Search") + "…"}
-            onChange={function (e: { target: { value: string } }) {
+            onChange={(e: { target: { value: string } }) => {
               setQuery(e.target.value);
             }}
-            onKeyDown={function (e: { key?: string }) {
+            onKeyDown={(e: { key?: string }) => {
               if (e.key === "Escape") {
                 if (searchRef.current) searchRef.current.blur();
                 return;
@@ -1609,40 +1590,36 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
                   ? message(intl, "criterion_modifier_values.any", "Any")
                   : message(intl, "criterion_modifier_values.none", "None")
               }
-              onClick={function () {
+              onClick={() => {
                 setChoice(withoutModifier(choice));
               }}
             />
           ) : null}
-          {chosen.map(function (o) {
-            return (
+          {chosen.map((o) => (
+            <LanguageRow
+              key={"in-" + o.value}
+              variant="dialog"
+              state="included"
+              label={o.label}
+              flag={flagFor(o)}
+              onClick={() => {
+                setChoice(toggleIncluded(choice, o.value));
+              }}
+            />
+          ))}
+          {excludedChosen.map((o) => (
+            <li key={"ex-" + o.value} className="excluded-object">
               <LanguageRow
-                key={"in-" + o.value}
                 variant="dialog"
-                state="included"
+                state="excluded"
                 label={o.label}
                 flag={flagFor(o)}
-                onClick={function () {
-                  setChoice(toggleIncluded(choice, o.value));
+                onClick={() => {
+                  setChoice(toggleExcluded(choice, o.value));
                 }}
               />
-            );
-          })}
-          {excludedChosen.map(function (o) {
-            return (
-              <li key={"ex-" + o.value} className="excluded-object">
-                <LanguageRow
-                  variant="dialog"
-                  state="excluded"
-                  label={o.label}
-                  flag={flagFor(o)}
-                  onClick={function () {
-                    setChoice(toggleExcluded(choice, o.value));
-                  }}
-                />
-              </li>
-            );
-          })}
+            </li>
+          ))}
           {showModifiers ? (
             <LanguageRow
               variant="dialog"
@@ -1650,7 +1627,7 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
               state="candidate"
               canExclude={false}
               label={message(intl, "criterion_modifier_values.any", "Any")}
-              onClick={function () {
+              onClick={() => {
                 setChoice(withModifier(choice, "any"));
               }}
             />
@@ -1662,29 +1639,27 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
               state="candidate"
               canExclude={false}
               label={message(intl, "criterion_modifier_values.none", "None")}
-              onClick={function () {
+              onClick={() => {
                 setChoice(withModifier(choice, "none"));
               }}
             />
           ) : null}
-          {candidates.map(function (o) {
-            return (
-              <LanguageRow
-                key={o.value}
-                variant="dialog"
-                state="candidate"
-                label={o.label}
-                flag={flagFor(o)}
-                canExclude
-                onClick={function () {
-                  setChoice(toggleIncluded(choice, o.value));
-                }}
-                onExclude={function () {
-                  setChoice(toggleExcluded(choice, o.value));
-                }}
-              />
-            );
-          })}
+          {candidates.map((o) => (
+            <LanguageRow
+              key={o.value}
+              variant="dialog"
+              state="candidate"
+              label={o.label}
+              flag={flagFor(o)}
+              canExclude
+              onClick={() => {
+                setChoice(toggleIncluded(choice, o.value));
+              }}
+              onExclude={() => {
+                setChoice(toggleExcluded(choice, o.value));
+              }}
+            />
+          ))}
         </ul>
       </div>
     </div>
@@ -1697,18 +1672,16 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
           own — one per condition, in the place Stash's would have been. */}
       {ownTagsRow
         ? PluginApi.ReactDOM.createPortal(
-            ownTags.map(function (label, index) {
-              return (
-                <LanguageTag
-                  key={index}
-                  label={label}
-                  onRemove={function () {
-                    setChoice(EMPTY_SELECTION);
-                    setQuery("");
-                  }}
-                />
-              );
-            }),
+            ownTags.map((label, index) => (
+              <LanguageTag
+                key={index}
+                label={label}
+                onRemove={() => {
+                  setChoice(EMPTY_SELECTION);
+                  setQuery("");
+                }}
+              />
+            )),
             ownTagsRow
           )
         : null}
@@ -1733,7 +1706,7 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
  */
 function ensureFilterHost(): HTMLElement | null {
   var anchor = document.querySelector(".sidebar-saved-filters");
-  if (!anchor || !anchor.parentNode) {
+  if (!anchor?.parentNode) {
     filterHost = null;
     return null;
   }
@@ -1775,7 +1748,7 @@ export function SidebarLanguageFilter(props: {
   // already has the right answer. Stash restores its sections in a `useEffect`,
   // which is why they can appear to jump on a reload; there is no need to copy
   // that part.
-  var openState = React.useState<boolean>(function () {
+  var openState = React.useState<boolean>(() => {
     var state = history.location.state;
     var stored = state ? state[SECTION_STATE_KEY] : undefined;
     return typeof stored === "boolean" ? stored : false;
@@ -1815,14 +1788,12 @@ export function SidebarLanguageFilter(props: {
   // Stash's controls (see adoptLanguageCriterion) and its tag is re-worded (see
   // relabelTags). Every change to the filter decodes into fresh criterion
   // objects, so both are repeated on each commit.
-  React.useLayoutEffect(function () {
+  React.useLayoutEffect(() => {
     adoptLanguageCriterion(props.filter);
     if (tagLabelsFor) relabelTags(tagLabelsFor);
 
     if (ensureFilterHost() !== host) {
-      bump(function (v) {
-        return v + 1;
-      });
+      bump((v) => v + 1);
     }
   });
 
@@ -1878,14 +1849,13 @@ export function SidebarLanguageFilter(props: {
   // this library uses. A value already in use stays visible even if it has since
   // been disabled, since otherwise the list would be filtered by something
   // invisible.
-  var options = NS.languageOptions(intl.locale).filter(function (o) {
-    return (
+  var options = NS.languageOptions(intl.locale).filter(
+    (o) =>
       !NS.enabledLanguages ||
       NS.enabledLanguages.has(o.value) ||
       selection.included.indexOf(o.value) !== -1 ||
       selection.excluded.indexOf(o.value) !== -1
-    );
-  });
+  );
 
   // No candidates while (Any) or (None) is chosen: there is no particular value
   // to pick in those states. That is Stash's own rule — its useCandidates returns
@@ -1896,7 +1866,7 @@ export function SidebarLanguageFilter(props: {
 
   /** What the reader typed, against both the name and the code */
   var needle = query.trim().toLowerCase();
-  var matches = function (o: MangaToolsOption) {
+  var matches = (o: MangaToolsOption) => {
     if (!needle) return true;
     return (
       o.label.toLowerCase().indexOf(needle) !== -1 ||
@@ -1904,23 +1874,21 @@ export function SidebarLanguageFilter(props: {
     );
   };
 
-  var chosen = options.filter(function (o) {
-    return selection.included.indexOf(o.value) !== -1;
-  });
-  var excludedChosen = options.filter(function (o) {
-    return selection.excluded.indexOf(o.value) !== -1;
-  });
-  var candidates = selectable.filter(function (o) {
-    return (
+  var chosen = options.filter(
+    (o) => selection.included.indexOf(o.value) !== -1
+  );
+  var excludedChosen = options.filter(
+    (o) => selection.excluded.indexOf(o.value) !== -1
+  );
+  var candidates = selectable.filter(
+    (o) =>
       selection.included.indexOf(o.value) === -1 &&
       selection.excluded.indexOf(o.value) === -1 &&
       matches(o)
-    );
-  });
+  );
 
-  var flagFor = function (o: MangaToolsOption): string | null {
-    return NS.showFlags ? o.flag : null;
-  };
+  var flagFor = (o: MangaToolsOption): string | null =>
+    NS.showFlags ? o.flag : null;
 
   /**
    * Opens or closes the section, and records the choice where Stash records its
@@ -1978,7 +1946,7 @@ export function SidebarLanguageFilter(props: {
       </li>
     );
   }
-  chosen.map(function (o) {
+  chosen.forEach((o) => {
     chosenItems.push(
       <LanguageRow
         variant="sidebar"
@@ -1986,7 +1954,7 @@ export function SidebarLanguageFilter(props: {
         label={o.label}
         flag={flagFor(o)}
         state="included"
-        onClick={function () {
+        onClick={() => {
           toggleInclude(o.value);
         }}
       />
@@ -2015,20 +1983,18 @@ export function SidebarLanguageFilter(props: {
       ) : null}
       {excludedChosen.length ? (
         <ul className="selected-list excluded-list">
-          {excludedChosen.map(function (o) {
-            return (
-              <LanguageRow
-                variant="sidebar"
-                key={"ex-" + o.value}
-                label={o.label}
-                flag={flagFor(o)}
-                state="excluded"
-                onClick={function () {
-                  toggleExclude(o.value);
-                }}
-              />
-            );
-          })}
+          {excludedChosen.map((o) => (
+            <LanguageRow
+              variant="sidebar"
+              key={"ex-" + o.value}
+              label={o.label}
+              flag={flagFor(o)}
+              state="excluded"
+              onClick={() => {
+                toggleExclude(o.value);
+              }}
+            />
+          ))}
         </ul>
       ) : null}
 
@@ -2043,10 +2009,10 @@ export function SidebarLanguageFilter(props: {
                 className="clearable-text-field form-control"
                 value={query}
                 placeholder={message(intl, "actions.search", "Search") + "…"}
-                onChange={function (e: { target: { value: string } }) {
+                onChange={(e: { target: { value: string } }) => {
                   setQuery(e.target.value);
                 }}
-                onKeyDown={function (e: { key?: string }) {
+                onKeyDown={(e: { key?: string }) => {
                   // Enter takes the one candidate the search has narrowed to,
                   // as Stash's onEnter does. Deliberately the candidates rather
                   // than the modifier entries listed above them, which is what
@@ -2065,7 +2031,7 @@ export function SidebarLanguageFilter(props: {
                   variant="secondary"
                   className="clearable-text-field-clear"
                   title={message(intl, "actions.clear", "Clear")}
-                  onClick={function () {
+                  onClick={() => {
                     setQuery("");
                   }}
                 >
@@ -2085,7 +2051,7 @@ export function SidebarLanguageFilter(props: {
                   state="candidate"
                   modifier
                   canExclude={false}
-                  onClick={function () {
+                  onClick={() => {
                     setModifier("any");
                   }}
                 />
@@ -2101,31 +2067,29 @@ export function SidebarLanguageFilter(props: {
                   state="candidate"
                   modifier
                   canExclude={false}
-                  onClick={function () {
+                  onClick={() => {
                     setModifier("none");
                   }}
                 />
               ) : null}
-              {candidates.map(function (o) {
-                return (
-                  <LanguageRow
-                    variant="sidebar"
-                    key={o.value}
-                    label={o.label}
-                    flag={flagFor(o)}
-                    state="candidate"
-                    canExclude
-                    onClick={function () {
-                      toggleInclude(o.value);
-                      setQuery("");
-                    }}
-                    onExclude={function () {
-                      toggleExclude(o.value);
-                      setQuery("");
-                    }}
-                  />
-                );
-              })}
+              {candidates.map((o) => (
+                <LanguageRow
+                  variant="sidebar"
+                  key={o.value}
+                  label={o.label}
+                  flag={flagFor(o)}
+                  state="candidate"
+                  canExclude
+                  onClick={() => {
+                    toggleInclude(o.value);
+                    setQuery("");
+                  }}
+                  onExclude={() => {
+                    toggleExclude(o.value);
+                    setQuery("");
+                  }}
+                />
+              ))}
             </ul>
           </div>
         </div>

@@ -137,6 +137,9 @@
   gap: 0.45rem;
 }
 
+/* biome-ignore lint/style/noDescendingSpecificity: ordered with the rest of the
+   flag rules rather than by specificity — nothing here depends on the order, and
+   the file reads in the order the pieces appear on screen. */
 .manga-tools-flag {
   border-radius: 2px;
   flex: 0 0 auto;
@@ -266,5 +269,7 @@
  * either: `mb-2` is important too.)
  */
 .criterion-list [data-type="language"] .filter-tags {
+  /* biome-ignore lint/complexity/noImportantStyles: see above — the whole point
+     is to beat a utility class that is itself important. */
   display: none !important;
 }
