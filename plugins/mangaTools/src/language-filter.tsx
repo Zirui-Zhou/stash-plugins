@@ -697,6 +697,59 @@ const FILTER_HOST_CLASS = "manga-tools-field-host";
 let filterHost: HTMLElement | null = null;
 
 /**
+ * The languages a surface offers.
+ *
+ * The enabled-languages setting limits the choices, and a value the selection
+ * already holds stays visible even if it has since been disabled — otherwise the
+ * list would be filtered by something the reader cannot see.
+ *
+ * Shared rather than written out per surface: the sidebar section and the dialog's
+ * card must offer the same choices, or a filter set in one is not the filter the
+ * other shows.
+ */
+function visibleOptions(
+  intl: MangaToolsIntl,
+  selection: MangaToolsLanguageSelection
+): MangaToolsOption[] {
+  return NS.languageOptions(intl.locale).filter(
+    (o) =>
+      !NS.enabledLanguages ||
+      NS.enabledLanguages.has(o.value) ||
+      selection.included.indexOf(o.value) !== -1 ||
+      selection.excluded.indexOf(o.value) !== -1
+  );
+}
+
+/**
+ * Nothing is selectable while (Any) or (None) is set: there is no particular value
+ * to pick in those states. That is Stash's own rule — its `useCandidates` returns
+ * an empty list for IsNull and NotNull — and it is why choosing (None) in the
+ * studio filter makes the studio list disappear. The search box stays, standing
+ * over nothing, exactly as it does there.
+ */
+function selectableOptions(
+  selection: MangaToolsLanguageSelection,
+  options: MangaToolsOption[]
+): MangaToolsOption[] {
+  return selection.modifier ? [] : options;
+}
+
+/** Does an option match what the reader typed? Against the name and the code both. */
+function matchesQuery(option: MangaToolsOption, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return (
+    option.label.toLowerCase().indexOf(needle) !== -1 ||
+    option.value.toLowerCase().indexOf(needle) !== -1
+  );
+}
+
+/** The flag to draw for an option, or null when flags are turned off */
+function flagOf(option: MangaToolsOption): string | null {
+  return NS.showFlags ? option.flag : null;
+}
+
+/**
  * One row of a language list.
  *
  * Shared by the sidebar section and the dialog's card, because the two draw the
@@ -1458,26 +1511,8 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
   // What the list is drawn from, following the sidebar's rules: the enabled
   // languages setting limits the choices, and a value already in use stays
   // visible even if it has since been disabled.
-  const options = NS.languageOptions(intl.locale).filter(
-    (o) =>
-      !NS.enabledLanguages ||
-      NS.enabledLanguages.has(o.value) ||
-      choice.included.indexOf(o.value) !== -1 ||
-      choice.excluded.indexOf(o.value) !== -1
-  );
-
-  const needle = query.trim().toLowerCase();
-  const matches = (o: MangaToolsOption) => {
-    if (!needle) return true;
-    return (
-      o.label.toLowerCase().indexOf(needle) !== -1 ||
-      o.value.toLowerCase().indexOf(needle) !== -1
-    );
-  };
-
-  // Nothing to choose while (Any) or (None) is set: there is no particular value
-  // to pick in those states, which is Stash's own rule for its lists.
-  const selectable = choice.modifier ? [] : options;
+  const options = visibleOptions(intl, choice);
+  const selectable = selectableOptions(choice, options);
 
   const chosen = selectable.filter(
     (o) => choice.included.indexOf(o.value) !== -1
@@ -1489,13 +1524,10 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
     (o) =>
       choice.included.indexOf(o.value) === -1 &&
       choice.excluded.indexOf(o.value) === -1 &&
-      matches(o)
+      matchesQuery(o, query)
   );
 
   const showModifiers = isEmptySelection(choice);
-
-  const flagFor = (o: MangaToolsOption): string | null =>
-    NS.showFlags ? o.flag : null;
 
   // The card's box, which Stash renders only while the card is open.
   const box = dialogEditorBox();
@@ -1556,7 +1588,7 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
               variant="dialog"
               state="included"
               label={o.label}
-              flag={flagFor(o)}
+              flag={flagOf(o)}
               onClick={() => {
                 setChoice(toggleIncluded(choice, o.value));
               }}
@@ -1568,7 +1600,7 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
                 variant="dialog"
                 state="excluded"
                 label={o.label}
-                flag={flagFor(o)}
+                flag={flagOf(o)}
                 onClick={() => {
                   setChoice(toggleExcluded(choice, o.value));
                 }}
@@ -1605,7 +1637,7 @@ export function DialogLanguageFilter(props: { filter: MangaToolsFilterModel }) {
               variant="dialog"
               state="candidate"
               label={o.label}
-              flag={flagFor(o)}
+              flag={flagOf(o)}
               canExclude
               onClick={() => {
                 setChoice(toggleIncluded(choice, o.value));
@@ -1804,46 +1836,21 @@ export function SidebarLanguageFilter(props: {
   // this library uses. A value already in use stays visible even if it has since
   // been disabled, since otherwise the list would be filtered by something
   // invisible.
-  const options = NS.languageOptions(intl.locale).filter(
-    (o) =>
-      !NS.enabledLanguages ||
-      NS.enabledLanguages.has(o.value) ||
-      selection.included.indexOf(o.value) !== -1 ||
-      selection.excluded.indexOf(o.value) !== -1
-  );
+  const options = visibleOptions(intl, selection);
+  const selectable = selectableOptions(selection, options);
 
-  // No candidates while (Any) or (None) is chosen: there is no particular value
-  // to pick in those states. That is Stash's own rule — its useCandidates returns
-  // an empty list for IsNull and NotNull — and it is why choosing (None) in the
-  // studio filter makes the studio list disappear. The search box stays, standing
-  // over nothing, exactly as it does there.
-  const selectable = selection.modifier ? [] : options;
-
-  /** What the reader typed, against both the name and the code */
-  const needle = query.trim().toLowerCase();
-  const matches = (o: MangaToolsOption) => {
-    if (!needle) return true;
-    return (
-      o.label.toLowerCase().indexOf(needle) !== -1 ||
-      o.value.toLowerCase().indexOf(needle) !== -1
-    );
-  };
-
-  const chosen = options.filter(
+  const chosen = selectable.filter(
     (o) => selection.included.indexOf(o.value) !== -1
   );
-  const excludedChosen = options.filter(
+  const excludedChosen = selectable.filter(
     (o) => selection.excluded.indexOf(o.value) !== -1
   );
   const candidates = selectable.filter(
     (o) =>
       selection.included.indexOf(o.value) === -1 &&
       selection.excluded.indexOf(o.value) === -1 &&
-      matches(o)
+      matchesQuery(o, query)
   );
-
-  const flagFor = (o: MangaToolsOption): string | null =>
-    NS.showFlags ? o.flag : null;
 
   /**
    * Opens or closes the section, and records the choice where Stash records its
@@ -1872,10 +1879,7 @@ export function SidebarLanguageFilter(props: {
   // chosen — confirmed against a real section, where choosing two studios and
   // excluding a third left just the one hierarchical entry and neither of
   // these. Once one is picked it shows above, in the chosen list.
-  const showModifiers =
-    !selection.modifier &&
-    !selection.included.length &&
-    !selection.excluded.length;
+  const showModifiers = isEmptySelection(selection);
 
   // The section above the fold-away list: whatever is being asked for, in the
   // same "selected-object" shape as a chosen studio. The modifier entries are
@@ -1907,7 +1911,7 @@ export function SidebarLanguageFilter(props: {
         variant="sidebar"
         key={"in-" + o.value}
         label={o.label}
-        flag={flagFor(o)}
+        flag={flagOf(o)}
         state="included"
         onClick={() => {
           toggleInclude(o.value);
@@ -1943,7 +1947,7 @@ export function SidebarLanguageFilter(props: {
               variant="sidebar"
               key={"ex-" + o.value}
               label={o.label}
-              flag={flagFor(o)}
+              flag={flagOf(o)}
               state="excluded"
               onClick={() => {
                 toggleExclude(o.value);
@@ -2032,7 +2036,7 @@ export function SidebarLanguageFilter(props: {
                   variant="sidebar"
                   key={o.value}
                   label={o.label}
-                  flag={flagFor(o)}
+                  flag={flagOf(o)}
                   state="candidate"
                   canExclude
                   onClick={() => {
