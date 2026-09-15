@@ -209,9 +209,12 @@ about which languages this library uses — with one exception: a value already
 included or excluded stays visible even if it has since been disabled, since
 otherwise the list would be filtered by something invisible.
 
-**Widening it to select several languages is a small change**, since `EQUALS`
-already unions its values. It is single at the moment only because the studio
-filter it mirrors is built with `singleValue: true`.
+**Two of the studio filter's entries are deliberately absent.** Stash also offers
+`any of` and `only` among the modifier candidates, but those exist to choose
+between its `INCLUDES` and `INCLUDES_ALL` modifiers — "any of these studios" as
+opposed to "all of them". A custom-field `EQUALS` has no "all" form: its values
+are always a union, so both entries would mean the same thing as selecting the
+languages directly.
 
 ### Settings
 
@@ -364,7 +367,8 @@ Against a real Stash:
    with a search box, **(任意)** and **(无)** first, then every language.
    - **Include**: click a language → it moves above the fold-away list with a
      tick, the list narrows, a filter tag appears, and the URL changes. Click it
-     again and the filter clears.
+     again and the filter clears. Click a second one: both should be included,
+     as "any of these".
    - **(无)** should list the galleries with no language set — the untagged ones.
    - **Exclude**: hover a candidate and press its **exclude** button → the
      language appears in a second list, marked with a cross. Note how many
@@ -471,14 +475,13 @@ values through the plugin's dropdown never hits this, since that writes lowercas
   `.gallery-details` (detail page), `.form-group[data-field="studio_id"]` (edit
   page — confirmed to exist on v0.31.1), `[data-field="studio"]` (bulk dialog) and
   `.sidebar-saved-filters` (filter sidebar).
-- **The filter includes one language at a time**, mirroring the studio filter it
-  is modelled on (Stash builds that with `singleValue: true`). Excluding several
-  at once is not offered either. Both are expressible — see
-  [Filtering](#filtering).
 - **Excluding a language also matches galleries with no language set**, because
   that is what Stash's `NOT_EQUALS` means. On a library where most galleries are
   untagged, "not Japanese" therefore returns nearly everything; `(None)` asks for
   the untagged ones directly.
+- **A language cannot be both included and excluded** — the two lists are
+  mutually exclusive, since `EQUALS` and `NOT_EQUALS` for the same value is a
+  contradiction that matches nothing.
 - **The filter is a sidebar section, not a criterion in the filter dialog.** The
   dialog's criterion list cannot be extended from a plugin — see
   [Filtering](#filtering) for the three reasons. It also means the language does

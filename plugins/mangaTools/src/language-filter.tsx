@@ -72,10 +72,10 @@ var CUSTOM_FIELDS_TYPE = "custom_fields";
  * sidebar filter treats its modifier as one of several candidate values rather
  * than as a separate control.
  *
- * `included` holds at most one code, because the studio filter this mirrors is
- * built with `singleValue: true`. Multiple values are supported by the backend
- * (EQUALS ORs them — see the header), so widening this is a matter of allowing
- * more entries here and in the click handler, nothing deeper.
+ * Either list may hold several codes: EQUALS unions them, so "Japanese or
+ * Traditional Chinese" is one condition. A code appears in at most one of the
+ * two lists, since EQUALS and NOT_EQUALS for the same language would be a
+ * contradiction and match nothing.
  */
 export interface MangaToolsLanguageSelection {
   modifier: "" | "any" | "none";
@@ -347,6 +347,7 @@ function LanguageItem(props: {
   label: string;
   flag?: string | null;
   state: "candidate" | "included" | "excluded";
+  modifier?: boolean;
   canExclude?: boolean;
   onClick: () => void;
   onExclude?: () => void;
@@ -380,11 +381,13 @@ function LanguageItem(props: {
     icon = excluded ? Solid.faTimesCircle : Solid.faCheckCircle;
   }
 
-  var iconClass = excluded ? "exclude-icon" : "include-button";
-  var labelClass = excluded ? "excluded-object-label" : "selected-object-label";
-
   return (
-    <li className={selected ? "selected-object" : "unselected-object"}>
+    <li
+      className={
+        (selected ? "selected-object" : "unselected-object") +
+        (props.modifier ? " modifier-object" : "")
+      }
+    >
       <a
         tabIndex={0}
         onClick={props.onClick}
@@ -395,21 +398,26 @@ function LanguageItem(props: {
       >
         <div className="label-group">
           <Icon
-            className={"fa-fw " + (selected ? iconClass : "include-button single-value")}
+            className={"fa-fw " + (excluded ? "exclude-icon" : "include-button")}
             icon={icon}
           />
           {props.flag ? <Flag flag={props.flag} /> : null}
           <span
             className={
               "TruncatedText inline " +
-              (selected ? labelClass : "unselected-object-label")
+              (selected
+                ? excluded
+                  ? "excluded-object-label"
+                  : "selected-object-label"
+                : "unselected-object-label")
             }
           >
             {props.label}
           </span>
         </div>
-        {props.canExclude && Bootstrap ? (
-          <div>
+        {/* Stash renders this wrapper whether or not there is a button in it */}
+        <div>
+          {props.canExclude && Bootstrap ? (
             <Bootstrap.Button
               className="minimal exclude-button"
               onClick={function (e: { stopPropagation: () => void }) {
@@ -421,10 +429,10 @@ function LanguageItem(props: {
               }}
             >
               <span className="exclude-button-text">exclude</span>
-              <Icon className="fa-fw exclude-icon single-value" icon={Solid.faMinus} />
+              <Icon className="fa-fw exclude-icon" icon={Solid.faMinus} />
             </Bootstrap.Button>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </a>
     </li>
   );
@@ -483,12 +491,25 @@ export function SidebarLanguageFilter(props: {
     applyLanguage(props.filter, history, next);
   }
 
-  /** Clicking an included value removes it; clicking a candidate includes it */
+  /**
+   * Clicking a chosen value removes it; clicking a candidate adds it.
+   *
+   * Several values at once, because that is what the studio filter this mirrors
+   * allows — and because the backend unions them, so "Japanese or Traditional
+   * Chinese" is one condition rather than a contradiction. The two lists are
+   * mutually exclusive: a value moves between them rather than sitting in both,
+   * which would send EQUALS and NOT_EQUALS for the same language and match
+   * nothing at all.
+   */
   function toggleInclude(code: string) {
     var already = selection.included.indexOf(code) !== -1;
     update({
       modifier: "",
-      included: already ? [] : [code],
+      included: already
+        ? selection.included.filter(function (c) {
+            return c !== code;
+          })
+        : selection.included.concat([code]),
       excluded: selection.excluded.filter(function (c) {
         return c !== code;
       }),
@@ -506,7 +527,7 @@ export function SidebarLanguageFilter(props: {
         ? selection.excluded.filter(function (c) {
             return c !== code;
           })
-        : [code],
+        : selection.excluded.concat([code]),
     });
   }
 
@@ -666,6 +687,7 @@ export function SidebarLanguageFilter(props: {
               <LanguageItem
                 label={"(" + message(intl, "criterion_modifier_values.any", "Any") + ")"}
                 state={selection.modifier === "any" ? "included" : "candidate"}
+                modifier
                 canExclude={false}
                 onClick={function () {
                   setModifier("any");
@@ -674,6 +696,7 @@ export function SidebarLanguageFilter(props: {
               <LanguageItem
                 label={"(" + message(intl, "criterion_modifier_values.none", "None") + ")"}
                 state={selection.modifier === "none" ? "included" : "candidate"}
+                modifier
                 canExclude={false}
                 onClick={function () {
                   setModifier("none");

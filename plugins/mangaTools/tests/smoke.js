@@ -1212,6 +1212,19 @@ assert.deepStrictEqual(
   "including one language and excluding another should send both conditions"
 );
 
+// Several values are one condition, not several: EQUALS unions them, and two
+// conditions on one field would be ANDed and match nothing.
+assert.deepStrictEqual(
+  languageConditions(writeFilter(sel("", ["ja", "zh-Hant"])).criteria),
+  [conditionsOf("EQUALS", ["ja", "zh-Hant"])],
+  "several included languages are a single ORed condition"
+);
+assert.deepStrictEqual(
+  languageConditions(writeFilter(sel("", [], ["ja", "zh-Hant"])).criteria),
+  [conditionsOf("NOT_EQUALS", ["ja", "zh-Hant"])],
+  "…and so are several excluded ones"
+);
+
 // The model is Stash's own live state object, so it must come out unchanged —
 // mutating it would change the filter without telling anything to re-render.
 const liveModel = makeFilterModel([
@@ -1346,7 +1359,7 @@ assert.strictEqual(searchField.props.placeholder, "搜索…",
 
 const candidateItems = [];
 find(candidateList, (n) => {
-  if (n.props && n.props.className === "unselected-object") candidateItems.push(n);
+  if (n.props && /^unselected-object\b/.test(n.props.className)) candidateItems.push(n);
   return false;
 });
 assert.strictEqual(candidateItems.length, Object.keys(NS.LANGUAGES).length + 2,
@@ -1355,8 +1368,23 @@ const labelOf = (item) =>
   find(item, (n) => n.props && typeof n.props.children === "string").props.children;
 assert.deepStrictEqual(candidateItems.slice(0, 2).map(labelOf), ["(任意)", "(无)"],
   "the modifier entries come first, in Stash's own parenthesised wording, localised");
+assert.deepStrictEqual(candidateItems.slice(0, 2).map((i) => i.props.className),
+  ["unselected-object modifier-object", "unselected-object modifier-object"],
+  "and carry modifier-object, as Stash marks them");
 assert.strictEqual(candidateItems.some((i) => labelOf(i) === "日语"), true,
   "and the languages after them");
+
+// Markup details taken from a real studio section, so the two read identically:
+// the include icon carries no extra state class, and the row's trailing wrapper
+// is present even when there is no button in it.
+const jaRow = candidateItems.find((i) => labelOf(i) === "日语");
+assert.strictEqual(find(jaRow, (n) => n.type === "Icon").props.className,
+  "fa-fw include-button");
+const modifierTrailing = find(candidateItems[0], (n) => n.type === "a").props.children[1];
+assert.strictEqual(modifierTrailing.type, "div",
+  "the trailing wrapper is rendered even when it holds no exclude button — "
+  + "the modifier entries have nothing to put in it");
+assert.strictEqual(modifierTrailing.props.children, null, "…and it is empty");
 
 // Flags are drawn in the sidebar like everywhere else
 assert.strictEqual(NS.showFlags, true, "precondition: flags are on");
@@ -1414,7 +1442,7 @@ assert.strictEqual(find(selectedList, (n) => n.props.children === "日语") !== 
 const remaining = [];
 find(find(section.node, (n) =>
   n.props && n.props.className === "queryable-candidate-list"), (n) => {
-  if (n.props && n.props.className === "unselected-object") remaining.push(n);
+  if (n.props && /^unselected-object\b/.test(n.props.className)) remaining.push(n);
   return false;
 });
 assert.strictEqual(remaining.length, Object.keys(NS.LANGUAGES).length + 2 - 1,

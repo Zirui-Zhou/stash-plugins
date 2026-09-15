@@ -102,9 +102,8 @@ export interface MangaToolsNamespace {
  * What the language filter is asking for.
  *
  * `modifier` is "any" (galleries carrying a language), "none" (those without)
- * or "" when the include/exclude lists are what matter. `included` holds at
- * most one code, matching the studio filter this mirrors, which is built with
- * `singleValue: true`.
+ * or "" when the include/exclude lists are what matter. Either list may hold
+ * several codes — EQUALS unions them, so several languages are "any of these".
  */
 export interface MangaToolsLanguageSelection {
   modifier: "" | "any" | "none";
