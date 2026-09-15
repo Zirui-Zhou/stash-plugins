@@ -66,6 +66,14 @@ var React = PluginApi.React;
 var CUSTOM_FIELDS_TYPE = "custom_fields";
 
 /**
+ * The two modifier entries the dialog's dropdown offers alongside the languages.
+ * Not language codes — those are all two letters or a script subtag — so one
+ * namespace does for both, and a choice is just a string.
+ */
+var MODIFIER_ANY = "any";
+var MODIFIER_NONE = "none";
+
+/**
  * The type this plugin registers its own criterion under, so the "edit filters"
  * dialog can offer a Language card of its own.
  *
@@ -385,8 +393,14 @@ function fieldLabel(intl: MangaToolsIntl): string {
 }
 
 /** A regional flag, drawn by flag-icons' CSS — the same markup the dropdowns use */
-function Flag(props: { flag: string }): ReactElement {
-  return <span className={"fi fi-" + props.flag + " manga-tools-flag"} />;
+function Flag(props: { flag: string; className?: string }): ReactElement {
+  return (
+    <span
+      className={
+        "fi fi-" + props.flag + (props.className ? " " + props.className : "")
+      }
+    />
+  );
 }
 
 /** Stash's own wording for the two list states, so nothing here reads as foreign */
@@ -443,6 +457,15 @@ var filterHost: HTMLElement | null = null;
  * Going through the prototype's setter leaves the tracker alone, and the
  * dispatched event then reads as real input.
  */
+/**
+ * Sets a React-controlled input's value the way a person would.
+ *
+ * Assigning `input.value` directly does not reach React: its onChange is driven
+ * by a value tracker that records the last value React wrote, and a plain
+ * assignment updates that tracker too — so the change looks like no change.
+ * Going through the prototype's setter leaves the tracker alone, and the
+ * dispatched event then reads as real input.
+ */
 function setReactInputValue(input: HTMLInputElement, value: string): void {
   var descriptor = Object.getOwnPropertyDescriptor(
     window.HTMLInputElement.prototype,
@@ -473,32 +496,55 @@ function setReactSelectValue(select: HTMLSelectElement, value: string): void {
  * Drops the language condition this plugin left here before.
  *
  * Stash's editor *appends* a condition every time its confirm button is pressed,
- * so choosing a second language without this would leave two EQUALS conditions on
- * one field — which the backend ANDs, matching nothing at all. This route can
- * express one language, so the previous one has to go first.
+ * so replacing a language without this would leave two EQUALS conditions on one
+ * field — which the backend ANDs, matching nothing at all.
  *
  * The criterion is Stash's and there is no handle on it, so the only way to drop
- * a condition is the remove button its own tag carries. It is found by the field
- * name the label starts with: Stash's format string is
- * "{criterion} (custom field) …" and that criterion is the raw field name,
+ * a condition is the remove button its own tag carries. Those tags are found by
+ * the field name their label starts with: Stash's format string is
+ * "{criterion} (custom field) …", and that criterion is the raw field name,
  * untranslated. Requiring the trailing space keeps a field called
  * original_language out of it.
+ *
+ * It reports what it found, because this is the one step that can only be
+ * verified in a browser: if the console says the tags were not there, the class
+ * names have moved and this is why a replaced language left two conditions.
  */
 function dropPreviousConditions(editor: Element): void {
-  var pills = editor.querySelectorAll(".filter-tags .tag-item");
-  for (var i = 0; i < pills.length; i++) {
-    var text = pills[i].textContent || "";
+  var tags = editor.querySelectorAll(".filter-tags .tag-item");
+  if (!tags.length) {
+    console.info(
+      "[mangaTools] no condition tags found in the filter editor — a replaced language may leave two conditions behind"
+    );
+    return;
+  }
+
+  for (var i = 0; i < tags.length; i++) {
+    var text = tags[i].textContent || "";
     if (text.indexOf(NS.FIELD_NAME + " ") !== 0) continue;
 
-    var remove = pills[i].querySelector("button");
-    if (remove) (remove as HTMLElement).click();
+    var remove = tags[i].querySelector("button");
+    if (remove) {
+      (remove as HTMLElement).click();
+      console.info("[mangaTools] dropped the previous language condition");
+    }
   }
 }
 
+/** Presses the editor's confirm button, once its state has caught up */
+function pressConfirm(editor: Element): void {
+  // `onConfirm` reads the editor's state, and the events above have only queued
+  // updates to it. Clicking in the same tick would submit the empty form.
+  window.setTimeout(function () {
+    var confirm = editor.querySelector(
+      ".custom-field-filter-buttons button.btn-success"
+    );
+    if (confirm) (confirm as HTMLElement).click();
+  }, 0);
+}
+
 /**
- * Puts a language into Stash's criterion by driving Stash's own editor: drops
- * whatever was there, sets the modifier, fills the two inputs, and presses its
- * confirm button.
+ * Puts a choice into Stash's criterion by driving Stash's own editor.
  *
  * Driving rather than reimplementing is the whole point. The dialog hands the
  * callback that actually inserts a criterion — `replaceCriterion` — to whichever
@@ -508,45 +554,36 @@ function dropPreviousConditions(editor: Element): void {
  * value had been typed: the criterion is committed, the tag appears above, and
  * Apply and Cancel work because Stash is the one committing.
  *
- * The two inputs are found by `form-control`, which Form.Control always sets and
- * the react-select beside them does not — so the pair is unambiguous, and in
- * source order: field first, value second.
+ * `choice` is a language code, one of the two modifier entries, or null to leave
+ * the criterion with nothing at all — which is also how the criterion gets
+ * removed, since an empty one fails isValid() and the dialog drops it.
+ *
+ * The field and value inputs are found by `form-control`, which Form.Control
+ * always sets and the react-select beside them does not — so the pair is
+ * unambiguous, and in source order: field first, value second. The value input is
+ * absent while a modifier is chosen that takes no value, which is why it is the
+ * field alone that is required.
  */
 function commitThroughStashEditor(
   editor: Element,
-  code: string,
-  modifier: string
+  choice: string | null
 ): boolean {
   var inputs = editor.querySelectorAll("input.form-control");
-  if (inputs.length < 2) return false;
+  var picker = editor.querySelector("select.modifier-selector");
+  if (choice !== null && (!inputs.length || !picker)) return false;
 
   dropPreviousConditions(editor);
+  if (choice === null) return true;
 
-  var picker = editor.querySelector("select.modifier-selector");
-  if (picker) setReactSelectValue(picker as HTMLSelectElement, modifier);
+  var isModifier = choice === MODIFIER_ANY || choice === MODIFIER_NONE;
 
+  setReactSelectValue(picker as HTMLSelectElement, isModifier ? choice : "EQUALS");
   setReactInputValue(inputs[0] as HTMLInputElement, NS.FIELD_NAME);
-  setReactInputValue(inputs[1] as HTMLInputElement, code);
+  if (!isModifier) setReactInputValue(inputs[1] as HTMLInputElement, choice);
 
-  // `onConfirm` reads the editor's state, and the events above have only queued
-  // updates to it. Clicking in the same tick would submit the empty form.
-  window.setTimeout(function () {
-    var confirm = editor.querySelector(
-      ".custom-field-filter-buttons button.btn-success"
-    );
-    if (confirm) (confirm as HTMLElement).click();
-  }, 0);
-
+  pressConfirm(editor);
   return true;
 }
-
-/** Clears the choice, leaving the criterion with no language condition */
-function clearThroughStashEditor(editor: Element): void {
-  dropPreviousConditions(editor);
-}
-
-/** Class of the box our list is drawn in, inside Stash's editor container */
-var DIALOG_HOST_CLASS = "manga-tools-dialog-host";
 
 /**
  * The box Stash renders for our criterion's editor — and only while the card is
@@ -559,196 +596,96 @@ function dialogEditorBox(): Element | null {
   );
 }
 
-/** Finds (creating if needed) our box inside it, ahead of Stash's own editor */
-function ensureDialogHost(editor: Element): Element {
-  var host = editor.querySelector("." + DIALOG_HOST_CLASS);
-  if (!host) {
-    host = document.createElement("div");
-    host.className = DIALOG_HOST_CLASS;
-    editor.insertBefore(host, editor.firstChild);
-  }
-  return host;
-}
-
 /**
- * A chosen value, drawn the way Stash's own SelectableFilter draws one.
- *
- * Worth knowing for anyone comparing the two: this is *not* the sidebar's
- * markup. There the label sits in a `label-group` and is wrapped in a
- * `TruncatedText inline` span; here it is a bare div and a plain span, and a
- * chosen row carries an empty second div where a candidate carries its exclude
- * button. Copying the sidebar's classes into the dialog is what made this card
- * look wrong.
+ * react-select, looked up at runtime — a copy of the edit page's, because that
+ * one lives in the entry module and importing it back would be a cycle.
  */
-function DialogSelectedRow(props: {
-  label: string;
-  flag: string | null;
-  excluded: boolean;
-  onClick: () => void;
-}) {
-  var Solid = PluginApi.libraries.FontAwesomeSolid || {};
-  var Regular = PluginApi.libraries.FontAwesomeRegular || {};
-  var Icon = PluginApi.components.Icon;
+var DIALOG_SELECT: any = null;
 
-  var hover = React.useState(false);
-  var hovered = hover[0];
-  var setHovered = hover[1];
+function resolveSelect(): any {
+  if (DIALOG_SELECT) return DIALOG_SELECT;
 
-  function setHover(next: boolean) {
-    return function () {
-      setHovered(next);
-    };
+  var RS = PluginApi.libraries.ReactSelect;
+  if (!RS) {
+    console.error("[mangaTools] react-select not available");
+    return null;
   }
 
-  // A tick, or a cross for an excluded value; and a hollow cross under the
-  // cursor, which is how Stash says that clicking takes it away again.
-  var icon = hovered
-    ? Regular.faTimesCircle || Solid.faTimesCircle
-    : props.excluded
-      ? Solid.faTimesCircle
-      : Solid.faCheckCircle;
-
-  return (
-    <li className="selected-object">
-      <a
-        tabIndex={0}
-        onClick={props.onClick}
-        onMouseEnter={setHover(true)}
-        onMouseLeave={setHover(false)}
-        onFocus={setHover(true)}
-        onBlur={setHover(false)}
-      >
-        <div>
-          <Icon
-            className={
-              "fa-fw " + (props.excluded ? "exclude-icon" : "include-button")
-            }
-            icon={icon}
-          />
-          {props.flag ? <Flag flag={props.flag} /> : null}
-          <span
-            className={
-              props.excluded ? "excluded-object-label" : "selected-object-label"
-            }
-          >
-            {props.label}
-          </span>
-        </div>
-        <div></div>
-      </a>
-    </li>
-  );
+  DIALOG_SELECT = RS.default || RS.Select || RS;
+  return DIALOG_SELECT;
 }
 
-/** A value that can be chosen, with the exclude button Stash puts on one */
-function DialogUnselectedRow(props: {
-  label: string;
-  flag?: string | null;
-  canExclude?: boolean;
-  onClick: () => void;
-  onExclude?: () => void;
-}) {
-  var intl = PluginApi.libraries.Intl.useIntl();
-  var Solid = PluginApi.libraries.FontAwesomeSolid || {};
-  var Icon = PluginApi.components.Icon;
-  var Bootstrap = PluginApi.libraries.Bootstrap;
-
+/** A dropdown option: flag plus localised name, the same renderer the edit page uses */
+function formatLanguageOption(option: MangaToolsOption) {
   return (
-    <li className="unselected-object">
-      <a tabIndex={0} onClick={props.onClick}>
-        <div>
-          <Icon className="fa-fw include-button" icon={Solid.faPlus} />
-          {props.flag ? <Flag flag={props.flag} /> : null}
-          <span className="unselected-object-label">{props.label}</span>
-        </div>
-        <div>
-          {props.canExclude && Bootstrap ? (
-            <Bootstrap.Button
-              className="minimal exclude-button"
-              onClick={function (e: { stopPropagation: () => void }) {
-                e.stopPropagation();
-                if (props.onExclude) props.onExclude();
-              }}
-              onKeyDown={function (e: { stopPropagation: () => void }) {
-                e.stopPropagation();
-              }}
-            >
-              <span className="exclude-button-text">
-                {message(intl, "actions.exclude_lowercase", "exclude")}
-              </span>
-              <Icon className="fa-fw exclude-icon" icon={Solid.faMinus} />
-            </Bootstrap.Button>
-          ) : null}
-        </div>
-      </a>
-    </li>
+    <span className="manga-tools-option">
+      {NS.showFlags && option.flag ? (
+        <Flag flag={option.flag} className="manga-tools-flag" />
+      ) : null}
+      <span>{option.label}</span>
+    </span>
   );
 }
 
 /**
- * The language list inside the filter dialog's card.
+ * The value picker inside the filter dialog's card.
  *
- * The list is ours; the value is Stash's. Picking a language drives Stash's own
- * custom-fields editor, so the criterion is committed by Stash and joins the
- * dialog's Apply and Cancel like any other.
+ * A dropdown, deliberately, where its neighbours are lists. The criterion
+ * underneath is a custom-field one and Stash's editor gives it a single value, so
+ * one language is all it can hold; a list of checkboxes would promise several and
+ * deliver one. The sidebar owns the multi-value form of this filter — this card
+ * is the way in for someone already in the dialog.
  *
- * ONE LANGUAGE AT A TIME, unlike the studio card it sits beside — and that is not
- * a preference. The criterion underneath is a custom-field one, and Stash's
- * editor gives it one condition per confirm; a second condition on the same field
- * would be ANDed with the first and match nothing. Several languages at once are
- * expressible, but only in the sidebar section, which is the interface that owns
- * this feature. This card is a way in for someone already in the dialog.
- *
- * The markup mirrors SelectableFilter, the component Stash uses for object
- * criteria here, rather than the sidebar's list.
+ * The value is Stash's, not ours: picking drives Stash's own editor, which is the
+ * only thing that can commit a criterion here.
  */
 export function DialogLanguageFilter(props: {
   filter: MangaToolsFilterModel;
 }) {
   var intl = PluginApi.libraries.Intl.useIntl();
+  var Select = resolveSelect();
 
   var bumpState = React.useState(0);
   var bump = bumpState[1];
 
-  // What is chosen, read once from the filter the dialog opened with. Stash's
-  // editor resets to a blank row after its confirm button is pressed — the value
-  // moves into a tag above — so its inputs cannot be read back.
-  var choiceState = React.useState<{
-    code: string;
-    excluded: boolean;
-  } | null>(function () {
+  // Read once from the filter the dialog opened with: Stash's editor resets to a
+  // blank row after its confirm button is pressed — the value moves into a tag
+  // above — so it cannot be read back afterwards.
+  var choiceState = React.useState<string | null>(function () {
     var current = readLanguageFilter(props.filter);
-    if (current.included.length) {
-      return { code: current.included[0], excluded: false };
-    }
-    if (current.excluded.length) {
-      return { code: current.excluded[0], excluded: true };
-    }
+    if (current.modifier) return current.modifier;
+    if (current.included.length) return current.included[0];
+    if (current.excluded.length) return current.excluded[0];
     return null;
   });
   var choice = choiceState[0];
   var setChoice = choiceState[1];
 
-  var queryState = React.useState("");
-  var query = queryState[0];
-  var setQuery = queryState[1];
-
-  var searchRef = React.useRef<HTMLInputElement | null>(null);
-
   /**
-   * Opening the card is Stash's own state change, inside the dialog, so this
-   * component does not re-render with it. The moments that matter — opening the
-   * card from its header, or selecting it from a tag above — are both clicks
-   * inside the dialog, so that is what is watched for. The tick lets Stash finish
-   * writing the box before it is looked for.
+   * Two moments have to be noticed and neither is ours: opening the card, and
+   * clearing it with the ✗ on its header — both are clicks inside the dialog.
+   * The tick lets Stash finish writing the box before it is looked for.
    */
   React.useEffect(function () {
     function onClick(event: Event) {
-      var target = event.target as Element | null;
-      if (!target || typeof target.closest !== "function") return;
-      if (!target.closest(".edit-filter-dialog")) return;
+      var clicked = event.target as Element | null;
+      if (!clicked || typeof clicked.closest !== "function") return;
+      if (!clicked.closest(".edit-filter-dialog")) return;
 
+      // Aliased so the type survives into the callback below: narrowing a
+      // captured variable does not carry into a closure.
+      var target = clicked;
       window.setTimeout(function () {
+        // The ✗ on our card removes the criterion from the dialog's filter
+        // without telling anyone, and the dropdown would otherwise go on showing
+        // a value that is no longer filtering anything.
+        if (
+          target.closest(
+            '[data-type="' + LANGUAGE_TYPE + '"] .remove-criterion-button'
+          )
+        ) {
+          setChoice(null);
+        }
         bump(function (v) {
           return v + 1;
         });
@@ -764,107 +701,68 @@ export function DialogLanguageFilter(props: {
   var found = dialogEditorBox();
   if (!found) return null;
 
-  // Aliased so the type survives into the callbacks below: narrowing a captured
-  // variable does not carry into a closure, but a local's declared type does.
+  // Aliased so the type survives into the callback below: narrowing a captured
+  // variable does not carry into a closure.
   var box = found;
-  var host = ensureDialogHost(box);
 
-  var needle = query.trim().toLowerCase();
-  var matches = function (o: MangaToolsOption) {
-    if (!needle) return true;
-    return (
-      o.label.toLowerCase().indexOf(needle) !== -1 ||
-      o.value.toLowerCase().indexOf(needle) !== -1
-    );
-  };
+  var modifiers: MangaToolsOption[] = [
+    {
+      value: MODIFIER_ANY,
+      label: message(intl, "criterion_modifier_values.any", "Any"),
+      flag: null,
+    },
+    {
+      value: MODIFIER_NONE,
+      label: message(intl, "criterion_modifier_values.none", "None"),
+      flag: null,
+    },
+  ];
 
-  var options = NS.languageOptions(intl.locale).filter(function (o) {
-    return !NS.enabledLanguages || NS.enabledLanguages.has(o.value);
-  });
+  var options: MangaToolsOption[] = modifiers.concat(
+    NS.languageOptions(intl.locale).filter(function (o) {
+      return !NS.enabledLanguages || NS.enabledLanguages.has(o.value);
+    })
+  );
 
-  var candidates = options.filter(function (o) {
-    return (!choice || o.value !== choice.code) && matches(o);
-  });
-
-  var chosenOption: MangaToolsOption | null = null;
+  var chosen: MangaToolsOption | null = null;
   for (var i = 0; i < options.length; i++) {
-    if (choice && options[i].value === choice.code) chosenOption = options[i];
+    if (options[i].value === choice) chosen = options[i];
   }
 
-  var flagFor = function (o: MangaToolsOption): string | null {
-    return NS.showFlags ? o.flag : null;
-  };
+  return PluginApi.ReactDOM.createPortal(
+    <div className="manga-tools-dialog-picker">
+      {Select ? (
+        <Select
+          className="manga-tools-select"
+          classNamePrefix="react-select"
+          isClearable
+          isSearchable={false}
+          // The dialog scrolls, so the menu has to escape it.
+          menuPortalTarget={document.body}
+          placeholder={fieldLabel(intl)}
+          value={chosen}
+          options={options}
+          formatOptionLabel={formatLanguageOption}
+          components={{ IndicatorSeparator: () => null }}
+          onChange={function (opt: MangaToolsOption | null) {
+            var next = opt ? opt.value : null;
 
-  function pick(code: string, excluded: boolean) {
-    if (!commitThroughStashEditor(box, code, excluded ? "NOT_EQUALS" : "EQUALS")) {
-      return;
-    }
-
-    setChoice({ code: code, excluded: excluded });
-    setQuery("");
-    if (!isTouchDevice() && searchRef.current) {
-      searchRef.current.focus();
-    }
-  }
-
-  function clearChoice() {
-    clearThroughStashEditor(box);
-    setChoice(null);
-  }
-
-  var list = (
-    <div className="selectable-filter">
-      <div className="clearable-input-group">
-        <input
-          ref={searchRef}
-          className="clearable-text-field form-control"
-          value={query}
-          placeholder={message(intl, "actions.search", "Search") + "…"}
-          onChange={function (e: { target: { value: string } }) {
-            setQuery(e.target.value);
-          }}
-          onKeyDown={function (e: { key?: string }) {
-            if (e.key === "Escape") {
-              if (searchRef.current) searchRef.current.blur();
+            if (!commitThroughStashEditor(box, next)) {
+              console.error(
+                "[mangaTools] could not reach Stash's filter editor, so the language cannot be set from here"
+              );
               return;
             }
 
-            // Enter takes the one value left, as Stash's own list does.
-            if (e.key !== "Enter" || candidates.length !== 1) return;
-            pick(candidates[0].value, false);
+            // Adopted only once it was accepted, so the dropdown never claims a
+            // value that Stash did not take.
+            setChoice(next);
           }}
         />
-      </div>
-      <ul>
-        {chosenOption ? (
-          <DialogSelectedRow
-            label={chosenOption.label}
-            flag={flagFor(chosenOption)}
-            excluded={!!(choice && choice.excluded)}
-            onClick={clearChoice}
-          />
-        ) : null}
-        {candidates.map(function (o) {
-          return (
-            <DialogUnselectedRow
-              key={o.value}
-              label={o.label}
-              flag={flagFor(o)}
-              canExclude
-              onClick={function () {
-                pick(o.value, false);
-              }}
-              onExclude={function () {
-                pick(o.value, true);
-              }}
-            />
-          );
-        })}
-      </ul>
-    </div>
+      ) : null}
+    </div>,
+    box
   );
-
-  return PluginApi.ReactDOM.createPortal(list, host);
 }
 
 /**
