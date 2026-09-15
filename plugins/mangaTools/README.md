@@ -457,6 +457,11 @@ Open the browser console (F12) first. The plugin logs three kinds of line, and
 | `[mangaTools] loaded language tags for N gallery(ies)` | Fetching worked. **N is the number of galleries that will show a badge** — if N is lower than expected, the problem is the data, not the plugin |
 | `[mangaTools] failed to fetch language data, badges will not show. Raw error: …` | The query failed; read the error that follows |
 | `[mangaTools] patch active: <component>` | That patch ran for the first time. Fires once per target |
+| `[mangaTools] bulk update: sending the language with the dialog's own update` | The Apollo link merged a bulk edit's language into the outgoing mutation |
+
+One more line reports a limitation rather than a fault — `Apply changed nothing in
+Stash's filter, so the language picked in the card was not applied` — and is
+explained under [Known limitations](#known-limitations).
 
 Reading them together:
 
