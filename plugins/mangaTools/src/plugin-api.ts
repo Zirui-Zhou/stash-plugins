@@ -101,6 +101,17 @@ export interface MangaToolsNamespace {
    * filters" dialog offers a card for it. Idempotent.
    */
   registerLanguageCriterionOption(filter: MangaToolsFilterModel): void;
+  /**
+   * Gives the filter's criterion the Language identity Stash's own controls read,
+   * without changing the type it stores itself as. Idempotent.
+   */
+  adoptLanguageCriterion(filter: MangaToolsFilterModel): void;
+  /**
+   * Re-words Stash's tags for the language filter, one label per tag in the
+   * order Stash draws them. A DOM repair, not a render — see the note above it in
+   * language-filter.tsx for why it cannot be anything else.
+   */
+  relabelTags(labels: string[]): void;
 
   /*
    * Changes to a selection. Shared by the sidebar section and the dialog's card,
@@ -126,11 +137,22 @@ export interface MangaToolsNamespace {
     a: MangaToolsLanguageSelection,
     b: MangaToolsLanguageSelection
   ): boolean;
-  /** The one-line description of a selection, built from Stash's own messages */
-  selectionLabel(
+  /**
+   * The sentence for one condition of a language filter, built from Stash's own
+   * messages — or null for a modifier this plugin has no wording for.
+   */
+  conditionLabel(
     intl: MangaToolsIntl,
-    selection: MangaToolsLanguageSelection
-  ): string;
+    condition: MangaToolsCustomFieldCondition
+  ): string | null;
+  /**
+   * One label per condition of the criterion, in its order, or null when any of
+   * them has no wording. What Stash's tags for it should say.
+   */
+  tagLabels(
+    intl: MangaToolsIntl,
+    criterion: MangaToolsFilterCriterion
+  ): string[] | null;
 }
 
 /**

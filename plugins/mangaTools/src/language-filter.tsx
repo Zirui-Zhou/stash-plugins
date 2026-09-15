@@ -218,6 +218,89 @@ function conditionValues(condition: MangaToolsCustomFieldCondition): string[] {
 }
 
 /**
+ * Is this criterion, as a whole, the language filter?
+ *
+ * *All* of its conditions, not any of them: a criterion that also carries another
+ * field is not ours, and calling it ours would mislabel it and — worse — hand it
+ * to Stash as the Language criterion. An empty one is not ours either; there is
+ * nothing in it to recognise.
+ *
+ * Stricter than readLanguageFilter, which reports whatever it recognises and
+ * ignores the rest. That is the right reading for a filter someone built by hand;
+ * this one answers the different question "may we call this criterion ours".
+ */
+function isLanguageCriterion(
+  criterion: MangaToolsFilterCriterion | null
+): boolean {
+  var conditions = (criterion && criterion.value) || [];
+  if (!conditions.length) return false;
+
+  for (var i = 0; i < conditions.length; i++) {
+    if (!isLanguageCondition(conditions[i])) return false;
+  }
+
+  return true;
+}
+
+/** The filter's criterion, if it is ours and nothing else's */
+function languageCriterionOf(
+  filter: MangaToolsFilterModel
+): MangaToolsFilterCriterion | null {
+  var criterion = customFieldsCriterion(filter);
+  return criterion && isLanguageCriterion(criterion) ? criterion : null;
+}
+
+/**
+ * Hands the filter's language criterion over to Stash's own controls.
+ *
+ * The criterion is stored as a custom field and has to be — the query string is
+ * read back before this plugin's option exists, so a stored type of "language"
+ * would not resolve (see registerLanguageCriterionOption). But that leaves Stash
+ * treating it as a custom field: its tag opens the custom-fields card, our card
+ * never shows as the one in use, and it has no ✗ beside it. Two own properties
+ * settle all three without touching the stored type.
+ *
+ *   criterionOption  our Language option, so everything that asks a criterion
+ *                    which card it belongs to — the tag's click, the card's
+ *                    remove button, the dialog's "is this in use" test — answers
+ *                    "language".
+ *   toQueryParams    the stored form, back to a custom field. Without it the swap
+ *                    above would reach the URL and write `language` there, which
+ *                    nothing can read back on a reload.
+ *
+ * Own properties on the criterion rather than a patch on its class, re-applied on
+ * every render: each URL change decodes into fresh criteria, and the dialog works
+ * on a cloneDeep of the filter, which carries own properties across.
+ *
+ * That it can be attached this late — after Stash has long since drawn its tag —
+ * is the point: what it changes is read when the user *clicks*, not when Stash
+ * renders. The tag's wording cannot rely on that and is repaired in the DOM
+ * instead; see relabelTags.
+ */
+function adoptLanguageCriterion(filter: MangaToolsFilterModel): void {
+  var criterion = languageCriterionOf(filter);
+  if (!criterion) return;
+  if (
+    criterion.criterionOption &&
+    criterion.criterionOption.type === LANGUAGE_TYPE
+  ) {
+    return;
+  }
+
+  var options = (filter.options && filter.options.criterionOptions) || [];
+  var option: MangaToolsCriterionOption | null = null;
+  for (var i = 0; i < options.length; i++) {
+    if (options[i].type === LANGUAGE_TYPE) option = options[i];
+  }
+  if (!option) return;
+
+  criterion.criterionOption = option;
+  criterion.toQueryParams = function (this: MangaToolsFilterCriterion) {
+    return { type: CUSTOM_FIELDS_TYPE, value: this.value };
+  };
+}
+
+/**
  * Reads the language part of the filter.
  *
  * Anything this does not recognise — another field, or a modifier that is not
@@ -364,57 +447,87 @@ function sameCodes(a: string[], b: string[]): boolean {
 }
 
 /**
- * The one-line description of a selection, in Stash's own words.
+ * The modifier's own word, taken from Stash's messages so it agrees with the
+ * wording Stash puts on the same condition — "is", "is not", "is null", "is not
+ * null". An explicit list rather than a message id built from the modifier name:
+ * the ids are Stash's, and this is the whole of the set this plugin produces
+ * (see selectionConditions). Null for anything else, which leaves that condition
+ * to Stash.
+ */
+function modifierWord(intl: MangaToolsIntl, modifier: string): string | null {
+  if (modifier === "IS_NULL") {
+    return message(intl, "criterion_modifier.is_null", "is null");
+  }
+  if (modifier === "NOT_NULL") {
+    return message(intl, "criterion_modifier.not_null", "is not null");
+  }
+  if (modifier === "NOT_EQUALS") {
+    return message(intl, "criterion_modifier.not_equals", "is not");
+  }
+  if (modifier === "EQUALS") {
+    return message(intl, "criterion_modifier.equals", "is");
+  }
+  return null;
+}
+
+/**
+ * One of the sentences a language filter is made of, in Stash's own words.
  *
- * Assembled from Stash's messages rather than written here, so a tag this plugin
- * draws reads exactly like one Stash draws — "Language is Japanese, English",
- * "Language is not null". That means the criterion's localised name and the
+ * Per condition rather than per selection, because that is how Stash draws them:
+ * a criterion holding one condition gets one tag, and one holding several gets a
+ * tag each — which a language filter with both picks and exclusions has. So
+ * "Language is Japanese" and "Language is not Korean" are two sentences, and the
+ * tag row shows both.
+ *
+ * Assembled from Stash's messages rather than written here, so a tag reads
+ * exactly like one Stash draws. That means the criterion's localised name and the
  * modifier's own label, which is also why (Any) comes out as "is not null": that
  * is what the modifier it produces means.
+ *
+ * Null when the modifier is not one of ours, so a hand-built condition this
+ * plugin does not understand keeps Stash's wording rather than being given one
+ * that would say something else.
  */
-export function selectionLabel(
+export function conditionLabel(
   intl: MangaToolsIntl,
-  selection: MangaToolsLanguageSelection
-): string {
-  var criterion = fieldLabel(intl);
-  var names = function (codes: string[]): string {
-    return codes
-      .map(function (c) {
-        return NS.name(c, intl.locale);
-      })
-      .join(", ");
-  };
-
-  if (selection.modifier) {
-    return intl.formatMessage(
-      { id: "criterion_modifier.format_string" },
-      {
-        criterion: criterion,
-        modifierString: message(
-          intl,
-          selection.modifier === "any"
-            ? "criterion_modifier.not_null"
-            : "criterion_modifier.is_null",
-          selection.modifier === "any" ? "is not null" : "is null"
-        ),
-        valueString: "",
-      }
-    );
-  }
+  condition: MangaToolsCustomFieldCondition
+): string | null {
+  var word = modifierWord(intl, condition.modifier);
+  if (word === null) return null;
 
   return intl.formatMessage(
+    { id: "criterion_modifier.format_string" },
     {
-      id: selection.excluded.length
-        ? "criterion_modifier.format_string_excludes"
-        : "criterion_modifier.format_string",
-    },
-    {
-      criterion: criterion,
-      modifierString: message(intl, "criterion_modifier.equals", "is"),
-      valueString: names(selection.included),
-      excludedString: names(selection.excluded),
+      criterion: fieldLabel(intl),
+      modifierString: word,
+      valueString: conditionValues(condition)
+        .map(function (code) {
+          return NS.name(code, intl.locale);
+        })
+        .join(", "),
     }
   );
+}
+
+/**
+ * What every tag for this criterion should say, in order — or null if any of its
+ * conditions is one this plugin has no wording for, in which case the whole
+ * criterion is left as Stash drew it.
+ */
+export function tagLabels(
+  intl: MangaToolsIntl,
+  criterion: MangaToolsFilterCriterion
+): string[] | null {
+  var conditions = criterion.value || [];
+  var labels: string[] = [];
+
+  for (var i = 0; i < conditions.length; i++) {
+    var label = conditionLabel(intl, conditions[i]);
+    if (label === null) return null;
+    labels.push(label);
+  }
+
+  return labels.length ? labels : null;
 }
 
 /** The conditions our selection turns into */
@@ -542,10 +655,13 @@ NS.withModifier = withModifier;
 NS.withoutModifier = withoutModifier;
 NS.isEmptySelection = isEmptySelection;
 NS.sameSelection = sameSelection;
-NS.selectionLabel = selectionLabel;
+NS.conditionLabel = conditionLabel;
+NS.tagLabels = tagLabels;
 NS.readLanguageFilter = readLanguageFilter;
 NS.languageFilterQuery = languageFilterQuery;
 NS.registerLanguageCriterionOption = registerLanguageCriterionOption;
+NS.adoptLanguageCriterion = adoptLanguageCriterion;
+NS.relabelTags = relabelTags;
 
 /** The language table's own label, from Stash's locale files (see mangaTools.tsx
  *  for the longer note; this is the same message, duplicated so this module
@@ -749,37 +865,63 @@ function LanguageRow(props: {
   );
 }
 
-/**
- * The tag for a language filter this plugin is holding.
- *
- * Stash draws a tag for every criterion it knows about, and it does not know
- * about ours until Apply writes it into the URL — so this draws the same thing
- * in the same markup: the row is a `wrap-tags filter-tags`, the tag a `tag-item
- * badge badge-secondary`, and the ✗ a `btn btn-secondary` holding an xmark. The
- * text comes from Stash's own messages too (see selectionLabel), so a tag drawn
- * here is indistinguishable from one drawn by Stash.
- */
-function LanguageTag(props: { label: string; onRemove: () => void }) {
-  var Solid = PluginApi.libraries.FontAwesomeSolid || {};
-  var Icon = PluginApi.components.Icon;
-  var Bootstrap = PluginApi.libraries.Bootstrap;
+/** Every tag Stash draws, in both of the rows that show a filter's criteria */
+var TAG_SELECTOR = ".filter-tags .tag-item";
 
-  // Deliberately no row around this. When it joins Stash's own row, a wrapper
-  // would nest a second flex row inside it, and its margin would inflate the
-  // height of the row Stash drew — which stretches the native badges sitting in
-  // it and makes them look bigger. Only the fallback row, made below, is a row.
-  return (
-    <span className="tag-item badge badge-secondary">
-      {props.label}
-      {Bootstrap ? (
-        // `variant` alone: adding the class names as well is how this came out
-        // as `btn btn-secondary btn btn-secondary`.
-        <Bootstrap.Button variant="secondary" onClick={props.onRemove}>
-          <Icon icon={Solid.faXmark || Solid.faTimes} />
-        </Bootstrap.Button>
-      ) : null}
-    </span>
-  );
+/**
+ * Re-words Stash's tag for the language filter.
+ *
+ * Stash draws a tag per criterion out of `criterion.getLabel`, and this criterion
+ * gets the generic custom-field sentence with the raw field name in it —
+ * "language (custom field) is ja, en". Everything else about the tag is now
+ * right: it opens our card, its ✗ removes the filter, and it shows up in both tag
+ * rows (see adoptLanguageCriterion). Only the words are wrong, so only the words
+ * are replaced.
+ *
+ * In the DOM rather than through getLabel, because of *when* each is read. Stash
+ * renders its tag row before this plugin is mounted — that row belongs to the
+ * component that owns the filter, and this plugin mounts inside the list, which
+ * itself only renders once the first query has come back. An override attached
+ * during our render therefore cannot affect the tag already built in that same
+ * pass, and nothing would re-render it afterwards to pick the override up. A
+ * layout effect, by contrast, runs after React has written the DOM and before the
+ * browser paints, which is the one moment that can still change what is on
+ * screen. (It cannot change the first paint of a page *load*, which happens
+ * before this plugin is mounted at all: the tag is briefly Stash's own wording
+ * and is corrected when the list appears.)
+ *
+ * React does not undo this. On a later render it compares its own previous output
+ * with the new one, so while the label it computes is unchanged it never touches
+ * the text node we rewrote; and when the label does change it writes its own
+ * version, which the next layout effect repairs in the same commit.
+ *
+ * The tags are recognised by their text, there being no attribute on one saying
+ * which criterion it came from. Every one of Stash's formats opens with the field
+ * name and then a space — "{criterion} (custom field) …" for a criterion's own
+ * tag, "{criterion} …" for the pills beside the editor — so that much is matched,
+ * and not the bare name: the field is called "language", which another field
+ * called "languageNotes" would otherwise start with too.
+ *
+ * Labels are taken in order, one per tag, because that is how Stash draws them:
+ * a tag for each of the criterion's conditions, in their order. Re-running over
+ * an already-re-worded row is harmless — in an English UI our own wording does
+ * begin with the field name, and each tag is then handed the label it already
+ * carries.
+ */
+function relabelTags(labels: string[]): void {
+  var prefix = NS.FIELD_NAME.toLowerCase() + " ";
+  var tags = document.querySelectorAll(TAG_SELECTOR);
+  var next = 0;
+
+  for (var i = 0; i < tags.length && next < labels.length; i++) {
+    // The label is the tag's first child — `{label}` ahead of the ✗ button.
+    var text = tags[i].firstChild;
+    if (!text || text.nodeType !== 3 /* TEXT_NODE */) continue;
+    if (String(text.nodeValue).trim().toLowerCase().indexOf(prefix) !== 0) continue;
+
+    text.nodeValue = labels[next];
+    next += 1;
+  }
 }
 
 /** Class of the box the dialog's card is drawn in, inside Stash's editor area */
@@ -794,62 +936,6 @@ function dialogEditorBox(): Element | null {
   return document.querySelector(
     '.criterion-list [data-type="' + LANGUAGE_TYPE + '"] .criterion-editor'
   );
-}
-
-/** Our own tag row, held so the same node is reused and can be taken away again */
-var dialogTagsFallback: HTMLElement | null = null;
-
-/**
- * Where a pending tag goes: beside the tags Stash draws for the criteria it
- * knows about, so the dialog has one place that answers "what is in this filter".
- *
- * That row is inside `.dialog-content` and outside `.criterion-list`, which is
- * the point — it is not inside a card, so closing the card cannot take our tag
- * away with it.
- *
- * It exists only while the dialog holds at least one criterion of its own (Stash
- * renders the row under `criteria.length > 0`), and a pending language is not
- * one of those yet, so sometimes there is no row to join and one has to be made.
- *
- * The search deliberately skips rows inside `.criterion-list`: a custom-fields
- * card draws a `.filter-tags` row of its own for its conditions, and joining
- * that one would put our tag inside a card — the very thing this avoids.
- */
-function dialogTagsRow(): Element | null {
-  var content = document.querySelector(".edit-filter-dialog .dialog-content");
-  if (!content) {
-    dropFallbackRow();
-    return null;
-  }
-
-  var rows = content.querySelectorAll(".filter-tags");
-  for (var i = 0; i < rows.length; i++) {
-    if (!rows[i].closest(".criterion-list")) {
-      dropFallbackRow();
-      return rows[i];
-    }
-  }
-
-  if (!dialogTagsFallback) {
-    dialogTagsFallback = document.createElement("div");
-    // The classes Stash's own tag row carries — not the pill row's
-    // (`d-flex justify-content-center mb-2`), which is a different element
-    // inside a card and would space this one differently.
-    dialogTagsFallback.className = "wrap-tags filter-tags";
-  }
-
-  if (dialogTagsFallback.parentNode !== content) {
-    content.appendChild(dialogTagsFallback);
-  }
-
-  return dialogTagsFallback;
-}
-
-/** Takes our row away again once Stash is drawing one of its own */
-function dropFallbackRow(): void {
-  if (dialogTagsFallback && dialogTagsFallback.parentNode) {
-    dialogTagsFallback.parentNode.removeChild(dialogTagsFallback);
-  }
 }
 
 /**
@@ -868,9 +954,12 @@ function dropFallbackRow(): void {
  * below. That is the sidebar's mechanism, and it brings the sidebar's abilities
  * with it: several languages, exclusions, and the two modifier entries.
  *
- * The cost is that Stash cannot show a tag for a selection it does not have yet,
- * so this draws its own — one in the card and one in the dialog's tag row, both
- * appearing only while the selection differs from what is applied.
+ * The tag is Stash's own, not one of ours: the criterion is handed to Stash as
+ * the Language criterion (see adoptLanguageCriterion) and only its wording is
+ * repaired (see relabelTags). So the tag appears in both tag rows, opens this
+ * card when clicked and clears the filter when its ✗ is pressed — all of which
+ * an earlier version of this component had to draw itself, in a second tag that
+ * sat beside Stash's.
  */
 export function DialogLanguageFilter(props: {
   filter: MangaToolsFilterModel;
@@ -881,14 +970,14 @@ export function DialogLanguageFilter(props: {
   var bumpState = React.useState(0);
   var bump = bumpState[1];
 
-  // What is actually applied, read from the model on every render rather than
+  // What is applied right now, read from the model on every render rather than
   // snapshotted once: Apply replaces the model, and a snapshot taken at mount
   // would go on describing the filter as it was before.
   var applied = readLanguageFilter(props.filter);
 
-  // What the reader has chosen here. The two are compared to decide whether
-  // there is anything pending — comparing sets, so picking a value and then
-  // picking it again leaves no trace.
+  // What the reader has chosen here, which is what the list below draws and what
+  // Apply writes. Both are compared as sets, so picking a value and then picking
+  // it again leaves no trace.
   var choiceState = React.useState<MangaToolsLanguageSelection>(applied);
   var choice = choiceState[0];
   var setChoice = choiceState[1];
@@ -931,6 +1020,24 @@ export function DialogLanguageFilter(props: {
       if (clicked.closest(".modal-footer button.btn-primary")) {
         applyPending.current = true;
         console.info("[mangaTools] Apply pressed");
+      }
+
+      // Stash's own ways of taking the language away — the ✗ on our card, or
+      // "clear all" — edit the dialog's working copy rather than this card's
+      // state. Apply then commits a filter with no language in it, and the merge
+      // would read our own still-standing selection as the newer of the two and
+      // write it straight back. Emptying it here is what makes those buttons mean
+      // what they say.
+      if (
+        clicked.closest(".clear-all-button") ||
+        clicked.closest(
+          '.criterion-list [data-type="' +
+            LANGUAGE_TYPE +
+            '"] .remove-criterion-button'
+        )
+      ) {
+        setChoice(EMPTY_SELECTION);
+        setQuery("");
       }
 
       window.setTimeout(function () {
@@ -1004,6 +1111,36 @@ export function DialogLanguageFilter(props: {
     console.info("[mangaTools] applied the language filter to the URL");
   });
 
+  /**
+   * What the card starts from, re-read from the filter each time the dialog opens.
+   *
+   * Stash snapshots the filter when its dialog mounts — `cloneDeep` in
+   * EditFilterDialog, and a fresh dialog is mounted for every open — so its cards
+   * always describe the filter as it stands. This component cannot do that by
+   * existing: it is mounted for as long as the gallery list is, so its state
+   * would otherwise go on describing whichever filter was in place when the page
+   * first loaded.
+   *
+   * Once per dialog, counted rather than flagged, so opening the card, closing it
+   * and opening it again cannot discard a selection that has not been applied
+   * yet. A layout effect so the card's first paint already shows the right rows.
+   */
+  var sessionRef = React.useRef(0);
+  var syncedRef = React.useRef(-1);
+  React.useLayoutEffect(function () {
+    if (!document.querySelector(".edit-filter-dialog")) {
+      sessionRef.current += 1;
+      syncedRef.current = -1;
+      return;
+    }
+
+    if (syncedRef.current === sessionRef.current) return;
+    syncedRef.current = sessionRef.current;
+
+    setChoice(readLanguageFilter(props.filter));
+    setQuery("");
+  });
+
   // What the list is drawn from, following the sidebar's rules: the enabled
   // languages setting limits the choices, and a value already in use stays
   // visible even if it has since been disabled.
@@ -1049,9 +1186,7 @@ export function DialogLanguageFilter(props: {
     return NS.showFlags ? o.flag : null;
   };
 
-  // The card's box, which Stash renders only while the card is open. The tag is
-  // *not* gated on it: the tag lives outside the card, and returning early here
-  // is what used to make closing the card take the tag with it.
+  // The card's box, which Stash renders only while the card is open.
   var box = dialogEditorBox();
   var host: Element | null = null;
   if (box) {
@@ -1062,9 +1197,6 @@ export function DialogLanguageFilter(props: {
       box.insertBefore(host, box.firstChild);
     }
   }
-
-  var pending = !sameSelection(choice, applied);
-  var label = selectionLabel(intl, choice);
 
   var list = (
     <div className="manga-tools-dialog-card">
@@ -1180,38 +1312,10 @@ export function DialogLanguageFilter(props: {
           })}
         </ul>
       </div>
-      {pending ? (
-        <LanguageTag
-          label={label}
-          onRemove={function () {
-            setChoice(applied);
-            setQuery("");
-          }}
-        />
-      ) : null}
     </div>
   );
 
-  var tagsRow = dialogTagsRow();
-
-  return (
-    <>
-      {host ? PluginApi.ReactDOM.createPortal(list, host) : null}
-      {/* Beside the tags Stash draws, and only while this one is still only
-          ours — once Apply has written it to the URL, Stash draws its own. */}
-      {pending && tagsRow
-        ? PluginApi.ReactDOM.createPortal(
-            <LanguageTag
-              label={label}
-              onRemove={function () {
-                setChoice(applied);
-              }}
-            />,
-            tagsRow
-          )
-        : null}
-    </>
-  );
+  return <>{host ? PluginApi.ReactDOM.createPortal(list, host) : null}</>;
 }
 
 /**
@@ -1259,6 +1363,10 @@ function ensureFilterHost(): HTMLElement | null {
  *
  * Reads the current selection from the filter model it is handed, and reports
  * changes by rewriting the URL — see applyLanguage for why that is the route in.
+ *
+ * It also repairs the two things about the filter that belong to Stash and that
+ * this plugin has to make say what they mean: the criterion's identity and its
+ * tag. Both are in a layout effect below.
  */
 export function SidebarLanguageFilter(props: {
   filter: MangaToolsFilterModel;
@@ -1296,7 +1404,24 @@ export function SidebarLanguageFilter(props: {
   var bump = React.useState(0)[1];
   var host = ensureFilterHost();
 
+  var selection = readLanguageFilter(props.filter);
+
+  // Stash's tags for this criterion, re-worded as this plugin words them. Only
+  // for a criterion that is wholly ours: a hand-built one that carries another
+  // field as well keeps Stash's wording, which says everything it holds, rather
+  // than labels that would hide the rest.
+  var criterion = languageCriterionOf(props.filter);
+  var tagLabelsFor = criterion ? tagLabels(intl, criterion) : null;
+
+  // Both of the repairs to the filter Stash owns live here, in the one surface
+  // that is mounted for as long as the list is: the criterion is handed over to
+  // Stash's controls (see adoptLanguageCriterion) and its tag is re-worded (see
+  // relabelTags). Every change to the filter decodes into fresh criterion
+  // objects, so both are repeated on each commit.
   React.useLayoutEffect(function () {
+    adoptLanguageCriterion(props.filter);
+    if (tagLabelsFor) relabelTags(tagLabelsFor);
+
     if (ensureFilterHost() !== host) {
       bump(function (v) {
         return v + 1;
@@ -1316,8 +1441,6 @@ export function SidebarLanguageFilter(props: {
 
   var Solid = PluginApi.libraries.FontAwesomeSolid || {};
   var Icon = PluginApi.components.Icon;
-
-  var selection = readLanguageFilter(props.filter);
 
   function update(next: MangaToolsLanguageSelection) {
     applyLanguage(props.filter, history, next);

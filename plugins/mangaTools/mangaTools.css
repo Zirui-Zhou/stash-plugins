@@ -233,10 +233,11 @@
 
 /*
  * The dialog's card draws our list, and Stash's own editor for the same criterion
- * sits underneath it — still in the DOM, because it is what commits the value
- * when a language is picked. Only its appearance is hidden, along with the tags
- * it renders for the conditions it holds: those would be a second, independent
- * control for the same thing, and this list is the one that reflects the card.
+ * sits underneath it. The editor is never used — the card keeps its own selection
+ * and merges it into the URL when Apply is pressed — but Stash still renders it,
+ * so it is hidden rather than removed: hiding leaves `CriterionEditor` and
+ * everything above it untouched, where removing would mean the criterion had no
+ * editor at all.
  *
  * Scoped to our card by the type Stash keys cards on. If Stash ever changes that
  * attribute both simply become visible again, beside our list: degraded, not
@@ -247,20 +248,23 @@
 }
 
 /*
- * Stash's row of condition tags is left alone — it is the honest record of what
- * the criterion holds. It only has to stay out of the way while it is empty,
- * since an empty row still contributes its own margin and reads as a stray rule
- * under the picker.
+ * And the row of condition tags that editor draws beside itself — one pill per
+ * condition it holds, which is the same selection again in Stash's raw wording
+ * ("manga_tools_language = ja").
+ *
+ * A sibling of the editor, not a child, so hiding the editor above does not reach
+ * it. This used to be hidden only while empty, on the grounds that it was the
+ * honest record of what the criterion holds; it is not one any more, now that the
+ * criterion is handed to Stash as the Language criterion and the real tag — the
+ * one in the dialog's tag row, which this plugin re-words — says the same thing
+ * in the reader's own language.
+ *
+ * `!important` because it has to be. The row carries Bootstrap's `d-flex`, which
+ * is `display: flex !important` — a plain `display: none` loses to it whatever
+ * selector is used. Overriding a utility class that is itself important is the
+ * one case where this is the right tool. (`margin-bottom: 0` does not work
+ * either: `mb-2` is important too.)
  */
-.criterion-list [data-type="language"] .filter-tags:empty {
-  /*
-   * `!important` because it has to be. That row carries Bootstrap's `d-flex`,
-   * which is `display: flex !important` — a plain `display: none` loses to it
-   * whatever selector is used, and the empty row goes on contributing its
-   * `mb-2` margin as a stray rule under the picker. Overriding a utility class
-   * that is itself important is the one case where this is the right tool.
-   *
-   * (`margin-bottom: 0` does not work either: `mb-2` is important too.)
-   */
+.criterion-list [data-type="language"] .filter-tags {
   display: none !important;
 }

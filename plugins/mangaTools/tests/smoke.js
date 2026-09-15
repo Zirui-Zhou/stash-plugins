@@ -254,6 +254,7 @@ const MESSAGES = {
     "criterion_modifier.format_string_excludes":
       "{criterion} {modifierString} {valueString} (excludes {excludedString})",
     "criterion_modifier.equals": "是",
+    "criterion_modifier.not_equals": "不是",
     "criterion_modifier.is_null": "为空",
     "criterion_modifier.not_null": "不为空",
   },
@@ -382,7 +383,12 @@ global.document = {
   body: documentRoot,
   createElement: makeEl,
   querySelector: (sel) => documentRoot.querySelector(sel),
+  // The fake DOM runs no selectors beyond the handful querySelector above
+  // understands, so a test sets the tags this should return and asserts on what
+  // the plugin did with them. Defaults to none, so every other render is inert.
+  querySelectorAll: (sel) => tagQuery(sel),
 };
+let tagQuery = () => [];
 
 // ── Intl.DisplayNames stub ─────────────────────────────────────────
 // The plugin takes language names from the platform instead of carrying a
@@ -1126,12 +1132,18 @@ assert.ok(
   !/\.manga-tools-badge\.is-name\s*\{[^}]*text-overflow/.test(css),
   "a recognised language name must not be truncated — see the .is-name rule"
 );
-// Stash's empty tag row inside our card carries Bootstrap's `d-flex`, which is
-// `display: flex !important` — so hiding it only works with `!important` of our
-// own. Without it the empty row keeps its margin and shows up as a stray rule
-// under the picker, which is exactly what happened.
-const emptyTagsRule = /\.criterion-list \[data-type="language"\] \.filter-tags:empty\s*\{([^}]*)\}/.exec(css);
-assert.ok(emptyTagsRule, "the empty tag row should be hidden");
+// Stash's row of condition tags under our card carries Bootstrap's `d-flex`,
+// which is `display: flex !important` — so hiding it only works with
+// `!important` of our own. Without it the row shows the same selection a second
+// time in Stash's raw wording, right under the picker.
+//
+// The whole row, not the empty one: an earlier version hid it only when empty,
+// which left it appearing as soon as the criterion held anything — and that is
+// the state a language filter is normally in.
+const pillsTagsRule = /\.criterion-list \[data-type="language"\] \.filter-tags\s*\{([^}]*)\}/.exec(css);
+assert.ok(pillsTagsRule, "the editor's own tag row should be hidden");
+assert.ok(/display:\s*none\s*!important/.test(pillsTagsRule[1]),
+  "…with !important: a plain display: none loses to Bootstrap's d-flex");
 // The flag needs its own spacing in a list row: a flex `gap` would also open up
 // the icon-to-name spacing those rows share with Stash's, and a margin applied
 // more broadly would double up in the dropdown and the detail row.
@@ -1139,8 +1151,6 @@ assert.ok(
   /\.selected-object \.manga-tools-flag,[^}]*\.unselected-object \.manga-tools-flag\s*\{[^}]*margin:/.test(css),
   "the flag in a list row should be spaced from the icon and the name"
 );
-assert.ok(/display:\s*none\s*!important/.test(emptyTagsRule[1]),
-  "…with !important: a plain display: none loses to Bootstrap's d-flex");
 // Stash's `.setting-section .setting > div:last-child { text-align: right }`
 // right-aligns the heading and description of this full-width settings block
 // unless it is explicitly undone.
@@ -1739,6 +1749,125 @@ assert.strictEqual(encodedCriteria[0][0].criterionOption.type, "language",
   "the sidebar should create the criterion the dialog's card represents");
 console.log("✓ filter dialog card (registered once / usable criterion / stored as a custom field)");
 
+// ── 10g. What Stash does with the criterion, and with its tag ──────
+// The criterion is stored as a custom field (see 10e), which left Stash treating
+// it as one: its tag opened the custom-fields card, and the Language card never
+// showed as the one in use. Adopting it fixes that without changing what is
+// stored — but only for a criterion that is wholly ours, since adopting another
+// one would mislabel it and hand it to Stash as the Language criterion.
+const adoptModel = (conditions) => {
+  const model = makeFilterModel([customFieldsCriterion(conditions)]);
+  NS.registerLanguageCriterionOption(model);
+  return model;
+};
+
+const languageCondition = (field = "language") => [
+  { field, modifier: "EQUALS", value: ["ja"] },
+];
+
+let adopt = adoptModel(languageCondition());
+NS.adoptLanguageCriterion(adopt);
+assert.strictEqual(adopt.criteria[0].criterionOption.type, "language",
+  "Stash should be told this criterion is the Language one");
+assert.deepStrictEqual(
+  adopt.criteria[0].toQueryParams(),
+  { type: "custom_fields", value: languageCondition() },
+  "…while the URL keeps carrying custom_fields — the only stored type that can "
+  + "be read back on a reload, since Stash decodes the query string before this "
+  + "plugin's option exists"
+);
+
+// The dialog works on a cloneDeep of the filter, so both have to survive being
+// copied onto a fresh criterion object. Object.assign stands in for it here.
+const adoptedClone = Object.assign({}, adopt.criteria[0]);
+assert.strictEqual(adoptedClone.criterionOption.type, "language",
+  "the dialog's copy must stay ours");
+assert.strictEqual(adoptedClone.toQueryParams().type, "custom_fields",
+  "…including the stored form, which is what the dialog's Apply encodes");
+assert.strictEqual(adopt.criteria[0].toQueryParams.call({ value: [] }).value.length, 0,
+  "toQueryParams must read `this`, not the criterion it was attached to");
+
+// Adopting twice must not wrap anything or swap a second time
+adopt.criteria[0].criterionOption = { type: "language" };
+NS.adoptLanguageCriterion(adopt);
+assert.strictEqual(adopt.criteria[0].criterionOption.type, "language");
+assert.strictEqual(typeof adopt.criteria[0].toQueryParams, "function");
+
+// The field name is matched case-insensitively, as everywhere else
+adopt = adoptModel(languageCondition("Language"));
+NS.adoptLanguageCriterion(adopt);
+assert.strictEqual(adopt.criteria[0].criterionOption.type, "language",
+  "a capitalised field name is still the language field");
+
+adopt = adoptModel([{ field: "artist", modifier: "EQUALS", value: ["x"] }]);
+NS.adoptLanguageCriterion(adopt);
+assert.strictEqual(adopt.criteria[0].criterionOption.type, "custom_fields",
+  "another field's criterion belongs to Stash and must be left alone");
+
+adopt = adoptModel([
+  { field: "language", modifier: "EQUALS", value: ["ja"] },
+  { field: "artist", modifier: "EQUALS", value: ["x"] },
+]);
+NS.adoptLanguageCriterion(adopt);
+assert.strictEqual(adopt.criteria[0].criterionOption.type, "custom_fields",
+  "so must one that carries another field alongside ours");
+
+adopt = adoptModel([]);
+NS.adoptLanguageCriterion(adopt);
+assert.strictEqual(adopt.criteria[0].criterionOption.type, "custom_fields",
+  "and one with nothing in it to recognise");
+
+// Stash's tag for this criterion is the generic custom-field sentence with the
+// raw field name in it. The tag itself is Stash's — its click and its ✗ already
+// do the right thing — so only the text node is replaced.
+const tagWithText = (value) => ({ firstChild: { nodeType: 3, nodeValue: value } });
+const ourTag = tagWithText("language (custom field) is ja, en");
+const studioTag = tagWithText("Studio is J-Model");
+// The field is called "language", so a longer name that merely starts with it
+// must not be mistaken for ours.
+const similarFieldTag = tagWithText("languageNotes (custom field) is x");
+const emptyTag = { firstChild: { nodeType: 1, nodeValue: null } };
+tagQuery = () => [studioTag, ourTag, similarFieldTag, emptyTag];
+NS.relabelTags(["语言 是 日语, 英语"]);
+tagQuery = () => [];
+assert.strictEqual(ourTag.firstChild.nodeValue, "语言 是 日语, 英语",
+  "the language tag should be re-worded");
+assert.strictEqual(studioTag.firstChild.nodeValue, "Studio is J-Model",
+  "another criterion's tag must be left exactly as it is");
+assert.strictEqual(similarFieldTag.firstChild.nodeValue, "languageNotes (custom field) is x",
+  "a field whose name merely starts with the language field's must be left alone");
+assert.strictEqual(emptyTag.firstChild.nodeValue, null,
+  "a tag whose label is not a text node must be skipped, not crashed on");
+
+// One label per tag, in the order Stash draws them — which is the order of the
+// criterion's conditions. A filter with an exclusion is two tags, not one.
+const includedTag = tagWithText("language (custom field) is ja");
+const excludedTag = tagWithText("language (custom field) is not ko");
+tagQuery = () => [studioTag, includedTag, excludedTag];
+NS.relabelTags(["语言 是 日语", "语言 不是 韩语"]);
+tagQuery = () => [];
+assert.strictEqual(includedTag.firstChild.nodeValue, "语言 是 日语");
+assert.strictEqual(excludedTag.firstChild.nodeValue, "语言 不是 韩语",
+  "the second tag takes the second label, not the first one again");
+assert.strictEqual(studioTag.firstChild.nodeValue, "Studio is J-Model",
+  "…and a tag in between that is not ours does not take a label");
+
+// A tag for a modifier rather than values — "(None)", and "(Any)" likewise —
+// still opens with the field name, which is all a tag is recognised by.
+const nullTag = tagWithText("language (custom field) is null");
+tagQuery = () => [nullTag];
+NS.relabelTags(["语言 为空"]);
+tagQuery = () => [];
+assert.strictEqual(nullTag.firstChild.nodeValue, "语言 为空");
+
+// Nothing to say, or nothing to say it to, must both be no-ops
+tagQuery = () => [ourTag];
+NS.relabelTags([]);
+tagQuery = () => [];
+assert.strictEqual(ourTag.firstChild.nodeValue, "语言 是 日语, 英语",
+  "an empty list of labels must leave the tags alone");
+console.log("✓ the criterion handed to Stash (identity, stored form, and its tags' wording)");
+
 // ── 10f. The selection operations both surfaces share ──────────────
 // Pure functions, so they can be tested directly rather than through two
 // components. They are what the sidebar section and the dialog's card both mean
@@ -1776,18 +1905,39 @@ assert.strictEqual(NS.sameSelection(sel("", ["ja"]), sel("", ["ja", "en"])), fal
 assert.strictEqual(NS.sameSelection(sel("any"), sel("none")), false);
 console.log("✓ selection operations (toggle / modifier / emptiness / sameness)");
 
-// The tag text, assembled from Stash's own messages so a tag this plugin draws
-// reads like one Stash draws.
+// The tag text, assembled from Stash's own messages so a tag reads like one
+// Stash draws. Per condition, because Stash draws a tag per condition — which is
+// how a filter with exclusions comes out as two sentences rather than one.
 const intl = PluginApi.libraries.Intl.useIntl();
-assert.strictEqual(NS.selectionLabel(intl, sel("", ["ja", "en"])), "语言 是 日语, 英语",
+const condition = (modifier, value) => ({ field: "language", modifier, value });
+assert.strictEqual(NS.conditionLabel(intl, condition("EQUALS", ["ja", "en"])),
+  "语言 是 日语, 英语",
   "the criterion's localised name, the modifier's label, the values joined");
-assert.strictEqual(NS.selectionLabel(intl, sel("", ["ja"], ["ko"])),
-  "语言 是 日语 (excludes 韩语)", "exclusions are spelled out the way Stash spells them");
-assert.strictEqual(NS.selectionLabel(intl, sel("any")), "语言 不为空 ",
+assert.strictEqual(NS.conditionLabel(intl, condition("NOT_EQUALS", ["ko"])),
+  "语言 不是 韩语", "an exclusion is a sentence of its own");
+assert.strictEqual(NS.conditionLabel(intl, condition("NOT_NULL")), "语言 不为空 ",
   "(Any) is not-null, and says so — that is what it produces");
-assert.strictEqual(NS.selectionLabel(intl, sel("none")), "语言 为空 ",
+assert.strictEqual(NS.conditionLabel(intl, condition("IS_NULL")), "语言 为空 ",
   "…and (None) is null");
-console.log("✓ selection label (built from Stash's messages, not a table of ours)");
+assert.strictEqual(NS.conditionLabel(intl, condition("GREATER_THAN", ["1"])), null,
+  "a modifier this plugin has no wording for is left to Stash");
+
+// …and a whole criterion is one label per condition, in its order
+assert.deepStrictEqual(
+  NS.tagLabels(intl, { value: [condition("EQUALS", ["ja"]), condition("NOT_EQUALS", ["ko"])] }),
+  ["语言 是 日语", "语言 不是 韩语"],
+  "a filter with picks and exclusions is two tags, as Stash draws it"
+);
+assert.deepStrictEqual(NS.tagLabels(intl, { value: [condition("EQUALS", ["ja"])] }),
+  ["语言 是 日语"]);
+assert.strictEqual(
+  NS.tagLabels(intl, { value: [condition("EQUALS", ["ja"]), condition("GREATER_THAN", ["1"])] }),
+  null,
+  "one condition without wording is enough to leave the whole criterion to Stash"
+);
+assert.strictEqual(NS.tagLabels(intl, { value: [] }), null,
+  "and a criterion with nothing in it has no tags to word");
+console.log("✓ tag wording (per condition, built from Stash's messages not a table of ours)");
 
 setTimeout(() => {
   // ── 11. Badges (after the refresh promise settles) ───────────────

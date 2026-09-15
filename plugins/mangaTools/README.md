@@ -161,15 +161,28 @@ Stash's own studio section does:
 There are three decisions behind that worth knowing, because each rules out an
 approach that looks more obvious.
 
-**It is in the sidebar, not the "edit filters" dialog.** The dialog is where a
-criterion is normally added, and it is unreachable: its list of criteria comes
-from a module-level array inside Stash's bundle, `PluginApi` can register routes
-and components but nothing for filters, and every component in that path
-(`EditFilterDialog`, `CriterionEditor`, `CustomFieldsFilter`) is a plain
-`React.FC`, so patching one would silently do nothing. The sidebar is reachable —
-and it is also the better host, because a sidebar section applies immediately,
-while the dialog's changes only take effect on **Apply**, against state a plugin
-cannot join.
+**There are two surfaces, and they commit at different times.** The sidebar
+section applies on every click. The "edit filters" dialog also offers a
+**Language** card, registered into the filter model's own
+`options.criterionOptions` — the module-level array Stash builds its cards from,
+which is reachable through the model even though `EditFilterDialog`,
+`CriterionEditor` and `CustomFieldsFilter` are all plain `React.FC` and cannot be
+patched. That card keeps its own selection and merges it into the URL when
+**Apply** is pressed, exactly as the sidebar does; `src/language-filter.tsx`
+holds the operations the two share, so a click cannot come to mean different
+things in the two places.
+
+**The criterion is a custom field, and Stash is told it is a language.** It has to
+be stored as one: Stash decodes the query string before a plugin's filter option
+exists, so a stored type of `language` would not resolve on a reload. That leaves
+Stash treating it as a custom field, which shows up in two places — its tag would
+open the custom-fields card, and that tag would read `language (custom field) is
+ja`. Both are repaired without changing what is stored: the criterion is handed
+Stash's Language option, so its tag opens our card and its ✗ clears the filter,
+and the tag's wording is replaced in the DOM with the same sentence the sidebar
+would use. The repair is in the DOM because Stash draws its tag row *before* this
+plugin is mounted, so nothing attached at render time can reach it (see
+`relabelTags`).
 
 **It works by rewriting the URL.** Stash keeps its filter in the `c` query
 parameter, and its list hook re-reads that on every navigation. So a filter change
@@ -378,6 +391,11 @@ Against a real Stash:
    - **Check it composes**: include one language and exclude another; both
      conditions are sent, and including and excluding the *same* language should
      return nothing at all.
+   - **Check the tag**: it should read `语言 是 日语`, not `language (用户字段) 是
+     ja` — the wording is the plugin's. Clicking it should open the **Language**
+     card in the filter dialog, and its ✗ should clear the filter. With an
+     exclusion there are two tags, one per condition, and the second should read
+     `语言 不是 韩语`.
    - The same conditions are reachable by hand: filter panel → Custom Fields →
      field `language`. Both routes write the same thing, so a filter set through
      one should show up in the other.
@@ -505,11 +523,13 @@ values through the plugin's dropdown never hits this, since that writes lowercas
 - **A language cannot be both included and excluded** — the two lists are
   mutually exclusive, since `EQUALS` and `NOT_EQUALS` for the same value is a
   contradiction that matches nothing.
-- **The filter is a sidebar section, not a criterion in the filter dialog.** The
-  dialog's criterion list cannot be extended from a plugin — see
-  [Filtering](#filtering) for the three reasons. It also means the language does
-  not appear in the dialog's list of filters, only in the sidebar and the filter
-  tags.
+- **The filter's tag is Stash's tag, re-worded.** It is not a tag this plugin
+  draws, so it behaves natively — it opens the Language card, and its ✗ clears the
+  filter — but the wording is replaced after Stash has rendered it. On a page
+  *load* with a language filter already in the URL, that replacement happens once
+  the gallery list has rendered, so the tag shows Stash's own wording
+  (`language (custom field) is ja`) for as long as the first query takes. See
+  [Filtering](#filtering).
 - **Fetch size scales with the number of tagged galleries**, not the library
   size. Verified working against a 1194-gallery library.
 
