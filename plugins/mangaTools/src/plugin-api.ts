@@ -123,14 +123,6 @@ export interface MangaToolsNamespace {
   noteCause(name: string): boolean;
   /** Was the ✗ of a language tag in the dialog's row what was clicked? */
   clickedTagRemove(target: Element | null): boolean;
-  /**
-   * The filter as a query string has it — what Apply has just committed, which is
-   * the dialog's copy rather than the model the plugin was rendered with.
-   */
-  filterFromQuery(
-    filter: MangaToolsFilterModel,
-    search?: string
-  ): MangaToolsFilterModel;
 
   /*
    * Changes to a selection. Shared by the sidebar section and the dialog's card,
@@ -296,8 +288,6 @@ export interface MangaToolsFilterModel {
   options?: { criterionOptions?: MangaToolsCriterionOption[] };
   clone(): MangaToolsFilterModel;
   makeQueryParameters(): string;
-  /** Rebuilds the criteria from a query string — Stash's own decode, public */
-  configureFromQueryString(queryString: string): void;
 }
 
 /**
