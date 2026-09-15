@@ -1447,36 +1447,51 @@ export function DialogLanguageFilter(props: {
   /**
    * The merge.
    *
-   * Runs after *every* render, not when the model changes — which is what it
-   * used to wait for, and why nothing happened. Pressing Apply does not
-   * necessarily touch the list's filter at all: Stash's filter knows nothing
-   * about this criterion, so choosing a language and nothing else leaves it
-   * exactly as it was. Stash's own hook notices that too — it re-reads the URL
-   * and returns its existing filter object when the criteria compare equal — so
-   * there is no model change to hang this on.
+   * It waits for the list's filter to become what Apply committed, and only then
+   * writes.
    *
-   * What there always is, is a render: Apply closes the dialog, and the dialog's
-   * open state belongs to the component that renders the list, so the list
-   * re-renders either way. React batches that with any filter change in the same
-   * render, so the model read here is the applied one when the filter did change,
-   * and the still-correct one when it did not.
+   * That wait is the whole of it. Apply commits the dialog's *copy*, and the
+   * filter this component is rendered with is the list's, which becomes that copy
+   * a commit later, when Stash's own hook re-reads the URL Apply wrote. Merging
+   * before that writes a third filter — neither the one committed nor the one in
+   * hand — and then the URL and the filter describe different things. Stash's URL
+   * handling has no way back from that: its one reconciliation is "decode the URL,
+   * take it as the filter, and re-encode it if the string differs", which cannot
+   * tell a different filter from a correction, so the URL and the filter state go
+   * on rewriting each other until React throws.
+   *
+   * Merging *after* the wait is safe for the opposite reason: what gets written
+   * is then that same filter with only the language changed — exactly the string
+   * Stash's own encoder would produce for it, which is the one thing its
+   * reconciliation recognises as already agreeing. And it comes out right as
+   * well: by then the filter holds everything else the dialog did, so a criterion
+   * removed there stays removed.
+   *
+   * The wait is short and always ends: the model this component is handed is
+   * replaced whenever the URL changes, because the criterion carries the Language
+   * identity and so never compares equal to a freshly decoded one. If it somehow
+   * does not arrive, the timer says so rather than merging later and wrongly.
    */
+  var lastModel = React.useRef<MangaToolsFilterModel | null>(null);
   React.useEffect(function () {
+    var model = props.filter;
+    var previous = lastModel.current;
+    lastModel.current = model;
+
     if (!applyPending.current) return;
 
-    // Consumed whether or not there is anything to write, so an Apply that
-    // changed nothing cannot affect some later, unrelated render.
-    applyPending.current = false;
+    if (!previous || previous === model) {
+      window.setTimeout(function () {
+        if (!applyPending.current) return;
+        applyPending.current = false;
+        console.warn(
+          "[mangaTools] the filter did not update after Apply, so the language was not merged"
+        );
+      }, 0);
+      return;
+    }
 
-    // The model this component was rendered with — *not* one rebuilt from the URL
-    // Stash has just written. That was tried, to stop a criterion the dialog
-    // removed from coming back, and it is what took the page down: the filter's
-    // criteria then differ from the URL's for as long as Stash's own hook needs
-    // them to agree, and its "re-read the URL" guard never fires again — the URL
-    // and the filter state rewrite each other in a loop until React gives up.
-    // Whatever this merge can be, it must not change *which* criteria are set;
-    // only the language, whose value the state and the URL always agree on.
-    var model = props.filter;
+    applyPending.current = false;
     var unchanged = sameSelection(choice, readLanguageFilter(model));
 
     // Every stage is reported, because this is the whole path that can only be
