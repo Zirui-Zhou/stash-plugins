@@ -291,6 +291,17 @@ function message(intl: MangaToolsIntl, id: string, fallback: string): string {
   return intl.formatMessage({ id: id, defaultMessage: fallback });
 }
 
+/**
+ * Whether the reader has opened or closed the section, remembered for the
+ * session. null means no preference yet, and the section then follows whether
+ * the filter is in use.
+ *
+ * Stash remembers this per section too — in the history entry's state, so it
+ * survives navigation — but that state lives in a context a plugin cannot reach.
+ * A module variable reproduces the effect within a session.
+ */
+var sectionOpenPreference: boolean | null = null;
+
 /** Class name of the section's mount point */
 var FILTER_HOST_CLASS = "manga-tools-field-host";
 
@@ -454,9 +465,9 @@ export function SidebarLanguageFilter(props: {
   var intl = PluginApi.libraries.Intl.useIntl();
   var history = PluginApi.libraries.ReactRouterDOM.useHistory();
 
-  var openState = React.useState(true);
-  var open = openState[0];
-  var setOpen = openState[1];
+  var openState = React.useState(sectionOpenPreference);
+  var preference = openState[0];
+  var setPreference = openState[1];
 
   var queryState = React.useState("");
   var query = queryState[0];
@@ -584,6 +595,27 @@ export function SidebarLanguageFilter(props: {
     return NS.showFlags ? o.flag : null;
   };
 
+  var filterInUse =
+    !!selection.modifier ||
+    selection.included.length > 0 ||
+    selection.excluded.length > 0;
+
+  // Collapsed unless there is something to see: Stash's own sections start
+  // closed (CollapseButton defaults `open` to false, and the state it restores
+  // holds only what the reader toggled), and a sidebar of seven open sections is
+  // a wall. Opened when this filter is doing something, so the value narrowing
+  // the list is on screen rather than hidden behind a heading.
+  //
+  // That second half is this plugin's own: Stash does not open a section because
+  // its criterion is set. It is what makes the section useful for a filter that
+  // arrived by URL or from a saved filter, where nothing was clicked.
+  var open = preference === null ? filterInUse : preference;
+
+  function toggleOpen() {
+    sectionOpenPreference = !open;
+    setPreference(sectionOpenPreference);
+  }
+
   // (Any) and (None) are the two states a language field can be in before any
   // particular language is chosen, so Stash offers them only while nothing is
   // chosen — confirmed against a real section, where choosing two studios and
@@ -633,12 +665,7 @@ export function SidebarLanguageFilter(props: {
   var section = (
     <div className="sidebar-section sidebar-list-filter">
       <div className="collapse-header">
-        <Bootstrap.Button
-          onClick={function () {
-            setOpen(!open);
-          }}
-          className="minimal collapse-button"
-        >
+        <Bootstrap.Button onClick={toggleOpen} className="minimal collapse-button">
           <Icon icon={open ? Solid.faChevronDown : Solid.faChevronRight} fixedWidth />
           <span>{fieldLabel(intl)}</span>
         </Bootstrap.Button>

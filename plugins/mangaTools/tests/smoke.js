@@ -1350,8 +1350,12 @@ assert.strictEqual(
   "语言",
   "the heading is Stash's own word for language, from its locale files"
 );
-assert.strictEqual(find(sectionEl, (n) => n.type === "Collapse").props.in, true,
-  "open by default");
+// Collapsed when the filter is not in use — Stash's own sections start closed,
+// and the chevron points right to say so.
+assert.strictEqual(find(sectionEl, (n) => n.type === "Collapse").props.in, false,
+  "with nothing filtered the section should start collapsed, like Stash's");
+assert.strictEqual(find(sectionEl, (n) => n.type === "Icon").props.icon, "faChevronRight",
+  "and the chevron should point right");
 assert.strictEqual(find(sectionEl, (n) => n.type === "Collapse").props.mountOnEnter, true,
   "the candidates should not be mounted until the section is opened");
 assert.strictEqual(typeof headerButton.props.onClick, "function",
@@ -1449,6 +1453,15 @@ section = renderLanguageFilter([
 ]);
 const selectedList = find(section.node, (n) =>
   n.props && n.props.className === "selected-list");
+
+// The section opens itself when the filter is doing something, so whatever is
+// narrowing the list is visible — the case that matters when the filter arrived
+// from a URL or a saved filter rather than from a click here.
+assert.strictEqual(find(section.node, (n) => n.type === "Collapse").props.in, true,
+  "a filter in use should have its section open");
+assert.strictEqual(find(section.node, (n) => n.type === "Icon").props.icon, "faChevronDown",
+  "and the chevron should point down");
+
 assert.ok(selectedList, "a chosen language should appear in the selected-list");
 assert.strictEqual(section.node.props.children[1], selectedList,
   "the selected list sits outside the collapse, where Stash puts it");
