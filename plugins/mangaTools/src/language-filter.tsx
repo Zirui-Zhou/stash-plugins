@@ -879,15 +879,14 @@ export function DialogLanguageFilter(props: {
   var bumpState = React.useState(0);
   var bump = bumpState[1];
 
-  // What the reader has chosen here, and what is actually applied. The two are
-  // compared to decide whether there is anything pending — comparing sets, so
-  // picking a value and picking it again leaves no trace.
-  var appliedState = React.useState<MangaToolsLanguageSelection>(function () {
-    return readLanguageFilter(props.filter);
-  });
-  var applied = appliedState[0];
-  var setApplied = appliedState[1];
+  // What is actually applied, read from the model on every render rather than
+  // snapshotted once: Apply replaces the model, and a snapshot taken at mount
+  // would go on describing the filter as it was before.
+  var applied = readLanguageFilter(props.filter);
 
+  // What the reader has chosen here. The two are compared to decide whether
+  // there is anything pending — comparing sets, so picking a value and then
+  // picking it again leaves no trace.
   var choiceState = React.useState<MangaToolsLanguageSelection>(applied);
   var choice = choiceState[0];
   var setChoice = choiceState[1];
@@ -921,10 +920,16 @@ export function DialogLanguageFilter(props: {
       if (!clicked.closest(".edit-filter-dialog")) return;
 
       // Apply, as Stash draws it: the one primary button in the dialog's footer.
-      // This runs on the bubble phase, so React has already handled the click
-      // and Stash has already written its own URL by the time it does.
+      //
+      // On the *capture* phase, deliberately, so this runs before React's own
+      // handler and therefore before the render that follows it. The flag only
+      // has to be standing by the time the merge effect runs, and capture is the
+      // ordering that guarantees it — on the bubble phase it is set after React
+      // has already re-rendered, and the effect may well have run by then, in
+      // which case it sees nothing pending and the merge never happens again.
       if (clicked.closest(".modal-footer button.btn-primary")) {
         applyPending.current = true;
+        console.info("[mangaTools] Apply pressed");
       }
 
       window.setTimeout(function () {
@@ -934,9 +939,9 @@ export function DialogLanguageFilter(props: {
       }, 0);
     }
 
-    document.addEventListener("click", onClick);
+    document.addEventListener("click", onClick, true);
     return function () {
-      document.removeEventListener("click", onClick);
+      document.removeEventListener("click", onClick, true);
     };
   }, []);
 
@@ -951,10 +956,36 @@ export function DialogLanguageFilter(props: {
 
       var previous = lastModel.current;
       lastModel.current = model;
+
+      // An Apply that never reached this effect would leave the flag standing
+      // and let it fire on some later, unrelated change — so it only counts
+      // while the dialog is still open.
+      if (!document.querySelector(".edit-filter-dialog")) {
+        applyPending.current = false;
+      }
+
       if (!previous || !applyPending.current) return;
 
       applyPending.current = false;
-      if (sameSelection(choice, readLanguageFilter(model))) return;
+      var unchanged = sameSelection(choice, readLanguageFilter(model));
+
+      // Every stage is reported, because this is the whole path that can only be
+      // checked in a browser: if "Apply pressed" never appears the listener or
+      // its selector is wrong; if it appears and this line does not, the filter
+      // never changed and the merge had nothing to hook onto; if both appear, the
+      // number below says whether there was anything to write.
+      console.info(
+        "[mangaTools] merge after Apply: unchanged=" +
+          unchanged +
+          ", included=" +
+          choice.included.length +
+          ", excluded=" +
+          choice.excluded.length +
+          ", modifier=" +
+          JSON.stringify(choice.modifier)
+      );
+
+      if (unchanged) return;
 
       var search = languageFilterQuery(model, choice);
       if (search === null) {
