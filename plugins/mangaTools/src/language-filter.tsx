@@ -304,17 +304,49 @@ function message(intl: MangaToolsIntl, id: string, fallback: string): string {
  */
 var SECTION_STATE_KEY = "mangaToolsLanguageOpen";
 
+/** Class name of the section's mount point */
+var FILTER_HOST_CLASS = "manga-tools-field-host";
+
+/** The mount point, held at module scope so re-renders reuse the same node */
+var filterHost: HTMLElement | null = null;
+
 /**
- * The filter the section is working on, published by the GalleryList patch for
- * the section to read.
+ * Finds (creating if needed) the mount point for the language section,
+ * positioned as the first of the sidebar's filter sections.
  *
- * The section renders from inside the sidebar, but the container it sits in is
- * Stash's own and is handed only `children` — no filter. The model lives one
- * level up in the list, so it travels through a context rather than being read
- * back out of the DOM or parked in a module variable.
+ * Anchored on `.sidebar-saved-filters`, which Stash renders whether or not the
+ * user has any saved filters and which sits directly above the pinned-criteria
+ * sections — the position its own studio section occupies. One class rather
+ * than two: it appears exactly once, and a single class is what this plugin's
+ * other anchors use.
+ *
+ * Mirrors ensureHostAfter in mangaTools.tsx rather than sharing it: the two live
+ * in different modules, and extracting the helper would mean moving code out of
+ * the entry file in the same change that adds a feature. Worth doing when a
+ * third caller appears.
  */
-export var LanguageFilterContext =
-  React.createContext<MangaToolsFilterModel | null>(null);
+function ensureFilterHost(): HTMLElement | null {
+  var anchor = document.querySelector(".sidebar-saved-filters");
+  if (!anchor || !anchor.parentNode) {
+    filterHost = null;
+    return null;
+  }
+
+  if (!filterHost) {
+    filterHost = document.createElement("div");
+    filterHost.className = FILTER_HOST_CLASS;
+  }
+
+  // A React re-render may displace it; keep it directly after the anchor.
+  if (
+    filterHost.parentNode !== anchor.parentNode ||
+    anchor.nextElementSibling !== filterHost
+  ) {
+    anchor.parentNode.insertBefore(filterHost, anchor.nextElementSibling);
+  }
+
+  return filterHost;
+}
 
 /**
  * One entry of the candidate list, or of one of the two selected lists.
@@ -423,18 +455,17 @@ function LanguageItem(props: {
 }
 
 /**
- * The gallery list's language filter, drawn inside the sidebar.
- * sidebar, as a sibling of Stash's own sections.
+ * The gallery list's language filter, rendered through a portal into the
+ * sidebar.
  *
- * Rendered from inside the sidebar rather than portalled into it — see the
- * plugin's patch registration for why that matters. The filter model arrives
- * through LanguageFilterContext, and changes are reported by rewriting the URL
- * (see applyLanguage for why that is the route in).
+ * Reads the current selection from the filter model it is handed, and reports
+ * changes by rewriting the URL — see applyLanguage for why that is the route in.
  */
-export function SidebarLanguageFilter() {
+export function SidebarLanguageFilter(props: {
+  filter: MangaToolsFilterModel;
+}) {
   var intl = PluginApi.libraries.Intl.useIntl();
   var history = PluginApi.libraries.ReactRouterDOM.useHistory();
-  var contextFilter = React.useContext(LanguageFilterContext);
 
   // Read during the render rather than restored in an effect, so the first paint
   // already has the right answer. Stash restores its sections in a `useEffect`,
@@ -452,13 +483,27 @@ export function SidebarLanguageFilter() {
   var query = queryState[0];
   var setQuery = queryState[1];
 
-  // Every hook is above this line. Giving up early on a missing filter must not
-  // skip any of them, or the hook order would differ between renders.
-  if (!contextFilter) return null;
+  // A React re-render can drop the mount point, and the first render never finds
+  // it at all: this component is a sibling rendered before the list that owns the
+  // sidebar, so the anchor's element does not exist yet. One extra pass fixes it.
+  //
+  // A *layout* effect, not a plain one. Plain effects are flushed after the
+  // browser has painted, so the sidebar would appear without this section and
+  // everything below it would jump a frame later. Layout effects run after React
+  // writes the DOM but before paint, which is the only window where the
+  // correction is invisible.
+  var bump = React.useState(0)[1];
+  var host = ensureFilterHost();
 
-  // Aliased so the type survives into the callbacks below: narrowing a captured
-  // variable does not carry into a closure, but a local's declared type does.
-  var filter = contextFilter;
+  React.useLayoutEffect(function () {
+    if (ensureFilterHost() !== host) {
+      bump(function (v) {
+        return v + 1;
+      });
+    }
+  });
+
+  if (!host) return null;
 
   var Bootstrap = PluginApi.libraries.Bootstrap;
   if (!Bootstrap) {
@@ -471,10 +516,10 @@ export function SidebarLanguageFilter() {
   var Solid = PluginApi.libraries.FontAwesomeSolid || {};
   var Icon = PluginApi.components.Icon;
 
-  var selection = readLanguageFilter(filter);
+  var selection = readLanguageFilter(props.filter);
 
   function update(next: MangaToolsLanguageSelection) {
-    applyLanguage(filter, history, next);
+    applyLanguage(props.filter, history, next);
   }
 
   /**
@@ -635,7 +680,7 @@ export function SidebarLanguageFilter() {
     );
   });
 
-  return (
+  var section = (
     <div className="sidebar-section sidebar-list-filter">
       <div className="collapse-header">
         <Bootstrap.Button onClick={toggleOpen} className="minimal collapse-button">
@@ -744,4 +789,6 @@ export function SidebarLanguageFilter() {
       </Bootstrap.Collapse>
     </div>
   );
+
+  return PluginApi.ReactDOM.createPortal(section, host);
 }

@@ -30,7 +30,7 @@
  */
 import { NS } from "./languages";
 import { requirePluginApi } from "./plugin-api";
-import { LanguageFilterContext, SidebarLanguageFilter } from "./language-filter";
+import { SidebarLanguageFilter } from "./language-filter";
 import type { MangaToolsFilterModel } from "./plugin-api";
 import type {
   MangaToolsApolloOperation,
@@ -1536,13 +1536,21 @@ PluginApi.patch.before("GalleryList", function () {
   return args;
 });
 
-// 7. The gallery list's language filter needs two patches, because the two
-//    things it needs live in different places: the filter model is here, on the
-//    list, while the place to draw the section is inside the sidebar.
+// 7. The gallery list's language filter, mounted from GalleryList for the same
+//    reason the bulk row is mounted from RatingSystem: nothing in the filter
+//    path itself is patchable (see language-filter.tsx), so a component that
+//    renders on this page is used as a mount point. The section positions itself
+//    by a DOM anchor inside the sidebar and reads the filter it is handed.
 //
-//    So this one publishes the model and renders the list otherwise untouched.
-//    It is a provider rather than a sibling of the list because the section has
-//    to be rendered from *inside* the sidebar — see patch 8.
+//    `GalleryList` is the list of cards, not the component that owns the sidebar
+//    — which is why the section is placed by a DOM anchor rather than rendered
+//    where it belongs. Stash's sidebar *could* host it: it registers
+//    `FilteredGalleryList.SidebarSections` as a patchable wrapper around its own
+//    filter sections. But the filter model lives inside `FilteredGalleryList`,
+//    which does not pass it to that wrapper, and nothing patchable above the
+//    wrapper holds it either. Publishing it from here was tried and does not
+//    work: this component renders *after* the sidebar, so the section would read
+//    an empty context and render nothing at all.
 //
 //    `instead` here rather than `before`: this one has to render. The two
 //    coexist — Stash runs before-functions first and passes their result on, so
@@ -1551,47 +1559,17 @@ PluginApi.patch.instead("GalleryList", function () {
   var args = argsToArray(arguments);
   var props = args[0] as { filter?: MangaToolsFilterModel };
   var Original = originalFrom(args);
-  noteFired("GalleryList");
+  noteFired("GalleryList.filter");
 
   return (
-    <LanguageFilterContext.Provider
-      value={props.filter as MangaToolsFilterModel}
-    >
+    <>
+      <SidebarLanguageFilter filter={props.filter as MangaToolsFilterModel} />
       <Original {...props} />
-    </LanguageFilterContext.Provider>
+    </>
   );
 });
 
-// 8. The sidebar's own filter sections, which Stash hands only `children`.
-//    Rendering here means the section is created in the same commit as the rest
-//    of the sidebar, so nothing is inserted after the page has been painted and
-//    nothing shifts.
-//
-//    The earlier approach portalled the section into a div inserted next to
-//    Stash's markup. That worked, but only from the second render onwards — the
-//    anchor does not exist while this component tree is still being built — so
-//    the sidebar painted without the section and then moved. It also made the
-//    plugin depend on a class name of Stash's, which is how three separate
-//    visual bugs got in. A registered patch name is a promise Stash makes to
-//    plugins; a class name is not.
-PluginApi.patch.instead(
-  "FilteredGalleryList.SidebarSections",
-  function () {
-    var args = argsToArray(arguments);
-    var props = args[0] as object;
-    var Original = originalFrom(args);
-    noteFired("FilteredGalleryList.SidebarSections");
-
-    return (
-      <>
-        <SidebarLanguageFilter />
-        <Original {...props} />
-      </>
-    );
-  }
-);
-
-// 9. Bulk edit: mounts the language row into the bulk edit dialog. The dialog
+// 8. Bulk edit: mounts the language row into the bulk edit dialog. The dialog
 //    itself is not a PatchComponent, so RatingSystem — the only patchable
 //    component it renders — is used purely as a mount point; the row is
 //    positioned by the DOM anchor and its value reaches the mutation through
