@@ -49,6 +49,67 @@ const React = {
 /** The chain the plugin installed via setLink, captured by the client stub */
 let installedLink = null;
 
+/**
+ * Stands in for Stash's provider_configuration history — the filter is applied
+ * by rewriting the URL, so this is where a filter change shows up.
+ */
+const historyReplaces = [];
+const fakeHistory = {
+  location: { pathname: "/galleries", search: "?perPage=40" },
+  replace(location) {
+    historyReplaces.push(location);
+    this.location = location;
+  },
+};
+
+/**
+ * A stub of Stash's ListFilterModel, cut down to what the language filter
+ * touches: the criteria, the options that can mint a new criterion, a clone, and
+ * the encoder. makeQueryParameters returns a readable stand-in rather than a
+ * real URL, because the point of the test is what goes into it — reimplementing
+ * Stash's encoding here would be testing the wrong thing.
+ */
+const CUSTOM_FIELDS_OPTION = {
+  type: "custom_fields",
+  makeCriterion: () => ({
+    criterionOption: { type: "custom_fields" },
+    value: [],
+  }),
+};
+
+function makeFilterModel(criteria = []) {
+  return {
+    criteria,
+    options: { criterionOptions: [CUSTOM_FIELDS_OPTION] },
+    clone() {
+      return makeFilterModel(
+        criteria.map((c) => ({
+          criterionOption: { ...c.criterionOption },
+          value: (c.value || []).map((v) => ({
+            ...v,
+            value: v.value ? [...v.value] : v.value,
+          })),
+        }))
+      );
+    },
+    makeQueryParameters() {
+      // Recorded as well as encoded, so a test can assert on the criteria that
+      // reached the encoder rather than on the plugin's guesses at the format.
+      encodedCriteria.push(this.criteria);
+      return "ENCODED(" + JSON.stringify(this.criteria) + ")";
+    },
+  };
+}
+
+/** Criteria handed to makeQueryParameters by the most recent call */
+const encodedCriteria = [];
+
+/** A custom-fields criterion holding the given conditions */
+const customFieldsCriterion = (conditions) => ({
+  criterionOption: { type: "custom_fields" },
+  value: conditions,
+});
+
 const fakeClient = {
   // Stands in for Stash's existing link chain, which setLink must pass through.
   link: { __original: true },
@@ -177,7 +238,9 @@ const PluginApi = {
   ReactDOM: {
     createPortal: (node, host) => ({ __portal: true, node, host }),
   },
-  components: { Icon: () => null },
+  // Names rather than components, so the tests can find an icon by its rendered
+  // type and read the definition it was given.
+  components: { Icon: "Icon" },
   libraries: {
     Apollo: {
       gql: (s) => {
@@ -198,6 +261,8 @@ const PluginApi = {
       // A marker rather than a component, so the tests can find the switches and
       // read their props without rendering anything.
       Form: { Label: () => null, Group: "FormGroup", Switch: "Switch" },
+      Button: "Button",
+      Collapse: "Collapse",
       FormGroup: "FormGroup",
       Row: "Row",
       Col: "Col",
@@ -214,7 +279,19 @@ const PluginApi = {
             : defaultMessage,
       }),
     },
-    FontAwesomeSolid: { faMinus: "faMinus" },
+    FontAwesomeSolid: {
+      faMinus: "faMinus",
+      faPlus: "faPlus",
+      faChevronDown: "faChevronDown",
+      faChevronRight: "faChevronRight",
+      faCheckCircle: "faCheckCircle",
+      faTimesCircle: "faTimesCircle",
+    },
+    FontAwesomeRegular: { faTimesCircle: "faTimesCircle(regular)" },
+    // Captured so a test can assert the URL the filter pushes.
+    ReactRouterDOM: {
+      useHistory: () => fakeHistory,
+    },
   },
   utils: {
     StashService: {
@@ -568,11 +645,25 @@ console.log("✓ dropdown order (by displayed name, in the reader's collation)")
   "PluginSettings",
   "RatingSystem",
 ].forEach((t) => assert.ok(patched[t], `missing patch: ${t}`));
-// GalleryList is observed, not replaced — it is where the selection is read from.
-assert.ok(patchedBefore["GalleryList"], "missing patch: GalleryList");
-assert.strictEqual(patched["GalleryList"], undefined,
-  "GalleryList must be observed with before(), never replaced");
-console.log("✓ all 6 patches registered (+ GalleryList observed)");
+
+// GalleryList carries two patches, which is allowed: Stash runs the
+// before-functions first and passes their result on to any instead-functions
+// (see patch.tsx). It is observed for the selection the bulk dialog needs, and
+// wrapped so the sidebar language filter has somewhere to mount.
+assert.ok(patchedBefore["GalleryList"], "missing patch: GalleryList (before)");
+assert.ok(patched["GalleryList"], "missing patch: GalleryList (instead)");
+
+// The wrapper has to hand the list through untouched — the plugin adds a
+// sibling, it does not replace anything.
+const listModel = makeFilterModel();
+const listEl = call("GalleryList", { filter: listModel, selectedIds: new Set() });
+assert.strictEqual(listEl.type, React.Fragment, "GalleryList should be wrapped, not replaced");
+const listOriginal = listEl.props.children[1];
+assert.strictEqual(listOriginal.type, original, "the original GalleryList must still be rendered");
+assert.strictEqual(listOriginal.props.filter, listModel, "…receiving the same filter it was given");
+assert.strictEqual(typeof listEl.props.children[0].type, "function",
+  "and the language filter as a sibling");
+console.log("✓ all 6 patches registered (+ GalleryList observed and wrapped)");
 
 // ── 7. Query shape ─────────────────────────────────────────────────
 // Another bug this project hit: OR is singular in the schema
@@ -994,6 +1085,262 @@ assert.ok(
   "languages.ts should be inlined into the bundle, not left as a separate file"
 );
 console.log("✓ bundle shape (single script file, self-contained, JSX transformed)");
+
+// ── 10c. Gallery list: filtering by language ───────────────────────
+// The filter works by rewriting the URL, which Stash's list hook re-reads on
+// every navigation. So what is worth testing is exactly what this plugin
+// contributes: which conditions it merges into the filter, that it leaves the
+// rest of the filter alone, and that the section looks like one of Stash's own.
+
+// Reads the current selection out of the model
+const withLanguage = (field, value) =>
+  makeFilterModel([customFieldsCriterion([{ field, modifier: "EQUALS", value }])]);
+
+assert.strictEqual(NS.selectedFilterLanguage(makeFilterModel()), "",
+  "a filter with no criteria means no language");
+assert.strictEqual(NS.selectedFilterLanguage(withLanguage("language", ["ja"])), "ja");
+assert.strictEqual(NS.selectedFilterLanguage(withLanguage("Language", ["ja"])), "ja",
+  "field names are matched case-insensitively, as everywhere else in this plugin");
+assert.strictEqual(NS.selectedFilterLanguage(withLanguage("author", ["x"])), "",
+  "another field's condition is not a language");
+assert.strictEqual(
+  NS.selectedFilterLanguage(makeFilterModel([
+    customFieldsCriterion([{ field: "language", modifier: "NOT_NULL" }]),
+  ])),
+  "",
+  "a modifier with no value reads as no language, not as a crash"
+);
+
+/** Runs the merge and reports what it asked Stash to encode */
+function writeLanguage(code, conditions) {
+  const model = makeFilterModel(
+    conditions === undefined ? [] : [customFieldsCriterion(conditions)]
+  );
+  encodedCriteria.length = 0;
+  const result = NS.filterLanguageQuery(model, code);
+  return {
+    result,
+    criteria: encodedCriteria.length ? encodedCriteria[encodedCriteria.length - 1] : null,
+    original: model,
+  };
+}
+
+const languageConditions = (criteria) =>
+  (criteria || [])
+    .filter((c) => c.criterionOption && c.criterionOption.type === "custom_fields")
+    .flatMap((c) => c.value || []);
+
+let w = writeLanguage("ja");
+assert.ok(w.result, "setting a language should produce query parameters");
+assert.deepStrictEqual(languageConditions(w.criteria),
+  [{ field: "language", modifier: "EQUALS", value: ["ja"] }]);
+
+// The model is Stash's own live state object, so it must come out unchanged —
+// mutating it would change the filter without telling anything to re-render.
+const liveModel = makeFilterModel([
+  customFieldsCriterion([{ field: "language", modifier: "EQUALS", value: ["ja"] }]),
+]);
+NS.filterLanguageQuery(liveModel, "ko");
+assert.deepStrictEqual(liveModel.criteria[0].value,
+  [{ field: "language", modifier: "EQUALS", value: ["ja"] }],
+  "the live filter model must not be mutated");
+
+// Other custom-field conditions survive: a language filter composes with a
+// hand-made one instead of discarding it.
+w = writeLanguage("ja", [{ field: "author", modifier: "EQUALS", value: ["x"] }]);
+assert.deepStrictEqual(languageConditions(w.criteria),
+  [
+    { field: "author", modifier: "EQUALS", value: ["x"] },
+    { field: "language", modifier: "EQUALS", value: ["ja"] },
+  ],
+  "another custom field's condition should be kept");
+
+// Changing the language replaces ours rather than adding a second condition —
+// two conditions on one field would be ANDed by the backend and match nothing.
+w = writeLanguage("ko", [
+  { field: "language", modifier: "EQUALS", value: ["ja"] },
+  { field: "author", modifier: "EQUALS", value: ["x"] },
+]);
+assert.deepStrictEqual(languageConditions(w.criteria),
+  [
+    { field: "author", modifier: "EQUALS", value: ["x"] },
+    { field: "language", modifier: "EQUALS", value: ["ko"] },
+  ]);
+
+// A case variant of the field name is dropped, for the same reason.
+w = writeLanguage("ko", [{ field: "Language", modifier: "EQUALS", value: ["ja"] }]);
+assert.deepStrictEqual(languageConditions(w.criteria),
+  [{ field: "language", modifier: "EQUALS", value: ["ko"] }],
+  "a capitalised field name must not leave a second condition behind");
+
+// Clearing removes the condition, and the criterion with it — an empty
+// criterion would otherwise show up as a filter tag with nothing in it.
+w = writeLanguage("", [{ field: "language", modifier: "EQUALS", value: ["ja"] }]);
+assert.deepStrictEqual(w.criteria, [], "clearing should drop the criterion entirely");
+
+// But a criterion that still holds something else stays.
+w = writeLanguage("", [
+  { field: "language", modifier: "EQUALS", value: ["ja"] },
+  { field: "author", modifier: "EQUALS", value: ["x"] },
+]);
+assert.deepStrictEqual(languageConditions(w.criteria),
+  [{ field: "author", modifier: "EQUALS", value: ["x"] }]);
+
+// Only the custom-fields criterion is touched; other criteria pass through.
+// Compared by content, not identity: the model is cloned on the way, which is
+// the whole reason the live one survives intact.
+const mixed = makeFilterModel([
+  { criterionOption: { type: "studios" }, value: [] },
+  customFieldsCriterion([]),
+]);
+encodedCriteria.length = 0;
+NS.filterLanguageQuery(mixed, "ja");
+assert.deepStrictEqual(
+  encodedCriteria[0].map((c) => c.criterionOption.type),
+  ["studios", "custom_fields"],
+  "unrelated criteria should be kept, with ours alongside"
+);
+assert.deepStrictEqual(encodedCriteria[0][0].value, [], "…and left untouched");
+
+// A filter that offers no custom-fields criterion cannot take one
+const noCustomFields = makeFilterModel([]);
+noCustomFields.options = { criterionOptions: [] };
+assert.strictEqual(NS.filterLanguageQuery(noCustomFields, "ja"), null,
+  "without the option there is nowhere to put the condition, and it says so");
+console.log("✓ filter conditions (read / set / merge / replace / clear / not mutated)");
+
+// ── 10d. The sidebar section itself ────────────────────────────────
+// Stand in for the gallery list's sidebar, in the shape the real one has: the
+// saved-filters section, then Stash's own pinned-criteria sections, then the
+// footer that shows the result count.
+const sidebar = makeEl("div");
+sidebar.className = "sidebar";
+documentRoot.appendChild(sidebar);
+
+const savedFiltersSection = makeEl("div");
+savedFiltersSection.className = "sidebar-section sidebar-saved-filters";
+sidebar.appendChild(savedFiltersSection);
+
+const pinnedStudioSection = makeEl("div");
+pinnedStudioSection.className = "sidebar-section sidebar-list-filter";
+sidebar.appendChild(pinnedStudioSection);
+
+const sidebarFooter = makeEl("div");
+sidebarFooter.className = "sidebar-footer";
+sidebar.appendChild(sidebarFooter);
+
+/** Renders the section and follows the portal it makes */
+const renderLanguageFilter = (model) => {
+  const el = call("GalleryList", { filter: model || makeFilterModel(), selectedIds: new Set() })
+    .props.children[0];
+  return el.type(el.props);
+};
+
+let section = renderLanguageFilter();
+assert.strictEqual(section.__portal, true, "the section should render through a portal");
+
+const filterHostEl = sidebar.children[1];
+assert.strictEqual(filterHostEl.className, "manga-tools-field-host");
+assert.strictEqual(filterHostEl.previousElementSibling, savedFiltersSection,
+  "the section should come after the saved filters");
+assert.strictEqual(filterHostEl.nextElementSibling, pinnedStudioSection,
+  "and before Stash's own pinned sections");
+assert.strictEqual(section.host, filterHostEl);
+
+// Markup copied from Stash's own sidebar section (CollapseButton/SidebarSection),
+// so it reads as one of them rather than as something bolted on.
+const sectionEl = section.node;
+assert.strictEqual(sectionEl.props.className, "sidebar-section sidebar-list-filter");
+const headerButton = sectionEl.props.children[0].props.children;
+assert.strictEqual(headerButton.type, "Button");
+assert.strictEqual(headerButton.props.className, "minimal collapse-button");
+assert.strictEqual(
+  find(sectionEl, (n) => n.type === "Button").props.children[1].props.children,
+  "语言",
+  "the heading is Stash's own word for language, from its locale files"
+);
+
+// Open by default, chevron pointing down; the candidate list holds every
+// language, since nothing is selected yet.
+const chevron = find(sectionEl, (n) => n.type === "Icon").props.icon;
+assert.strictEqual(chevron, "faChevronDown", "an open section points its chevron down");
+assert.strictEqual(find(sectionEl, (n) => n.type === "Collapse").props.in, true);
+assert.strictEqual(sectionEl.props.children[1], null,
+  "with nothing selected the selected-list is absent, not empty");
+
+const candidateList = find(sectionEl, (n) => {
+  return n.props && n.props.className === "queryable-candidate-list";
+});
+assert.ok(candidateList, "the candidates should be in a queryable-candidate-list");
+const candidateItems = [];
+find(candidateList, (n) => {
+  if (n.props && n.props.className === "unselected-object") candidateItems.push(n);
+  return false;
+});
+assert.strictEqual(candidateItems.length, Object.keys(NS.LANGUAGES).length,
+  "every language should be offered as a candidate");
+
+// Flags are drawn in the sidebar like everywhere else
+assert.strictEqual(NS.showFlags, true, "precondition: flags are on");
+assert.ok(find(candidateList, (n) => /fi fi-/.test(n.props.className || "")),
+  "candidates should carry a flag");
+
+// Clicking a language rewrites the URL rather than keeping state of its own
+const jaCandidate = candidateItems.find((i) =>
+  find(i, (n) => n.props && n.props.children === "日语")
+);
+assert.ok(jaCandidate, "precondition: 日语 is offered");
+const jaLink = find(jaCandidate, (n) => n.type === "a");
+historyReplaces.length = 0;
+jaLink.props.onClick();
+assert.strictEqual(historyReplaces.length, 1, "clicking should apply the filter");
+assert.strictEqual(historyReplaces[0].pathname, "/galleries", "on the same page");
+assert.ok(/^ENCODED\(.*"language".*"ja"/.test(historyReplaces[0].search),
+  "and the URL should carry the language condition");
+console.log("✓ sidebar section (placement / native markup / candidates / click applies)");
+
+// With a language selected, it moves to the selected list — outside the
+// collapse, so it stays visible when the candidates are folded away.
+section = renderLanguageFilter(withLanguage("language", ["ja"]));
+const selectedList = find(section.node, (n) => {
+  return n.props && n.props.className === "selected-list";
+});
+assert.ok(selectedList, "a selected language should appear in the selected-list");
+assert.strictEqual(find(selectedList, (n) => n.props.children === "日语") !== null, true);
+assert.strictEqual(
+  section.node.props.children[1],
+  selectedList,
+  "the selected list sits outside the collapse, where Stash puts it"
+);
+
+// Clicking the selected language clears the filter
+const selectedItems = [];
+find(selectedList, (n) => {
+  if (n.props && n.props.className === "selected-object") selectedItems.push(n);
+  return false;
+});
+assert.strictEqual(selectedItems.length, 1);
+const selectedLink = find(selectedItems[0], (n) => n.type === "a");
+assert.strictEqual(
+  find(selectedItems[0], (n) => n.type === "Icon").props.icon,
+  "faCheckCircle",
+  "a selected entry is ticked"
+);
+historyReplaces.length = 0;
+selectedLink.props.onClick();
+assert.ok(/^ENCODED\(\[\]\)$/.test(historyReplaces[0].search),
+  "clicking the selected language should clear the filter");
+console.log("✓ sidebar section (selected list / click again clears)");
+
+// The header is wired to fold the candidates away. The transition itself is not
+// asserted: this stub's useState has a no-op setter, so a click could not change
+// what renders, and a test of that would be testing the stub.
+const foldButton = find(section.node, (n) => n.type === "Button");
+assert.strictEqual(typeof foldButton.props.onClick, "function",
+  "the header should be clickable");
+assert.strictEqual(find(section.node, (n) => n.type === "Collapse").props.mountOnEnter, true,
+  "the candidates should not be mounted until the section is opened");
+console.log("✓ sidebar section (collapsible header)");
 
 setTimeout(() => {
   // ── 11. Badges (after the refresh promise settles) ───────────────

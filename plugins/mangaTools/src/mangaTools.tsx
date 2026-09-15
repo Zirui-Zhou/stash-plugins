@@ -4,18 +4,21 @@
  * Everything goes through the UI plugin API; no Stash core code is modified, so
  * Stash upgrades never produce merge conflicts.
  *
- * Features. There is one so far, and it lives in three places:
+ * The language attribute lives in the Gallery's custom fields
+ * (custom_fields.language). What is stored is the canonical code, not the
+ * display name, and the name is looked up only when rendering — the same
+ * approach Stash takes for performer nationality. It surfaces in five places:
  *
- *   1. Language attribute
- *      - a flag badge on the bottom of the gallery card cover
- *      - a dropdown on the gallery edit page, so you never type a code by hand
- *      - a localised name (plus flag) on the gallery detail page, instead of the
- *        raw code
+ *   - a flag badge on the bottom of the gallery card cover
+ *   - a dropdown on the gallery edit page, so you never type a code by hand
+ *   - the same dropdown in the bulk edit dialog, riding along with Apply
+ *   - a localised name (plus flag) on the gallery detail page, instead of the
+ *     raw code
+ *   - a filter section in the gallery list's sidebar (language-filter.tsx),
+ *     which narrows the list to one language
  *
- *      The value lives in the Gallery's custom fields (custom_fields.language).
- *      What is stored is the canonical code, not the display name, and the name
- *      is looked up only when rendering — the same approach Stash takes for
- *      performer nationality.
+ * `languages.ts` holds the codes and their flags; `language-filter.tsx` holds
+ * the sidebar filter. Everything else is below.
  *
  * New features should keep the same shape: patches that hand anything they do
  * not own straight back to the original component, and shared data in a module
@@ -27,6 +30,8 @@
  */
 import { NS } from "./languages";
 import { requirePluginApi } from "./plugin-api";
+import { SidebarLanguageFilter } from "./language-filter";
+import type { MangaToolsFilterModel } from "./plugin-api";
 import type {
   MangaToolsApolloOperation,
   MangaToolsIntl,
@@ -1517,7 +1522,31 @@ PluginApi.patch.before("GalleryList", function () {
   return args;
 });
 
-// 7. Bulk edit: mounts the language row into the bulk edit dialog. The dialog
+// 7. The gallery list's language filter, mounted from GalleryList for the same
+//    reason the bulk row is mounted from RatingSystem: nothing in the filter
+//    path itself is patchable (see language-filter.tsx), so an unrelated
+//    component that renders on this page is used purely as a mount point. The
+//    section is positioned by a DOM anchor and reads the filter it is handed.
+//
+//    `instead` here rather than `before`: this one has to render. The two
+//    coexist — Stash runs before-functions first and passes their result on, so
+//    the selection above is still captured. GalleryList itself is rendered
+//    exactly as Stash does; the only addition is a sibling.
+PluginApi.patch.instead("GalleryList", function () {
+  var args = argsToArray(arguments);
+  var props = args[0] as { filter?: MangaToolsFilterModel };
+  var Original = originalFrom(args);
+  noteFired("GalleryList.filter");
+
+  return (
+    <>
+      <SidebarLanguageFilter filter={props.filter as MangaToolsFilterModel} />
+      <Original {...props} />
+    </>
+  );
+});
+
+// 8. Bulk edit: mounts the language row into the bulk edit dialog. The dialog
 //    itself is not a PatchComponent, so RatingSystem — the only patchable
 //    component it renders — is used purely as a mount point; the row is
 //    positioned by the DOM anchor and its value reaches the mutation through

@@ -8,7 +8,8 @@ upgrades never produce merge conflicts.
 
 | Feature | What it adds |
 |---|---|
-| **Language** | A language attribute on galleries, surfaced as a flag badge, an edit-page dropdown and a localised detail row |
+| **Language** | A language attribute on galleries, surfaced as a flag badge, an edit-page dropdown, a bulk-edit row and a localised detail row |
+| **Language filter** | A "language" section in the gallery list's sidebar that narrows the list to one language |
 | **Settings** | Which languages the dropdown offers, whether flags are drawn, and whether the cover badge is drawn |
 
 Each feature occupies its own section below, and each keeps to the same rule:
@@ -21,6 +22,7 @@ Adds a "language" property to galleries.
 | Where | Effect |
 |---|---|
 | Gallery list / card | A **regional flag** in the bottom-right of the cover (Japan, China, Taiwan…). Fades out on hover like the studio icon, clearing the cover |
+| Gallery list / sidebar | A **language section** listing every language, to filter the list — see [Filtering](#filtering) |
 | Gallery edit page | A "language" dropdown **between "studio" and "performers"**, listing "flag + localised name" — no typing codes by hand |
 | Gallery detail page | An extra `<h6>` row **below "photographer", above "details"**, showing "flag + localised name" with the same label and font as the rows around it |
 | Gallery bulk edit | A "language" row **between "studio" and "performers"**, prefilled with the selection's shared language like the studio field, and applied by the dialog's own **Apply** — Cancel discards it like every other field |
@@ -142,6 +144,55 @@ hands the props straight back). That is the only patchable component that receiv
 `selectedIds`, and it is the parent of all three display modes, so grid, list and
 wall are all covered by one hook.
 
+#### Filtering
+
+The gallery list's sidebar gains a **language** section — the same shape as
+Stash's own studio section: a heading you can fold away, the selected language
+above it, and every other language below. Clicking one narrows the list; clicking
+the selected one clears it.
+
+There are three decisions in that paragraph worth knowing, because each rules out
+an approach that looks more obvious.
+
+**It is in the sidebar, not the "edit filters" dialog.** The dialog is where a
+criterion is normally added, and it is unreachable: its list of criteria comes
+from a module-level array inside Stash's bundle, `PluginApi` can register routes
+and components but nothing for filters, and every component in that path
+(`EditFilterDialog`, `CriterionEditor`, `CustomFieldsFilter`) is a plain
+`React.FC`, so patching one would silently do nothing. The sidebar is reachable —
+and it is also the better host, because a sidebar section applies immediately,
+while the dialog's changes only take effect on **Apply**, against state a plugin
+cannot join.
+
+**It works by rewriting the URL.** Stash keeps its filter in the `c` query
+parameter, and its list hook re-reads that on every navigation. So a filter change
+here is a URL change, and the filter tag, the result count, pagination,
+bookmarks and the back button all follow without the plugin doing anything. The
+alternative — holding the selection in plugin state and injecting it into the
+`findGalleries` query, the way the bulk dialog injects its write — would leave
+Stash's own state and the count disagreeing with what is on screen.
+
+Nothing here reimplements Stash's encoding. The obvious route in would be to
+build the query string by hand, but the format is private
+(`translateJSON`, which swaps braces for parentheses). Instead the plugin clones
+the live filter model and asks *it* for the query parameters, merging one
+condition into the existing custom-fields criterion. All of that is public API on
+the model: `clone`, `options.criterionOptions`, `makeCriterion`,
+`makeQueryParameters`.
+
+**One language at a time.** The criterion holds a list of conditions, and Stash's
+own editor only ever gives one value to `EQUALS`. Two conditions on the same
+field would be ANDed — this plugin already relies on that, in the query that
+builds the badge map — so picking two languages would match nothing. Single
+selection cannot fail that way. (Worth revisiting if `EQUALS` with several values
+turns out to OR them; that would need one query against a real library to
+confirm.)
+
+The section honours the **enabled languages** setting, so the two never disagree
+about which languages this library uses — with one exception: a language already
+being filtered on stays visible even if it has since been disabled, since
+otherwise the list would be filtered by something invisible.
+
 ### Settings
 
 Three settings under **Settings → Plugins → Manga Tools**:
@@ -198,21 +249,22 @@ never filtered, while only the option *list* is filtered.
 ```
 mangaTools/
 ├── src/
-│   ├── mangaTools.tsx     Badge, dropdown, bulk row, settings, patches
-│   ├── languages.ts       Codes, flags, and the name lookup (pure, no DOM)
-│   └── plugin-api.ts      Types for PluginApi and the namespace above
+│   ├── mangaTools.tsx        Badge, dropdown, bulk row, settings, patches
+│   ├── language-filter.tsx   The gallery list's language filter section
+│   ├── languages.ts          Codes, flags, and the name lookup (pure, no DOM)
+│   └── plugin-api.ts         Types for PluginApi and the namespace above
 ├── tests/
-│   └── smoke.js           Smoke test, run by `npm test` from the repo root
-├── mangaTools.yml         Plugin config (the file name is the plugin ID)
-├── mangaTools.css         Styles
-├── tsconfig.json          Extends the repo's tsconfig.base.json
-└── build/                 Bundled output — generated, gitignored, and the only
-                           thing that gets packaged
+│   └── smoke.js              Smoke test, run by `npm test` from the repo root
+├── mangaTools.yml            Plugin config (the file name is the plugin ID)
+├── mangaTools.css            Styles
+├── tsconfig.json             Extends the repo's tsconfig.base.json
+└── build/                    Bundled output — generated, gitignored, and the
+                              only thing that gets packaged
 ```
 
 `ui.javascript` names **one** file. esbuild bundles `src/mangaTools.tsx` together
 with everything it imports into `build/mangaTools.js`, loaded by Stash through a
-plain `<script>` tag — hence `format: "iife"` in `tools/build.mjs`. The two source
+plain `<script>` tag — hence `format: "iife"` in `tools/build.mjs`. The source
 files talk to each other by importing, not through the window.
 
 `languages.ts` still publishes itself at `window.MangaTools` as well, because that
@@ -266,8 +318,9 @@ error does not — esbuild strips types without reading them — which is why
 
 They cover value normalisation, the unknown-value fallback, route scoping,
 write/clear semantics, badge rendering, settings parse/serialise and the settings
-UI's write path, the shape of the bundle (one file, no module syntax, JSX really
-transformed), and the string/CSS surface of every patched component.
+UI's write path, the filter's read/merge/replace/clear rules and the sidebar
+section it renders, the shape of the bundle (one file, no module syntax, JSX
+really transformed), and the string/CSS surface of every patched component.
 
 Against a real Stash:
 
@@ -287,8 +340,17 @@ Against a real Stash:
    should still be the native text box
 6. **Check the scope**: open any scene or performer edit page — there should be
    **no** language dropdown (the plugin only acts on gallery pages)
-7. **Check filtering**: gallery list → filter panel → Custom Fields → field
-   `language`, modifier `=`, value `zh-Hans`
+7. **Check filtering**: gallery list → the sidebar should have a **语言** section
+   listing every language → click one and the list should narrow to it, with a
+   filter tag above the results and a changed URL. Click the selected language
+   again and the filter should clear.
+   - **Check it composes**: add a hand-made filter (filter panel → Custom Fields
+     → field `test`, value `123`), then pick a language. Both conditions should
+     survive — the language is merged into the custom-fields criterion, not
+     swapped in for it.
+   - The same condition is reachable by hand: filter panel → Custom Fields →
+     field `language`, modifier `=`, value `zh-Hans`. Both routes write the same
+     thing, so a filter set through one should show up in the other.
 8. **Check the settings**: Settings → Plugins → Manga Tools, tick only e.g.
    `日本語` and `English`, save, then open a gallery edit page — the dropdown
    should offer only those two, while a gallery already set to Vietnamese still
@@ -376,13 +438,21 @@ values through the plugin's dropdown never hits this, since that writes lowercas
 - **Grid view only.** Of the gallery list's three display modes, only Grid goes
   through `GalleryCard`. List is a table, and Wall uses a different component, so
   neither shows a badge.
-- **The detail-page row and the edit-page field both touch the DOM**, because
-  Stash leaves no React insertion point at either position (see above). Each mount
-  point is an empty `<div>` that the plugin finds/creates and repositions while
-  rendering; a React re-render that displaces it gets corrected automatically. The
-  anchors are `.gallery-details` (detail page) and
-  `.form-group[data-field="studio_id"]` (edit page) — the latter confirmed to
-  exist on v0.31.1.
+- **Three of the four insertion points touch the DOM**, because Stash leaves no
+  React insertion point at those positions (see above). Each mount point is an
+  empty `<div>` that the plugin finds/creates and repositions while rendering; a
+  React re-render that displaces it gets corrected automatically. The anchors are
+  `.gallery-details` (detail page), `.form-group[data-field="studio_id"]` (edit
+  page — confirmed to exist on v0.31.1), `[data-field="studio"]` (bulk dialog) and
+  `.sidebar-saved-filters` (filter sidebar).
+- **The filter is one language at a time.** The custom-fields criterion holds a
+  list of conditions and the backend ANDs them, so two languages would match
+  nothing. See [Filtering](#filtering).
+- **The filter is a sidebar section, not a criterion in the filter dialog.** The
+  dialog's criterion list cannot be extended from a plugin — see
+  [Filtering](#filtering) for the three reasons. It also means the language does
+  not appear in the dialog's list of filters, only in the sidebar and the filter
+  tags.
 - **Fetch size scales with the number of tagged galleries**, not the library
   size. Verified working against a 1194-gallery library.
 

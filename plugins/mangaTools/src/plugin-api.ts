@@ -82,6 +82,21 @@ export interface MangaToolsNamespace {
   /** Whether the cover badge is drawn. Independent of showFlags. */
   showCoverBadge: boolean;
   parseFlag(raw: unknown, fallback: boolean): boolean;
+
+  /**
+   * The language the gallery list is filtered to, read out of Stash's filter
+   * model — "" when it is not filtering by language. Populated by
+   * language-filter.tsx.
+   */
+  selectedFilterLanguage(filter: MangaToolsFilterModel): string;
+  /**
+   * Query parameters for the filter with the language set (or cleared, for ""),
+   * or null when the list offers no custom-fields criterion to attach it to.
+   */
+  filterLanguageQuery(
+    filter: MangaToolsFilterModel,
+    code: string
+  ): string | null;
 }
 
 /** What react-intl's useIntl() gives us — only the fields this plugin touches */
@@ -135,6 +150,59 @@ export interface MangaToolsApolloLinkClass {
   from(links: unknown[]): unknown;
 }
 
+/**
+ * One condition inside the filter's custom-fields criterion.
+ *
+ * Matches CustomFieldCriterionInput in Stash's schema: a field name, a modifier
+ * from CriterionModifier, and a list of values. Stash's own editor only ever
+ * puts one value here for EQUALS, which is why this plugin does too.
+ */
+export interface MangaToolsCustomFieldCondition {
+  field: string;
+  value?: unknown[];
+  modifier: string;
+}
+
+/**
+ * A filter criterion, as far as this plugin needs one.
+ *
+ * `criterionOption.type` is how a criterion is identified — "custom_fields" is
+ * the one this plugin looks for. Read off the live object rather than imported,
+ * because the model lives inside Stash's bundle.
+ */
+export interface MangaToolsFilterCriterion {
+  criterionOption?: { type?: string };
+  value?: MangaToolsCustomFieldCondition[];
+  clone?(): MangaToolsFilterCriterion;
+}
+
+/** An entry of ListFilterOptions.criterionOptions — a factory for its criterion */
+export interface MangaToolsCriterionOption {
+  type: string;
+  makeCriterion(): MangaToolsFilterCriterion;
+}
+
+/**
+ * Stash's ListFilterModel, as far as this plugin needs one.
+ *
+ * Every one of these is public API, and deliberately so: the obvious way to add
+ * a filter would be to build the URL query by hand, but the encoding Stash uses
+ * there is private (translateJSON). Cloning the model and asking it for its own
+ * query parameters keeps that knowledge in Stash.
+ */
+export interface MangaToolsFilterModel {
+  criteria: MangaToolsFilterCriterion[];
+  options?: { criterionOptions?: MangaToolsCriterionOption[] };
+  clone(): MangaToolsFilterModel;
+  makeQueryParameters(): string;
+}
+
+/** react-router v5's history, as used by Stash's own filter hook */
+export interface MangaToolsHistory {
+  location: { pathname?: string; search?: string };
+  replace(location: { pathname?: string; search?: string }): void;
+}
+
 /** The mutation StashService.useConfigurePlugin() returns */
 export type MangaToolsConfigurePluginFn = (options: {
   variables: { plugin_id: string; input: Record<string, unknown> };
@@ -157,6 +225,13 @@ export interface IPluginApi {
    */
   React: typeof import("react");
 
+  /**
+   * Components Stash registers for plugins — those wrapped in PatchComponent.
+   * `Icon` is the one used here: the sidebar section's chevron, check and plus
+   * marks go through Stash's own wrapper so they match its sizing and classes.
+   */
+  components: { Icon: ComponentType<Record<string, unknown>> };
+
   ReactDOM: {
     createPortal(children: ReactNode, container: Element): ReactPortal;
   };
@@ -169,11 +244,18 @@ export interface IPluginApi {
       gql?: MangaToolsGql;
       ApolloLink?: MangaToolsApolloLinkClass;
     };
-    /** react-bootstrap, used for the settings switches */
+    /** react-bootstrap: the settings switches, and the sidebar section's button/collapse */
     Bootstrap?: {
       Form: { Switch: ComponentType<Record<string, unknown>> };
+      Button: ComponentType<Record<string, unknown>>;
+      Collapse: ComponentType<Record<string, unknown>>;
     };
     Intl: { useIntl(): MangaToolsIntl };
+    /** FontAwesome's icon definitions, looked up by name */
+    FontAwesomeSolid?: { [iconName: string]: unknown };
+    FontAwesomeRegular?: { [iconName: string]: unknown };
+    /** react-router-dom, used to push the filter URL the way Stash itself does */
+    ReactRouterDOM: { useHistory(): MangaToolsHistory };
     /** react-select as a namespace import: the component is its default export */
     ReactSelect: { default?: unknown; Select?: unknown };
   };
