@@ -1,0 +1,8 @@
+- id: "mangaTools"
+  name: "Manga Tools"
+  metadata:
+    description: "Adapts Stash galleries to manga/comic management."
+  version: "0.5.2-49a43ac"
+  date: "2026-09-15 20:22:38"
+  path: "mangaTools.zip"
+  sha256: "c00e68b7a42f47f091fffb42dcef0ed8728e519d7c92a821d52a3ac376e1396b"
