@@ -957,13 +957,10 @@ export function DialogLanguageFilter(props: {
       var previous = lastModel.current;
       lastModel.current = model;
 
-      // An Apply that never reached this effect would leave the flag standing
-      // and let it fire on some later, unrelated change — so it only counts
-      // while the dialog is still open.
-      if (!document.querySelector(".edit-filter-dialog")) {
-        applyPending.current = false;
-      }
-
+      // Note there is deliberately no "the dialog has closed, so drop the flag"
+      // here. Apply *closes the dialog* — that is what pressing it does — so
+      // such a check would clear the flag in the one case it exists for, and the
+      // merge would silently never run. (It did, for a while.)
       if (!previous || !applyPending.current) return;
 
       applyPending.current = false;
@@ -996,8 +993,11 @@ export function DialogLanguageFilter(props: {
       }
 
       // Stash reads the URL on every navigation, so this is the whole of it —
-      // the same route the sidebar takes.
+      // the same route the sidebar takes. Logged separately from the decision
+      // above, so a paste can tell "the merge ran and wrote" from "the merge ran
+      // and Stash did not act on it".
       history.replace(Object.assign({}, history.location, { search: search }));
+      console.info("[mangaTools] applied the language filter to the URL");
     },
     [props.filter, choice, history]
   );
