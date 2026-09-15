@@ -1842,6 +1842,18 @@ assert.strictEqual(adoptedClone.toQueryParams().type, "custom_fields",
 assert.strictEqual(adopt.criteria[0].toQueryParams.call({ value: [] }).value.length, 0,
   "toQueryParams must read `this`, not the criterion it was attached to");
 
+// Exactly two properties, and no more. The other places Stash asks a criterion
+// to write itself out — applyToCriterionInput for the query, and
+// applyToSavedCriterion for a saved filter — are overridden on the custom-fields
+// class and write `input.custom_fields` without consulting criterionOption, so a
+// saved filter files the language where Stash always keeps custom fields and
+// reads it back. Shadowing either one with `this.criterionOption.type` would file
+// it under "language", which nothing can read back; this asserts the swap stays
+// out of them.
+assert.deepStrictEqual(Object.keys(adopt.criteria[0]).sort(),
+  ["criterionOption", "toQueryParams", "value"],
+  "adopting must add the two properties and touch nothing else");
+
 // Adopting twice must not wrap anything or swap a second time
 adopt.criteria[0].criterionOption = { type: "language" };
 NS.adoptLanguageCriterion(adopt);
