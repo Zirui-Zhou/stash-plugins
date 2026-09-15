@@ -30,7 +30,7 @@
  */
 import { NS } from "./languages";
 import { requirePluginApi } from "./plugin-api";
-import { SidebarLanguageFilter } from "./language-filter";
+import { LanguageFilterContext, SidebarLanguageFilter } from "./language-filter";
 import type { MangaToolsFilterModel } from "./plugin-api";
 import type {
   MangaToolsApolloOperation,
@@ -625,7 +625,11 @@ function LanguageRow(props: {
   // It only bumps when the mount point differs from the one used for this
   // render, so once things settle the condition is never true again and there
   // is no render loop.
-  React.useEffect(function () {
+  // Layout effect, not a plain one: this correction has to land before the
+  // browser paints, or the row is missing for a frame and the fields below it
+  // visibly jump. Layout effects are flushed after React writes the DOM but
+  // before paint, which is exactly the window this needs.
+  React.useLayoutEffect(function () {
     if (isGalleryContext() && ensureFieldHost() !== host) {
       bump(function (v) {
         return v + 1;
@@ -1117,7 +1121,8 @@ function BulkLanguageRow() {
   // from its rating row, which renders **before** the studio row it has to
   // anchor on has been committed to the DOM. The effect runs after the commit,
   // and one extra render is all it takes.
-  React.useEffect(function () {
+  // As in LanguageRow: before paint, so the row does not appear a frame late.
+  React.useLayoutEffect(function () {
     if (isGalleryContext()) {
       installBulkLink();
       if (ensureBulkFieldHost() !== host) {
@@ -1531,31 +1536,62 @@ PluginApi.patch.before("GalleryList", function () {
   return args;
 });
 
-// 7. The gallery list's language filter, mounted from GalleryList for the same
-//    reason the bulk row is mounted from RatingSystem: nothing in the filter
-//    path itself is patchable (see language-filter.tsx), so an unrelated
-//    component that renders on this page is used purely as a mount point. The
-//    section is positioned by a DOM anchor and reads the filter it is handed.
+// 7. The gallery list's language filter needs two patches, because the two
+//    things it needs live in different places: the filter model is here, on the
+//    list, while the place to draw the section is inside the sidebar.
+//
+//    So this one publishes the model and renders the list otherwise untouched.
+//    It is a provider rather than a sibling of the list because the section has
+//    to be rendered from *inside* the sidebar — see patch 8.
 //
 //    `instead` here rather than `before`: this one has to render. The two
 //    coexist — Stash runs before-functions first and passes their result on, so
-//    the selection above is still captured. GalleryList itself is rendered
-//    exactly as Stash does; the only addition is a sibling.
+//    the selection above is still captured.
 PluginApi.patch.instead("GalleryList", function () {
   var args = argsToArray(arguments);
   var props = args[0] as { filter?: MangaToolsFilterModel };
   var Original = originalFrom(args);
-  noteFired("GalleryList.filter");
+  noteFired("GalleryList");
 
   return (
-    <>
-      <SidebarLanguageFilter filter={props.filter as MangaToolsFilterModel} />
+    <LanguageFilterContext.Provider
+      value={props.filter as MangaToolsFilterModel}
+    >
       <Original {...props} />
-    </>
+    </LanguageFilterContext.Provider>
   );
 });
 
-// 8. Bulk edit: mounts the language row into the bulk edit dialog. The dialog
+// 8. The sidebar's own filter sections, which Stash hands only `children`.
+//    Rendering here means the section is created in the same commit as the rest
+//    of the sidebar, so nothing is inserted after the page has been painted and
+//    nothing shifts.
+//
+//    The earlier approach portalled the section into a div inserted next to
+//    Stash's markup. That worked, but only from the second render onwards — the
+//    anchor does not exist while this component tree is still being built — so
+//    the sidebar painted without the section and then moved. It also made the
+//    plugin depend on a class name of Stash's, which is how three separate
+//    visual bugs got in. A registered patch name is a promise Stash makes to
+//    plugins; a class name is not.
+PluginApi.patch.instead(
+  "FilteredGalleryList.SidebarSections",
+  function () {
+    var args = argsToArray(arguments);
+    var props = args[0] as object;
+    var Original = originalFrom(args);
+    noteFired("FilteredGalleryList.SidebarSections");
+
+    return (
+      <>
+        <SidebarLanguageFilter />
+        <Original {...props} />
+      </>
+    );
+  }
+);
+
+// 9. Bulk edit: mounts the language row into the bulk edit dialog. The dialog
 //    itself is not a PatchComponent, so RatingSystem — the only patchable
 //    component it renders — is used purely as a mount point; the row is
 //    positioned by the DOM anchor and its value reaches the mutation through

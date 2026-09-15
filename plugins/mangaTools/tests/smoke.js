@@ -47,6 +47,24 @@ const React = {
   useEffect: (fn) => {
     fn();
   },
+  // Layout effects are the same thing to a stub with no browser to paint: the
+  // distinction the plugin relies on is *when* React flushes them, which is not
+  // observable here. What matters for these tests is that the callback runs.
+  useLayoutEffect: (fn) => {
+    fn();
+  },
+  // A context that keeps its value in a mutable field. Close enough to React for
+  // one provider and one consumer: the provider writes, the consumer reads. The
+  // real thing nests and tracks subscriptions, neither of which this plugin uses.
+  createContext: (defaultValue) => {
+    const context = { current: defaultValue };
+    context.Provider = function Provider(props) {
+      context.current = props.value;
+      return props.children;
+    };
+    return context;
+  },
+  useContext: (context) => context.current,
 };
 
 /** The chain the plugin installed via setLink, captured by the client stub */
@@ -671,26 +689,25 @@ console.log("✓ dropdown order (by displayed name, in the reader's collation)")
   "CustomFields",
   "PluginSettings",
   "RatingSystem",
+  "FilteredGalleryList.SidebarSections",
 ].forEach((t) => assert.ok(patched[t], `missing patch: ${t}`));
 
 // GalleryList carries two patches, which is allowed: Stash runs the
 // before-functions first and passes their result on to any instead-functions
 // (see patch.tsx). It is observed for the selection the bulk dialog needs, and
-// wrapped so the sidebar language filter has somewhere to mount.
+// wrapped so it can publish the filter model for the sidebar section.
 assert.ok(patchedBefore["GalleryList"], "missing patch: GalleryList (before)");
 assert.ok(patched["GalleryList"], "missing patch: GalleryList (instead)");
 
-// The wrapper has to hand the list through untouched — the plugin adds a
-// sibling, it does not replace anything.
+// The wrapper has to hand the list through untouched — it adds a provider, it
+// does not replace anything.
 const listModel = makeFilterModel();
 const listEl = call("GalleryList", { filter: listModel, selectedIds: new Set() });
-assert.strictEqual(listEl.type, React.Fragment, "GalleryList should be wrapped, not replaced");
-const listOriginal = listEl.props.children[1];
-assert.strictEqual(listOriginal.type, original, "the original GalleryList must still be rendered");
-assert.strictEqual(listOriginal.props.filter, listModel, "…receiving the same filter it was given");
-assert.strictEqual(typeof listEl.props.children[0].type, "function",
-  "and the language filter as a sibling");
-console.log("✓ all 6 patches registered (+ GalleryList observed and wrapped)");
+assert.strictEqual(listEl.props.children.type, original,
+  "the original GalleryList must still be rendered");
+assert.strictEqual(listEl.props.children.props.filter, listModel,
+  "…receiving the same filter it was given");
+console.log("✓ all 7 patches registered (+ GalleryList observed and wrapped)");
 
 // ── 7. Query shape ─────────────────────────────────────────────────
 // Another bug this project hit: OR is singular in the schema
@@ -1300,50 +1317,43 @@ assert.strictEqual(NS.languageFilterQuery(noCustomFields, sel("", ["ja"])), null
 console.log("✓ filter conditions (read any/none/include/exclude, write, merge, clear, not mutated)");
 
 // ── 10d. The sidebar section itself ────────────────────────────────
-// Stand in for the gallery list's sidebar, in the shape the real one has: the
-// saved-filters section, then Stash's own pinned-criteria sections, then the
-// footer that shows the result count.
-const sidebar = makeEl("div");
-sidebar.className = "sidebar";
-documentRoot.appendChild(sidebar);
+// Two patches put it together, as they do in Stash: the list publishes the
+// filter model, and the sidebar's own sections container renders the section.
+// Nothing is inserted into the DOM by hand, so there is no anchor to get wrong
+// and nothing appears after the page has been painted.
+const renderSections = (conditions) => {
+  const model = makeFilterModel(
+    conditions === undefined ? [] : [customFieldsCriterion(conditions)]
+  );
+  // The list publishes the model — running the provider is what a render of
+  // GalleryList does, and it happens before the sidebar below it renders.
+  const provided = call("GalleryList", { filter: model, selectedIds: new Set() });
+  provided.type(provided.props);
+  // Then Stash's sections container, which we wrap.
+  const wrapped = call("FilteredGalleryList.SidebarSections", {});
+  return wrapped;
+};
 
-const savedFiltersSection = makeEl("div");
-savedFiltersSection.className = "sidebar-section sidebar-saved-filters";
-sidebar.appendChild(savedFiltersSection);
-
-const pinnedStudioSection = makeEl("div");
-pinnedStudioSection.className = "sidebar-section sidebar-list-filter";
-sidebar.appendChild(pinnedStudioSection);
-
-const sidebarFooter = makeEl("div");
-sidebarFooter.className = "sidebar-footer";
-sidebar.appendChild(sidebarFooter);
-
-/** Renders the section and follows the portal it makes */
+/** Renders the section alone, having published a filter for it */
 const renderLanguageFilter = (conditions) => {
-  const el = call("GalleryList", {
-    filter: makeFilterModel(
-      conditions === undefined ? [] : [customFieldsCriterion(conditions)]
-    ),
-    selectedIds: new Set(),
-  }).props.children[0];
+  const wrapped = renderSections(conditions);
+  const el = wrapped.props.children[0];
   return el.type(el.props);
 };
 
-let section = renderLanguageFilter();
-assert.strictEqual(section.__portal, true, "the section should render through a portal");
+// The wrapper hands Stash's sections straight through, with ours in front
+const wrapped = renderSections();
+assert.strictEqual(wrapped.type, React.Fragment, "the container should be wrapped, not replaced");
+assert.strictEqual(wrapped.props.children[1].type, original,
+  "the original sections container must still be rendered");
+assert.strictEqual(typeof wrapped.props.children[0].type, "function",
+  "with the language section as a sibling before it");
 
-const filterHostEl = sidebar.children[1];
-assert.strictEqual(filterHostEl.className, "manga-tools-field-host");
-assert.strictEqual(filterHostEl.previousElementSibling, savedFiltersSection,
-  "the section should come after the saved filters");
-assert.strictEqual(filterHostEl.nextElementSibling, pinnedStudioSection,
-  "and before Stash's own pinned sections");
-assert.strictEqual(section.host, filterHostEl);
+let section = renderLanguageFilter();
 
 // Markup copied from Stash's own sidebar section (CollapseButton/SidebarSection),
 // so it reads as one of them rather than as something bolted on.
-const sectionEl = section.node;
+const sectionEl = section;
 assert.strictEqual(sectionEl.props.className, "sidebar-section sidebar-list-filter");
 const headerButton = sectionEl.props.children[0].props.children;
 assert.strictEqual(headerButton.type, "Button");
@@ -1454,18 +1464,18 @@ section = renderLanguageFilter([
   conditionsOf("EQUALS", ["ja"]),
   conditionsOf("NOT_EQUALS", ["ko"]),
 ]);
-const selectedList = find(section.node, (n) =>
+const selectedList = find(section, (n) =>
   n.props && n.props.className === "selected-list");
 
 // A filter being set does NOT open the section — Stash does no such thing
 // (nothing in it writes a section's open state but the reader's own click), and
 // deriving it here would flicker, since a filter arriving from the URL is known
 // a render later than the first paint.
-assert.strictEqual(find(section.node, (n) => n.type === "Collapse").props.in, false,
+assert.strictEqual(find(section, (n) => n.type === "Collapse").props.in, false,
   "a filter in use should not force the section open");
 
 assert.ok(selectedList, "a chosen language should appear in the selected-list");
-assert.strictEqual(section.node.props.children[1], selectedList,
+assert.strictEqual(section.props.children[1], selectedList,
   "the selected list sits outside the collapse, where Stash puts it");
 assert.strictEqual(find(selectedList, (n) => n.type === "Icon").props.icon, "faCheckCircle",
   "a chosen entry is ticked");
@@ -1484,7 +1494,7 @@ assert.strictEqual(renderedChildren(selectedLink).length, 1,
 assert.strictEqual(renderedChildren(selectedLink)[0].props.className, "label-group");
 
 const remaining = [];
-find(find(section.node, (n) =>
+find(find(section, (n) =>
   n.props && n.props.className === "queryable-candidate-list"), (n) => {
   if (n.props && /^unselected-object\b/.test(n.props.className)) remaining.push(n);
   return false;
@@ -1502,7 +1512,7 @@ assert.ok(/"modifier":"NOT_EQUALS","value":\["ko"\]/.test(historyReplaces[0].sea
   "clicking the chosen language should drop it and leave the excluded one");
 
 // An excluded language goes in its own list, which Stash marks excluded-list
-const excludedList = find(section.node, (n) =>
+const excludedList = find(section, (n) =>
   n.props && n.props.className === "selected-list excluded-list");
 assert.ok(excludedList, "an excluded language should get the excluded-list");
 assert.strictEqual(find(excludedList, (n) => n.type === "Icon").props.icon, "faTimesCircle",
@@ -1518,15 +1528,15 @@ console.log("✓ sidebar section (selected + excluded lists / row shapes / click
 // survives a reload, which is what a reader sees as "it remembers".
 fakeHistory.location.state = { mangaToolsLanguageOpen: true, somethingElse: 1 };
 section = renderLanguageFilter();
-assert.strictEqual(find(section.node, (n) => n.type === "Collapse").props.in, true,
+assert.strictEqual(find(section, (n) => n.type === "Collapse").props.in, true,
   "a remembered open state should be honoured on the first render");
-assert.strictEqual(find(section.node, (n) => n.type === "Icon").props.icon, "faChevronDown");
+assert.strictEqual(find(section, (n) => n.type === "Icon").props.icon, "faChevronDown");
 
 // …and toggling records the choice in that same place, merging rather than
 // replacing whatever else the entry was holding.
 const searchBeforeToggle = fakeHistory.location.search;
 historyReplaces.length = 0;
-find(section.node, (n) => n.type === "Button").props.onClick();
+find(section, (n) => n.type === "Button").props.onClick();
 assert.strictEqual(historyReplaces.length, 1, "toggling should remember the choice");
 assert.deepStrictEqual(historyReplaces[0].state,
   { mangaToolsLanguageOpen: false, somethingElse: 1 },
@@ -1540,7 +1550,7 @@ console.log("✓ sidebar section (open state remembered in the history entry)");
 // cleared — the state Stash offers them in.
 section = renderLanguageFilter([conditionsOf("NOT_NULL")]);
 const modifierItems = [];
-find(find(section.node, (n) =>
+find(find(section, (n) =>
   n.props && n.props.className === "queryable-candidate-list"), (n) => {
   if (n.props && /modifier-object/.test(n.props.className || "")) modifierItems.push(n);
   return false;
@@ -1548,7 +1558,7 @@ find(find(section.node, (n) =>
 assert.strictEqual(modifierItems.length, 0,
   "with the (Any) modifier set, the modifier entries belong above, not in the list");
 assert.strictEqual(
-  find(section.node, (n) => n.props && n.props.children === "(任意)") !== null, true,
+  find(section, (n) => n.props && n.props.children === "(任意)") !== null, true,
   "…and are shown as the chosen value"
 );
 

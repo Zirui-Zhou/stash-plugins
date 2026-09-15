@@ -158,7 +158,7 @@ Stash's own studio section does:
 - excluded values collected in their own list, marked with a cross rather than a
   tick
 
-There are three decisions behind that worth knowing, because each rules out an
+There are four decisions behind that worth knowing, because each rules out an
 approach that looks more obvious.
 
 **It is in the sidebar, not the "edit filters" dialog.** The dialog is where a
@@ -186,6 +186,21 @@ the live filter model and asks *it* for the query parameters, merging its
 conditions into the existing custom-fields criterion. All of that is public API on
 the model: `clone`, `options.criterionOptions`, `makeCriterion`,
 `makeQueryParameters`.
+
+**It is a real React child of the sidebar, not something inserted into it.** Stash
+registers `FilteredGalleryList.SidebarSections` — a patchable container around its
+own sidebar filter sections — so the plugin wraps that and renders the section as
+a sibling of Stash's. Two consequences. The section is created in the same commit
+as the rest of the sidebar, so nothing appears after the page has painted and
+nothing below it shifts. And there is no DOM anchor to maintain: an earlier
+version portalled the section next to a class name of Stash's, which is how three
+separate visual bugs got in. A registered patch name is a promise Stash makes to
+plugins; a class name is not.
+
+The filter model reaches the section through a context, because the container is
+Stash's own component and is handed only `children` — no filter. The model is
+published by the `GalleryList` patch, one level up, using the same
+`patch.instead` that already observes the list's selection.
 
 **What the conditions mean**, measured against a real library rather than assumed:
 
@@ -473,8 +488,9 @@ values through the plugin's dropdown never hits this, since that writes lowercas
   empty `<div>` that the plugin finds/creates and repositions while rendering; a
   React re-render that displaces it gets corrected automatically. The anchors are
   `.gallery-details` (detail page), `.form-group[data-field="studio_id"]` (edit
-  page — confirmed to exist on v0.31.1), `[data-field="studio"]` (bulk dialog) and
-  `.sidebar-saved-filters` (filter sidebar).
+  page — confirmed to exist on v0.31.1) and `[data-field="studio"]` (bulk dialog).
+  The filter sidebar is the exception: it renders inside Stash's own sections
+  container through a registered patch, so it needs no anchor at all.
 - **Excluding a language also matches galleries with no language set**, because
   that is what Stash's `NOT_EQUALS` means. On a library where most galleries are
   untagged, "not Japanese" therefore returns nearly everything; `(None)` asks for
