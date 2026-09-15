@@ -211,3 +211,18 @@
 .manga-tools-settings-select {
   max-width: 30rem;
 }
+
+/* ─────────────────── Language list in the filter dialog ─────────────────── */
+
+/*
+ * The dialog's card draws our list, and Stash's text editor for the same
+ * criterion sits underneath it — still in the DOM, because it is what commits
+ * the value when a language is picked. Only its appearance is hidden.
+ *
+ * Scoped to our card by the type Stash keys cards on. If Stash ever changes
+ * that attribute the editor simply becomes visible again, beside our list:
+ * degraded, not broken.
+ */
+.criterion-list [data-type="language"] .custom-field-filter {
+  display: none;
+}

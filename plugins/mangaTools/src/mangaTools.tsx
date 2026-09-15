@@ -31,6 +31,7 @@
 import { NS } from "./languages";
 import { requirePluginApi } from "./plugin-api";
 import {
+  DialogLanguageFilter,
   registerLanguageCriterionOption,
   SidebarLanguageFilter,
 } from "./language-filter";
@@ -1571,6 +1572,7 @@ PluginApi.patch.instead("GalleryList", function () {
   return (
     <>
       <SidebarLanguageFilter filter={props.filter as MangaToolsFilterModel} />
+      <DialogLanguageFilter filter={props.filter as MangaToolsFilterModel} />
       <Original {...props} />
     </>
   );

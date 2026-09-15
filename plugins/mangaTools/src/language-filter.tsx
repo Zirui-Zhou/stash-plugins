@@ -149,19 +149,25 @@ export function registerLanguageCriterionOption(
       // because the card body only renders for the criterion whose type matches.
       criterion.criterionOption = option;
 
-      // Seeded with a condition that is both meaningful and harmless. NOT_NULL
-      // rather than EQUALS: an emptiness check against a real backend showed
-      // EQUALS with no value matches *nothing*, so a seeded EQUALS would empty
-      // the gallery list the moment someone opened the card and pressed Apply.
-      criterion.value = [{ field: NS.FIELD_NAME, modifier: "NOT_NULL" }];
+      // Deliberately left with no conditions. Not an oversight: an empty
+      // criterion fails isValid(), so simply opening the card cannot add
+      // anything to the filter — which matters because a custom-field EQUALS
+      // with no value matches *nothing* (measured: 0 of 1194 galleries). The
+      // value only appears when the reader picks a language, and it is Stash's
+      // own editor that commits it.
+      criterion.value = [];
 
       // Kept off the URL on purpose. Stash decodes the query string inside
       // FilteredGalleryList, before this option can be registered, so a stored
       // type of "language" would fail to resolve on a reload and the filter
       // would vanish silently. The stored type stays "custom_fields", which
       // Stash always understands; only the in-session identity is ours.
-      criterion.toQueryParams = function () {
-        return { type: CUSTOM_FIELDS_TYPE, value: criterion.value };
+      //
+      // `this`, not the captured criterion: Stash clones criteria with
+      // cloneDeep before committing them, and a closure would keep pointing at
+      // the original object and serialise a stale value.
+      criterion.toQueryParams = function (this: MangaToolsFilterCriterion) {
+        return { type: CUSTOM_FIELDS_TYPE, value: this.value };
       };
 
       return criterion;
@@ -406,6 +412,202 @@ var FILTER_HOST_CLASS = "manga-tools-field-host";
 
 /** The mount point, held at module scope so re-renders reuse the same node */
 var filterHost: HTMLElement | null = null;
+
+/**
+ * Sets a React-controlled input's value the way a person would.
+ *
+ * Assigning `input.value` directly does not reach React: its onChange is driven
+ * by a value tracker that records the last value React wrote, and a plain
+ * assignment updates that tracker too — so the change looks like no change.
+ * Going through the prototype's setter leaves the tracker alone, and the
+ * dispatched event then reads as real input.
+ */
+function setReactInputValue(input: HTMLInputElement, value: string): void {
+  var descriptor = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype,
+    "value"
+  );
+  if (!descriptor || !descriptor.set) return;
+
+  descriptor.set.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+/**
+ * Commits a language through Stash's own custom-fields editor: fills its field
+ * and value inputs, then presses its confirm button.
+ *
+ * Driving rather than reimplementing is the whole point. The dialog hands the
+ * callback that actually inserts a criterion — `replaceCriterion` — to whichever
+ * editor component it picks, and that is the only place the callback goes. So
+ * the criterion has to remain a real custom-field one, and the way to give it a
+ * value from outside is its own inputs. Everything downstream then behaves as if
+ * the value had been typed: the criterion is committed, the tag appears above,
+ * and Apply and Cancel work because Stash is the one committing.
+ *
+ * The two inputs are found by `form-control`, which Form.Control always sets and
+ * the react-select beside them does not — so the pair is unambiguous, and in
+ * source order: field first, value second.
+ */
+function commitThroughStashEditor(editor: Element, code: string): boolean {
+  var inputs = editor.querySelectorAll("input.form-control");
+  if (inputs.length < 2) return false;
+
+  setReactInputValue(inputs[0] as HTMLInputElement, NS.FIELD_NAME);
+  setReactInputValue(inputs[1] as HTMLInputElement, code);
+
+  // `onConfirm` reads the editor's state, and the events above have only queued
+  // an update to it. Clicking in the same tick would submit the empty form.
+  window.setTimeout(function () {
+    var confirm = editor.querySelector(
+      ".custom-field-filter-buttons button.btn-success"
+    );
+    if (confirm) (confirm as HTMLElement).click();
+  }, 0);
+
+  return true;
+}
+
+/** Class of the box our list is drawn in, inside Stash's editor container */
+var DIALOG_HOST_CLASS = "manga-tools-dialog-host";
+
+/**
+ * The box Stash renders for our criterion's editor — and only while the card is
+ * open, which makes it both the anchor and the signal that there is something
+ * to draw.
+ */
+function dialogEditorBox(): Element | null {
+  return document.querySelector(
+    '.criterion-list [data-type="' + LANGUAGE_TYPE + '"] .criterion-editor'
+  );
+}
+
+/** Finds (creating if needed) our box inside it, ahead of Stash's own editor */
+function ensureDialogHost(editor: Element): Element {
+  var host = editor.querySelector("." + DIALOG_HOST_CLASS);
+  if (!host) {
+    host = document.createElement("div");
+    host.className = DIALOG_HOST_CLASS;
+    editor.insertBefore(host, editor.firstChild);
+  }
+  return host;
+}
+
+/**
+ * The language list inside the filter dialog's card.
+ *
+ * The list is ours; the value is Stash's. Picking a language drives Stash's own
+ * custom-fields editor, so the criterion is committed by Stash and joins the
+ * dialog's Apply and Cancel like any other.
+ *
+ * Rendered from the list patch rather than from inside the dialog, because the
+ * dialog cannot be patched — but this is not the sidebar's arrangement. There
+ * the section sat outside Stash's React tree and had to be positioned by hand;
+ * here it is a portal into a box Stash itself creates, so there is nothing to
+ * keep in place, only something to fill.
+ */
+export function DialogLanguageFilter(props: {
+  filter: MangaToolsFilterModel;
+}) {
+  var intl = PluginApi.libraries.Intl.useIntl();
+  var Solid = PluginApi.libraries.FontAwesomeSolid || {};
+  var Icon = PluginApi.components.Icon;
+
+  var bumpState = React.useState(0);
+  var bump = bumpState[1];
+
+  // What we last committed. Stash's editor resets to a blank row once its
+  // confirm button is pressed — the value moves into a tag above — so its inputs
+  // cannot be read back. The filter the dialog opened with is the other source,
+  // and that is where this starts.
+  var chosenState = React.useState<string | null>(function () {
+    return readLanguageFilter(props.filter).included[0] || null;
+  });
+  var chosen = chosenState[0];
+  var setChosen = chosenState[1];
+
+  /**
+   * Opening the card is Stash's own state change, inside the dialog, so this
+   * component does not re-render with it. The moments that matter — opening the
+   * card from its header, or selecting it from a tag above — are both clicks
+   * inside the dialog, so that is what is watched for. The tick lets Stash
+   * finish writing the box before it is looked for.
+   */
+  React.useEffect(function () {
+    function onClick(event: Event) {
+      var target = event.target as Element | null;
+      if (!target || typeof target.closest !== "function") return;
+      if (!target.closest(".edit-filter-dialog")) return;
+
+      window.setTimeout(function () {
+        bump(function (v) {
+          return v + 1;
+        });
+      }, 0);
+    }
+
+    document.addEventListener("click", onClick, true);
+    return function () {
+      document.removeEventListener("click", onClick, true);
+    };
+  }, []);
+
+  // The box is Stash's and comes and goes with the card, so it is re-read every
+  // pass. Nothing is created here: if the card is closed there is nothing to
+  // draw, and nothing of ours is left behind in Stash's markup.
+  var found = dialogEditorBox();
+  if (!found) return null;
+
+  // Aliased so the type survives into the callback below: narrowing a captured
+  // variable does not carry into a closure, but a local's declared type does.
+  var box = found;
+  var host = ensureDialogHost(box);
+
+  var options = NS.languageOptions(intl.locale).filter(function (o) {
+    return !NS.enabledLanguages || NS.enabledLanguages.has(o.value);
+  });
+
+  var list = (
+    <ul className="selected-list">
+      {options.map(function (o) {
+        var isChosen = o.value === chosen;
+        return (
+          <li
+            key={o.value}
+            className={isChosen ? "selected-object" : "unselected-object"}
+          >
+            <a
+              tabIndex={0}
+              onClick={function () {
+                if (commitThroughStashEditor(box, o.value)) setChosen(o.value);
+              }}
+            >
+              <div className="label-group">
+                <Icon
+                  className="fa-fw include-button"
+                  icon={isChosen ? Solid.faCheckCircle : Solid.faPlus}
+                />
+                {NS.showFlags && o.flag ? <Flag flag={o.flag} /> : null}
+                <span
+                  className={
+                    "TruncatedText inline " +
+                    (isChosen
+                      ? "selected-object-label"
+                      : "unselected-object-label")
+                  }
+                >
+                  {o.label}
+                </span>
+              </div>
+            </a>
+          </li>
+        );
+      })}
+    </ul>
+  );
+
+  return PluginApi.ReactDOM.createPortal(list, host);
+}
 
 /**
  * Finds (creating if needed) the mount point for the language section,

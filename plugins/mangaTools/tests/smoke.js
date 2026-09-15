@@ -686,16 +686,17 @@ console.log("✓ dropdown order (by displayed name, in the reader's collation)")
 assert.ok(patchedBefore["GalleryList"], "missing patch: GalleryList (before)");
 assert.ok(patched["GalleryList"], "missing patch: GalleryList (instead)");
 
-// The wrapper has to hand the list through untouched — the plugin adds a
-// sibling, it does not replace anything.
+// The wrapper has to hand the list through untouched — the plugin adds siblings,
+// it does not replace anything. Two of them now: the sidebar section, and the
+// list the filter dialog draws inside its own card.
 const listModel = makeFilterModel();
 const listEl = call("GalleryList", { filter: listModel, selectedIds: new Set() });
 assert.strictEqual(listEl.type, React.Fragment, "GalleryList should be wrapped, not replaced");
-const listOriginal = listEl.props.children[1];
+const [sidebarFilter, dialogFilter, listOriginal] = listEl.props.children;
+assert.strictEqual(typeof sidebarFilter.type, "function", "the sidebar section as a sibling");
+assert.strictEqual(typeof dialogFilter.type, "function", "and the dialog's list as another");
 assert.strictEqual(listOriginal.type, original, "the original GalleryList must still be rendered");
 assert.strictEqual(listOriginal.props.filter, listModel, "…receiving the same filter it was given");
-assert.strictEqual(typeof listEl.props.children[0].type, "function",
-  "and the language filter as a sibling");
 
 // Rendering the list is also what offers the filter dialog a Language card: the
 // dialog builds its cards from the same options array the model holds, and this
@@ -1608,15 +1609,25 @@ assert.strictEqual(languageCriterionOption.messageID, "config.ui.language.headin
 const madeCriterion = languageCriterionOption.makeCriterion();
 assert.strictEqual(madeCriterion.criterionOption.type, "language",
   "the criterion must carry our type, or the card cannot open or light up");
-assert.deepStrictEqual(madeCriterion.value, [{ field: "language", modifier: "NOT_NULL" }],
-  "seeded with a condition that is valid and harmless — an EQUALS with no value matches nothing");
+assert.deepStrictEqual(madeCriterion.value, [],
+  "no conditions until a language is picked: an empty EQUALS matches nothing, "
+  + "so merely opening the card must not be able to filter the list away");
 
 // The guarantee that makes it safe: what reaches the URL is a plain custom
 // field. A stored type of "language" would not resolve on reload, because Stash
 // decodes the query string before this option has been registered.
 assert.deepStrictEqual(madeCriterion.toQueryParams(),
-  { type: "custom_fields", value: madeCriterion.value },
+  { type: "custom_fields", value: [] },
   "the URL must carry custom_fields, which Stash always understands");
+
+// And it must read the criterion it is called on. Stash clones a criterion with
+// cloneDeep before committing it — the copy keeps this method but is a different
+// object — so a closure over the original would serialise a stale value.
+const cloned = Object.assign({}, madeCriterion);
+cloned.value = [{ field: "language", modifier: "EQUALS", value: ["ja"] }];
+assert.deepStrictEqual(cloned.toQueryParams().value,
+  [{ field: "language", modifier: "EQUALS", value: ["ja"] }],
+  "toQueryParams must use `this`, not the object it was defined on");
 
 // A criterion made by the card is recognised by the sidebar, and vice versa:
 // they are the same criterion underneath, so the two must not disagree.
