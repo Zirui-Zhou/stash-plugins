@@ -3,7 +3,7 @@ const path = require("path");
 const fs = require("fs");
 const assert = require("assert");
 
-// The tests run against the *compiled* plugin, not the TypeScript sources — so
+// The tests run against the *bundled* plugin, not the TypeScript sources — so
 // they exercise exactly what gets published, and a broken build shows up here.
 // Run `npm test`, which builds first.
 const PLUGIN = path.join(__dirname, "..", "plugins", "mangaTools", "build");
@@ -247,7 +247,9 @@ global.document = {
 };
 
 // ── Load the plugin ────────────────────────────────────────────────
-require(path.join(PLUGIN, "languages.js"));
+// One file, not two: the bundle has languages.ts inlined into it. PluginApi has
+// to be on the window first, because the bundle reads it as it loads — the same
+// order Stash uses, where the API is injected before any plugin script runs.
 global.window.PluginApi = PluginApi;
 require(path.join(PLUGIN, "mangaTools.js"));
 
@@ -797,6 +799,31 @@ assert.ok(
   "the settings block must reset Stash's text-align: right"
 );
 console.log("✓ CSS checks (braces / hover / positioning / flag sizing / settings alignment)");
+
+// ── 10b. Bundle shape ──────────────────────────────────────────────
+// The plugin is loaded by Stash through a plain <script> tag, so the file has to
+// be a script and has to be self-contained. Both of those are properties of the
+// bundler configuration rather than of the source, which is exactly why they are
+// worth asserting: changing format to "esm" or forgetting bundle: true would
+// still produce a file, and it would only fail in the browser.
+const buildFiles = fs.readdirSync(PLUGIN).filter((f) => f.endsWith(".js"));
+assert.deepStrictEqual(buildFiles, ["mangaTools.js"],
+  "one bundled file, named after the plugin ID — ui.javascript in the yml names this file");
+
+const bundle = fs.readFileSync(path.join(PLUGIN, "mangaTools.js"), "utf8");
+assert.ok(
+  !/^\s*(import|export)[\s{"']/m.test(bundle),
+  "the bundle must not contain module syntax — Stash loads it as a plain script"
+);
+assert.ok(
+  /React\.createElement/.test(bundle),
+  "JSX should have been transformed into React.createElement calls"
+);
+assert.ok(
+  /window\.MangaTools\s*=/.test(bundle),
+  "languages.ts should be inlined into the bundle, not left as a separate file"
+);
+console.log("✓ bundle shape (single script file, self-contained, JSX transformed)");
 
 setTimeout(() => {
   // ── 11. Badges (after the refresh promise settles) ───────────────

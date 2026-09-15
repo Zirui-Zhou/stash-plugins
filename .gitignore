@@ -2,7 +2,7 @@
 # never belongs in the repository.
 dist/
 
-# Compiled plugin output — tsc writes it, tools/build.mjs packages it.
+# Bundled plugin output — esbuild writes it, tools/build.mjs packages it.
 plugins/*/build/
 
 node_modules/

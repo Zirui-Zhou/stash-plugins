@@ -6,11 +6,12 @@
   "license": "AGPL-3.0",
   "scripts": {
     "build": "node tools/build.mjs",
-    "test": "node tools/build.mjs && node tests/smoke.js",
-    "typecheck": "tsc --noEmit -p plugins/mangaTools/tsconfig.json"
+    "typecheck": "node tools/build.mjs --typecheck",
+    "test": "npm run typecheck && npm run build && node tests/smoke.js"
   },
   "devDependencies": {
     "@types/react": "^18.3.31",
+    "esbuild": "^0.28.2",
     "typescript": "^7.0.2"
   }
 }

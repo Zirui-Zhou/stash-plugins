@@ -12,19 +12,25 @@ conventions to follow when adding one. For installing them, see
    ```
    plugins/myPlugin/
    ├── src/
-   │   ├── myPlugin.tsx     ← TypeScript source; compiled into build/
-   │   └── pluginApi.d.ts   ← types for the interfaces Stash injects
+   │   ├── myPlugin.tsx     ← entry point; bundled into build/myPlugin.js
+   │   └── plugin-api.ts    ← types for the interfaces Stash injects
    ├── myPlugin.yml         ← the plugin ID comes from this file name; it must be <id>.yml
    ├── myPlugin.css
    └── tsconfig.json
    ```
 
-   Copy `plugins/mangaTools/tsconfig.json` — it only sets `rootDir`/`outDir` and
-   extends the shared `tsconfig.base.json`.
+   Copy `plugins/mangaTools/tsconfig.json` — it only turns off emitting, so that
+   `tsc` cannot write over the bundler's output.
+
+   **The entry point's name is fixed**: `src/<id>.tsx`, or `src/<id>.ts` for a
+   plugin with no JSX. The build looks for exactly those and fails with the paths
+   it tried if neither exists, because the emitted file name is derived from the
+   plugin ID — that is the only way the output and `ui.javascript` cannot drift
+   apart. Anything the entry point imports is inlined into the one file.
 
 2. `myPlugin.yml` **must** have top-level `name` and `version`, and its
-   `ui.javascript` entries name the **compiled** files (same base name as the
-   sources, so `myPlugin.tsx` → `myPlugin.js`):
+   `ui.javascript` names the **bundled** file (same base name again, so
+   `myPlugin.tsx` → `myPlugin.js`):
 
    ```yaml
    name: My Plugin
@@ -42,7 +48,8 @@ conventions to follow when adding one. For installing them, see
    under Settings → Plugins — point it at the plugin's page (its directory in
    this repo, or wherever it is documented).
 
-3. Push to `main`. CI installs dependencies, compiles, tests, and publishes.
+3. Push to `main`. CI installs dependencies, type-checks, bundles, tests, and
+   publishes.
 
 **Bump `version` when you change the code.** Stash decides whether an update is
 available from the version number; if it does not change, no update is offered.
@@ -50,14 +57,60 @@ Documentation and comment-only edits do not need a bump.
 
 ### What gets zipped, and what does not
 
-Only the plugin's `build/` directory is packaged: the compiled JavaScript plus
-the `.yml`, `.css` and `.md` files copied in beside it. Sources, `tsconfig.json`
-and anything else stay out of the zip.
+Only the plugin's `build/` directory is packaged: the bundled JavaScript plus the
+`.yml`, `.css` and `.md` files copied in beside it. Sources, `tsconfig.json` and
+anything else stay out of the zip.
 
 The build **fails** if the `.yml` references a file that is not in that output,
-so a stale entry in `ui.javascript` or a source file missing from `tsconfig`'s
-`include` is caught before publishing rather than producing a plugin that
-installs cleanly and then does nothing.
+so a stale entry in `ui.javascript` or an entry point the build never produced is
+caught before publishing rather than producing a plugin that installs cleanly and
+then does nothing.
+
+## The build
+
+Two tools do two different jobs, and both are necessary:
+
+| | Does | Does not do |
+|---|---|---|
+| **esbuild** | bundles `src/` into the one file Stash loads | read types — it strips them |
+| **tsc** | checks the types, emits nothing | produce the shipped file |
+
+The split matters because **esbuild does not type-check**. It parses the TypeScript
+and throws the annotations away without ever evaluating them, so a plugin full of
+type errors bundles perfectly happily. `npm test` therefore runs `tsc` *before*
+the bundler — `npm run typecheck`, then `npm run build`, then the smoke tests. CI
+uses `npm test`, so a type error cannot reach a published package. `npm run build`
+on its own skips the check, which is what makes local iteration fast.
+
+### Bundler options that matter
+
+Set in `tools/build.mjs`:
+
+- **`format: "iife"`** — Stash loads the file through a plain `<script>` tag, so
+  it has to be a script, not an ES module. This is the option that would break
+  the plugin outright if it changed, which is why `tests/smoke.js` asserts the
+  output contains no module syntax.
+- **`target: "es2019"`** — matches `tsconfig.base.json`, so nothing newer slips
+  through the bundler than the type-checker was told to accept.
+- **`tsconfig`** — points esbuild at the plugin's own tsconfig rather than
+  restating its settings, so the bundler and the type-checker read the same file
+  and cannot disagree about the JSX transform.
+- **`minify`/`sourcemap` off**, and **`charset` left at `ascii`** (so CJK strings
+  become `\uXXXX`). The zip is small either way, a readable file is what you
+  debug with in the browser, and ASCII output is correct regardless of what
+  encoding anything in the serving path assumes.
+
+### What the bundler buys, and what it costs
+
+Bought: `import` works, so the plugin is split into modules instead of
+communicating through `window` globals; npm packages become installable (adding
+one is `npm i <pkg>` plus an import — nothing else changes); and Stash loads one
+file per plugin, so there is no load-order rule to remember.
+
+Cost: `npm test` runs a second tool, a source change is only visible after a
+build (so the tests exercise the bundle, never the sources), and the shipped
+JavaScript no longer looks like what you wrote. That last one is the reason the
+smoke tests assert against behaviour rather than against the file.
 
 ## The TypeScript setup
 
@@ -65,44 +118,48 @@ installs cleanly and then does nothing.
 Stash plugin example (`pkg/plugin/examples/react-component` in the Stash repo).
 Three options there are load-bearing:
 
-- **`"module": "esnext"`** — the compiled files stay plain scripts, not ES
-  modules. That is what lets Stash load them individually through `ui.javascript`
-  and lets them talk to each other through a `window` global. The example used
-  `module: "None"` for this, but that value was deprecated in TypeScript 6.0 and
-  removed in 7.0, so the repo uses `esnext` instead. The output is the same,
-  because the source files contain no `import`/`export`. (The one consequence: an
-  `import` now compiles instead of being an error, and would then fail at runtime
-  because Stash loads the file as a plain script — pulling in an npm package
-  still needs a bundler.)
 - **`"jsx": "react"`** (the classic transform) — JSX compiles to
   `React.createElement`, using a `React` variable from the surrounding scope.
   Plugins have no React import; they take it from `PluginApi.React`, which is
   exactly what the classic transform expects. That `var React = ...` line must
   stay in each plugin's entry file.
+- **`"module": "esnext"` + `"moduleResolution": "bundler"`** — the example used
+  `module: "None"`, which kept the output as plain scripts that talked to each
+  other through a `window` global. The bundler replaces that, and `"None"` was
+  deprecated in TypeScript 6.0 and removed in 7.0 anyway. `"bundler"` resolution
+  is what makes `import x from "./y"` resolve the way esbuild resolves it.
 - **`"types": ["react"]`** — TypeScript 7.0 is the native (Go) compiler and no
   longer auto-includes every `@types/*` package, so the ones in use are listed
   explicitly.
 
-`window.PluginApi` and `window.MangaTools` are declared in
-`plugins/<id>/src/pluginApi.d.ts`. It is a plain global script on purpose: a file
-containing an import becomes a module, which would break the emitted output.
+Type declarations live in `plugins/<id>/src/plugin-api.ts` — a real module that
+exports the interfaces and imports them by name, so a mistyped type name is a
+compile error rather than a silent reference to some other global. `interface
+Window` sits in a `declare global` block there, which a module needs and a global
+script does not.
+
+`requirePluginApi()` at the top of the entry point returns the API or throws.
+Stash injects `PluginApi` before it loads any plugin script, so its absence means
+something is wrong at the loading level; a bundled entry point has no early
+`return` to bail out with, and throwing is both the honest and the simpler signal.
 
 ## How publishing works
 
 `.github/workflows/build.yml` on a push to `main`:
 
-1. `npm ci`, then `npm test` — this compiles every plugin into its `build/`
-   directory, packages them into `dist/`, and runs the smoke tests against the
-   compiled output. A failure stops the job before anything is published.
+1. `npm ci`, then `npm test` — this type-checks every plugin, bundles it into its
+   `build/` directory, packages everything into `dist/`, and runs the smoke tests
+   against the bundled output. A failure stops the job before anything is
+   published.
 2. Pushes `dist/` to the `gh-pages` branch, from which GitHub Pages serves it.
 
 Locally:
 
 ```bash
-npm install     # once
-npm run build   # compile + package into dist/
-npm test        # the above, then run the tests
-npm run typecheck
+npm install         # once
+npm run typecheck   # tsc over every plugin, no output
+npm run build       # bundle + package into dist/ (no type-check)
+npm test            # all of the above, plus the smoke tests
 ```
 
 > **Enabling Pages the first time**: repository Settings → Pages → Source, choose
@@ -135,13 +192,21 @@ scans recursively, so `.github/workflows/*.yml` would be picked up too.
 
 ## Dependencies
 
-Two, both `devDependencies` at the repo root: `typescript` (^7.0.2) and
-`@types/react` (^18.3.31). TypeScript 7.0 is the native (Go) compiler; its
-`node_modules/typescript/bin/tsc` is still a thin JS shim that spawns the native
-binary, so the invocation below keeps working unchanged.
+Three, all `devDependencies` at the repo root:
 
-`tools/build.mjs` itself has none — YAML is read with regexes anchored to column
-0, and zipping is delegated to the system `zip` command, which the GitHub Actions
-ubuntu runner ships. It invokes the TypeScript compiler through the current node
-binary (`node_modules/typescript/bin/tsc`) rather than via `npx` or the
+- `typescript` (^7.0.2) — the type-checker. 7.0 is the native (Go) compiler; its
+  `node_modules/typescript/bin/tsc` is still a thin JS shim that spawns the native
+  binary, so invoking it through node keeps working.
+- `@types/react` (^18.3.31) — React's types. Stash runs React 17, but 17's types
+  are long unmaintained and 18's describe the same code; the official plugin
+  example uses 18 too.
+- `esbuild` (^0.28.2) — the bundler. It is called through its own API
+  (`buildSync`), so unlike tsc it is not spawned as a child process.
+
+Nothing else at runtime: YAML is read with regexes anchored to column 0, and
+zipping is delegated to the system `zip` command, which the GitHub Actions Ubuntu
+runner ships. `tools/build.mjs` invokes the TypeScript compiler through the current
+node binary (`node_modules/typescript/bin/tsc`) rather than via `npx` or the
 `node_modules/.bin` shim, since those differ per platform.
+
+`npm test` requires both tools; `npm run build` alone needs only esbuild.

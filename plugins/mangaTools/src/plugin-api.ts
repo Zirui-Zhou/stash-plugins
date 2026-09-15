@@ -1,19 +1,23 @@
 /**
- * Type declarations for the surfaces this plugin reaches into.
+ * Type declarations for the surfaces this plugin reaches into, plus the one
+ * accessor it uses to get hold of them.
  *
- * Deliberately a plain global script — no import/export anywhere in this file.
- * With `module: "None"` a file containing an import becomes a module, and that
- * would break the emitted output. This is also why `interface Window` below
- * augments the DOM's Window by declaration merging, instead of the usual
- * `declare global { ... }` block (which itself requires a module).
+ * This used to be a `.d.ts` of ambient globals, which is what the official
+ * Stash plugin example does. It became a real module when the plugin gained a
+ * bundler (esbuild — see tools/build.mjs): once `import`/`export` are available,
+ * a module is strictly better than a global script. The types below are
+ * exported and imported by name, so a typo in a type name is a compile error
+ * instead of an accidental reference to some other global, and `interface
+ * Window` has to say `declare global` because it is no longer implicitly global.
  *
  * Only the parts actually used are declared. Widening this to the full Stash
  * UI plugin API is possible but pointless: an inaccurate declaration is worse
  * than none, since it would type-check code that fails at runtime.
  */
+import type { ComponentType, ReactNode, ReactPortal } from "react";
 
 /** One entry of the language table in languages.ts */
-interface MangaToolsLanguage {
+export interface MangaToolsLanguage {
   /** flag-icons alpha-2 *country* code, not a language code */
   flag: string;
   /** Localised names, keyed by Stash UI locale (see localeCode) */
@@ -21,7 +25,7 @@ interface MangaToolsLanguage {
 }
 
 /** Result of MangaTools.describe() */
-interface MangaToolsDescription {
+export interface MangaToolsDescription {
   code: string;
   /** null for values the table does not recognise */
   flag: string | null;
@@ -30,14 +34,14 @@ interface MangaToolsDescription {
 }
 
 /** One dropdown option from MangaTools.languageOptions() */
-interface MangaToolsOption {
+export interface MangaToolsOption {
   value: string;
   label: string;
   flag: string | null;
 }
 
 /** The namespace languages.ts publishes on window.MangaTools */
-interface MangaToolsNamespace {
+export interface MangaToolsNamespace {
   LANGUAGES: { [code: string]: MangaToolsLanguage };
   ORDER: string[];
   FALLBACK_LOCALE: string;
@@ -63,13 +67,13 @@ interface MangaToolsNamespace {
 }
 
 /** What react-intl's useIntl() gives us — only the fields this plugin touches */
-interface MangaToolsIntl {
+export interface MangaToolsIntl {
   locale: string;
   formatMessage(descriptor: { id: string; defaultMessage?: string }): string;
 }
 
 /** The slice of the Apollo client this plugin uses */
-interface MangaToolsApolloClient {
+export interface MangaToolsApolloClient {
   query(options: {
     query: unknown;
     fetchPolicy?: string;
@@ -82,18 +86,18 @@ interface MangaToolsApolloClient {
 }
 
 /** Minimal shape of an operation as it passes through an Apollo link */
-interface MangaToolsApolloOperation {
+export interface MangaToolsApolloOperation {
   query: unknown;
   variables: Record<string, unknown>;
 }
 
 /** What forwarding an operation returns; only `map` is used here */
-interface MangaToolsApolloObservable {
+export interface MangaToolsApolloObservable {
   map(fn: (result: unknown) => unknown): MangaToolsApolloObservable;
 }
 
 /** What a link calls to pass the operation further down the chain */
-type MangaToolsApolloForward = (
+export type MangaToolsApolloForward = (
   operation: MangaToolsApolloOperation
 ) => MangaToolsApolloObservable;
 
@@ -102,7 +106,7 @@ type MangaToolsApolloForward = (
  * declared: `new ApolloLink(fn)` builds a single link, and
  * `ApolloLink.from([...])` composes a chain.
  */
-interface MangaToolsApolloLinkClass {
+export interface MangaToolsApolloLinkClass {
   new (
     request: (
       operation: MangaToolsApolloOperation,
@@ -114,24 +118,29 @@ interface MangaToolsApolloLinkClass {
 }
 
 /** The mutation StashService.useConfigurePlugin() returns */
-type MangaToolsConfigurePluginFn = (options: {
+export type MangaToolsConfigurePluginFn = (options: {
   variables: { plugin_id: string; input: Record<string, unknown> };
 }) => Promise<unknown>;
 
-type MangaToolsGql = (source: string) => unknown;
+export type MangaToolsGql = (source: string) => unknown;
 
 /**
  * A patch callback. `patch.instead` appends `next()` to the arguments, and what
  * that returns is the original component — so the last argument is always the
  * component to fall back to. See originalFrom() in mangaTools.tsx.
  */
-type MangaToolsPatchFn = (...args: unknown[]) => unknown;
+export type MangaToolsPatchFn = (...args: unknown[]) => unknown;
 
-interface IPluginApi {
-  React: typeof React;
+export interface IPluginApi {
+  /**
+   * Stash's own React. Typed as the module namespace rather than a hand-written
+   * interface, so `React.useState` and friends are checked against the real
+   * @types/react rather than against a guess.
+   */
+  React: typeof import("react");
 
   ReactDOM: {
-    createPortal(children: React.ReactNode, container: Element): React.ReactPortal;
+    createPortal(children: ReactNode, container: Element): ReactPortal;
   };
 
   /** Used as a fallback source for `gql` if libraries.Apollo has none */
@@ -144,7 +153,7 @@ interface IPluginApi {
     };
     /** react-bootstrap, used for the settings switches */
     Bootstrap?: {
-      Form: { Switch: React.ComponentType<Record<string, unknown>> };
+      Form: { Switch: ComponentType<Record<string, unknown>> };
     };
     Intl: { useIntl(): MangaToolsIntl };
     /** react-select as a namespace import: the component is its default export */
@@ -174,9 +183,31 @@ interface IPluginApi {
   };
 }
 
-interface Window {
-  /** Injected by Stash before any plugin script runs */
-  PluginApi?: IPluginApi;
-  /** Published by languages.ts, consumed by mangaTools.tsx */
-  MangaTools?: MangaToolsNamespace;
+declare global {
+  interface Window {
+    /** Injected by Stash before any plugin script runs */
+    PluginApi?: IPluginApi;
+    /** Published by languages.ts, consumed by mangaTools.tsx */
+    MangaTools?: MangaToolsNamespace;
+  }
+}
+
+/**
+ * Returns Stash's PluginApi, or throws if it is missing.
+ *
+ * Deliberately not a "check and give up quietly" guard. Stash injects
+ * PluginApi before it loads any plugin script, so its absence means something
+ * is wrong at the loading level rather than that the plugin should sit out a
+ * while — and since a bundled entry point has no early `return` to gracefully
+ * bail with, throwing is both the honest and the simplest signal. The message
+ * is the only thing the user gets, so it names the plugin and the cause.
+ */
+export function requirePluginApi(): IPluginApi {
+  const api = window.PluginApi;
+  if (!api) {
+    throw new Error(
+      "[mangaTools] window.PluginApi is missing — the plugin cannot load"
+    );
+  }
+  return api;
 }

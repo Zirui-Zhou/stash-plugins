@@ -32,13 +32,15 @@ jobs:
           node-version: "20"
           cache: npm
 
-      # typescript and @types/react, which the plugins compile against.
+      # typescript, @types/react and esbuild — the checker, the React types and
+      # the bundler.
       - name: Install dependencies
         run: npm ci
 
-      # `npm test` compiles every plugin, generates dist/, and then runs the
-      # smoke tests against that compiled output. Doing it in this order means a
-      # build or behaviour regression fails the job before anything is published.
+      # `npm test` type-checks every plugin, bundles it, generates dist/, and then
+      # runs the smoke tests against that bundled output. Doing it in this order
+      # means a type error, a build failure or a behaviour regression fails the job
+      # before anything is published.
       - name: Build and test
         run: npm test
 

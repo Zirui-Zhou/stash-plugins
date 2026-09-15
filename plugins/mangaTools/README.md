@@ -191,20 +191,26 @@ mangaTools/
 ├── src/
 │   ├── mangaTools.tsx     Badge, dropdown, bulk row, settings, patches
 │   ├── languages.ts       Language table (pure data, swappable on its own)
-│   └── pluginApi.d.ts     Types for window.PluginApi and window.MangaTools
+│   └── plugin-api.ts      Types for PluginApi and the namespace above
 ├── mangaTools.yml         Plugin config (the file name is the plugin ID)
 ├── mangaTools.css         Styles
 ├── tsconfig.json          Extends the repo's tsconfig.base.json
-└── build/                 Compiled output — generated, gitignored, and the only
+└── build/                 Bundled output — generated, gitignored, and the only
                            thing that gets packaged
 ```
 
-`languages.js` and `mangaTools.js` are loaded in the order given by
-`ui.javascript` and communicate through a single namespace,
-`window.MangaTools`. That global does not go away at this build level: the
-compiler is configured with `module: "esnext"` and the source files contain no
-`import`/`export`, so they stay plain scripts; importing across them (or pulling
-in an npm package) would require a bundler.
+`ui.javascript` names **one** file. esbuild bundles `src/mangaTools.tsx` together
+with everything it imports into `build/mangaTools.js`, loaded by Stash through a
+plain `<script>` tag — hence `format: "iife"` in `tools/build.mjs`. The two source
+files talk to each other by importing, not through the window.
+
+`languages.ts` still publishes itself at `window.MangaTools` as well, because that
+is the handle `tests/smoke.js` uses to call the pure functions directly; the
+plugin itself never reads it.
+
+`tsc` plays no part in producing that file — it only type-checks, and esbuild
+strips types without reading them. That is why `npm test` runs both; see
+[DEVELOPING.md](../../DEVELOPING.md).
 
 The smoke test lives at `tests/smoke.js` **outside this directory**, so it never
 ends up inside the zip that gets installed into a user's plugins folder.
@@ -235,17 +241,21 @@ To update later: **Installed Plugins → Update**.
 From the repository root (no Stash required):
 
 ```bash
-npm install     # once
-npm test        # compiles, packages, then runs the tests
-npm run typecheck
+npm install         # once
+npm run typecheck   # tsc over the sources
+npm run build       # bundle + package into dist/ (no type-check)
+npm test            # type-check, bundle, package, then run the tests
 ```
 
-`npm test` runs the tests against the **compiled** plugin in `build/`, so they
-exercise exactly what gets published and a broken build shows up here.
+`npm test` runs the tests against the **bundled** plugin in `build/`, so they
+exercise exactly what gets published and a broken build shows up here. A type
+error does not — esbuild strips types without reading them — which is why
+`npm test` runs `tsc` first rather than relying on the bundler.
 
 They cover value normalisation, the unknown-value fallback, route scoping,
 write/clear semantics, badge rendering, settings parse/serialise and the settings
-UI's write path, and the string/CSS surface of every patched component.
+UI's write path, the shape of the bundle (one file, no module syntax, JSX really
+transformed), and the string/CSS surface of every patched component.
 
 Against a real Stash:
 
@@ -366,10 +376,10 @@ values through the plugin's dropdown never hits this, since that writes lowercas
 
 ## Extending
 
-**Adding a language**: edit `NS.LANGUAGES` in `languages.js`. Each entry needs two
-fields — `flag` (a flag-icons alpha-2 **country** code) and `names` (names grouped
-by UI language; zh / tw / en / ja are covered today). Add to `NS.ORDER` if you
-want a different sort position.
+**Adding a language**: edit `NS.LANGUAGES` in `src/languages.ts`. Each entry needs
+two fields — `flag` (a flag-icons alpha-2 **country** code) and `names` (names
+grouped by UI language; zh / tw / en / ja are covered today). Add to `NS.ORDER` if
+you want a different sort position.
 
 **Only canonical codes are recognised.** There is no alias mapping: values only
 ever come from this plugin's own dropdown, so they are canonical by construction.
@@ -400,10 +410,15 @@ emoji degrades into a pair of boxed letters there. This is why the plugin uses
 from `i18n-iso-countries`, covering ~40 UI languages; this table is hand-written
 and covers 4, falling back to English. Full coverage would mean pulling in
 `i18n-iso-languages` and serving its locale files through `ui.assets` at
-`/plugin/{id}/assets/`, fetched at runtime. Note that this does **not** become
-possible just because the repo compiles TypeScript: an `import` would fail at
-runtime, because Stash loads each file as a plain script, so an npm package
-still cannot be pulled in. That needs a bundler.
+`/plugin/{id}/assets/`, fetched at runtime — or, now that the plugin is bundled,
+importing them and letting them be inlined into `build/mangaTools.js`.
+
+The bundler is what removed the blocker here: while Stash loaded the source files
+as plain scripts, an `import` compiled and then failed in the browser, so no npm
+package could be used at all. It is also why full i18n has not been done yet: the
+plugin's own strings (`Select language…`, the settings headings and descriptions)
+are still hard-coded English, and localising the language *names* while leaving
+the surrounding UI in English would be half a feature.
 
 **Changing the field name**: edit `NS.FIELD_NAME` at the end of
 `src/languages.ts`. Note the GraphQL query in `getQuery`
@@ -418,6 +433,6 @@ value.
 
 - A dedicated "language" section on the detail page — the value is only shown,
   localised, within the custom fields area
-- Splitting `src/mangaTools.tsx` into several files — it is ~800 lines, but
-  splitting it would be a separate change from adding a feature, and keeping them
-  apart makes a regression easy to attribute
+- Splitting `src/mangaTools.tsx` into several files — it is ~800 lines, and imports
+  would now make that possible, but splitting it would be a separate change from
+  adding a feature, and keeping them apart makes a regression easy to attribute

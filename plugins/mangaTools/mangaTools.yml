@@ -2,16 +2,16 @@
 #
 # The plugin ID comes from this file's name (mangaTools), not from a config
 # field. Paths under ui.javascript are relative to this file and are loaded in
-# array order — languages.js must come before mangaTools.js, since the latter
-# depends on the window.MangaTools object the former installs.
+# array order. There is only one entry: the bundled output of
+# src/mangaTools.tsx, with src/languages.ts inlined into it by esbuild (see
+# tools/build.mjs), so there is no load order to get wrong.
 name: Manga Tools
 description: Adapts Stash galleries to manga/comic management.
 # Shown as the link button beside the plugin in Settings → Plugins.
 url: https://github.com/Zirui-Zhou/stash-plugins/tree/main/plugins/mangaTools
-version: 0.1.4
+version: 0.1.5
 ui:
   javascript:
-    - languages.js
     - mangaTools.js
   css:
     - mangaTools.css
