@@ -908,7 +908,6 @@ export function DialogLanguageFilter(props: {
    * means.
    */
   var applyPending = React.useRef(false);
-  var lastModel = React.useRef<MangaToolsFilterModel | null>(null);
 
   /**
    * Opening the card is Stash's own state change, inside the dialog, so this
@@ -948,61 +947,62 @@ export function DialogLanguageFilter(props: {
   }, []);
 
   /**
-   * The merge. Runs when the list's model changes — which is what Apply does —
-   * and only then, so Cancel and an unrelated change both leave this alone.
+   * The merge.
+   *
+   * Runs after *every* render, not when the model changes — which is what it
+   * used to wait for, and why nothing happened. Pressing Apply does not
+   * necessarily touch the list's filter at all: Stash's filter knows nothing
+   * about this criterion, so choosing a language and nothing else leaves it
+   * exactly as it was. Stash's own hook notices that too — it re-reads the URL
+   * and returns its existing filter object when the criteria compare equal — so
+   * there is no model change to hang this on.
+   *
+   * What there always is, is a render: Apply closes the dialog, and the dialog's
+   * open state belongs to the component that renders the list, so the list
+   * re-renders either way. React batches that with any filter change in the same
+   * render, so the model read here is the applied one when the filter did change,
+   * and the still-correct one when it did not.
    */
-  React.useEffect(
-    function () {
-      var model = props.filter;
-      if (lastModel.current === model) return;
+  React.useEffect(function () {
+    if (!applyPending.current) return;
 
-      var previous = lastModel.current;
-      lastModel.current = model;
+    // Consumed whether or not there is anything to write, so an Apply that
+    // changed nothing cannot affect some later, unrelated render.
+    applyPending.current = false;
 
-      // Note there is deliberately no "the dialog has closed, so drop the flag"
-      // here. Apply *closes the dialog* — that is what pressing it does — so
-      // such a check would clear the flag in the one case it exists for, and the
-      // merge would silently never run. (It did, for a while.)
-      if (!previous || !applyPending.current) return;
+    var model = props.filter;
+    var unchanged = sameSelection(choice, readLanguageFilter(model));
 
-      applyPending.current = false;
-      var unchanged = sameSelection(choice, readLanguageFilter(model));
+    // Every stage is reported, because this is the whole path that can only be
+    // checked in a browser. "Apply pressed" without this line means no render
+    // followed the click; the numbers here say whether there was anything to
+    // write; the line after the write says whether it reached the URL.
+    console.info(
+      "[mangaTools] merge after Apply: unchanged=" +
+        unchanged +
+        ", included=" +
+        choice.included.length +
+        ", excluded=" +
+        choice.excluded.length +
+        ", modifier=" +
+        JSON.stringify(choice.modifier)
+    );
 
-      // Every stage is reported, because this is the whole path that can only be
-      // checked in a browser: if "Apply pressed" never appears the listener or
-      // its selector is wrong; if it appears and this line does not, the filter
-      // never changed and the merge had nothing to hook onto; if both appear, the
-      // number below says whether there was anything to write.
-      console.info(
-        "[mangaTools] merge after Apply: unchanged=" +
-          unchanged +
-          ", included=" +
-          choice.included.length +
-          ", excluded=" +
-          choice.excluded.length +
-          ", modifier=" +
-          JSON.stringify(choice.modifier)
+    if (unchanged) return;
+
+    var search = languageFilterQuery(model, choice);
+    if (search === null) {
+      console.error(
+        "[mangaTools] this list has no custom-fields criterion, so the language filter could not be applied"
       );
+      return;
+    }
 
-      if (unchanged) return;
-
-      var search = languageFilterQuery(model, choice);
-      if (search === null) {
-        console.error(
-          "[mangaTools] this list has no custom-fields criterion, so the language filter could not be applied"
-        );
-        return;
-      }
-
-      // Stash reads the URL on every navigation, so this is the whole of it —
-      // the same route the sidebar takes. Logged separately from the decision
-      // above, so a paste can tell "the merge ran and wrote" from "the merge ran
-      // and Stash did not act on it".
-      history.replace(Object.assign({}, history.location, { search: search }));
-      console.info("[mangaTools] applied the language filter to the URL");
-    },
-    [props.filter, choice, history]
-  );
+    // Stash reads the URL on every navigation, so this is the whole of it — the
+    // same route the sidebar takes.
+    history.replace(Object.assign({}, history.location, { search: search }));
+    console.info("[mangaTools] applied the language filter to the URL");
+  });
 
   // What the list is drawn from, following the sidebar's rules: the enabled
   // languages setting limits the choices, and a value already in use stays
