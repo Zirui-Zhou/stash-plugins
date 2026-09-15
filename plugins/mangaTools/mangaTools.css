@@ -113,6 +113,23 @@
 
 /* ───────────────────── Flags in the dropdown / detail row ───────────────────── */
 
+/*
+ * The flag inside a list row, spaced away from the icon before it and the name
+ * after it.
+ *
+ * A margin rather than a flex `gap` on the row: those rows are Stash's
+ * `label-group`, which is a flex box, so a gap would open up the icon-to-name
+ * spacing as well — and in Stash's own rows those two abut.
+ *
+ * Scoped to the row classes, which both surfaces use and which the dropdown and
+ * the detail row do not: those two already have spacing of their own (a flex gap
+ * and a real space respectively), so a margin here would double it.
+ */
+.selected-object .manga-tools-flag,
+.unselected-object .manga-tools-flag {
+  margin: 0 0.45rem;
+}
+
 /* A react-select option (the menu item and the selected value share one renderer) */
 .manga-tools-option {
   align-items: center;

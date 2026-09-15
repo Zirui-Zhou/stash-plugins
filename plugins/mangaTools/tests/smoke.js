@@ -1132,6 +1132,13 @@ assert.ok(
 // under the picker, which is exactly what happened.
 const emptyTagsRule = /\.criterion-list \[data-type="language"\] \.filter-tags:empty\s*\{([^}]*)\}/.exec(css);
 assert.ok(emptyTagsRule, "the empty tag row should be hidden");
+// The flag needs its own spacing in a list row: a flex `gap` would also open up
+// the icon-to-name spacing those rows share with Stash's, and a margin applied
+// more broadly would double up in the dropdown and the detail row.
+assert.ok(
+  /\.selected-object \.manga-tools-flag,[^}]*\.unselected-object \.manga-tools-flag\s*\{[^}]*margin:/.test(css),
+  "the flag in a list row should be spaced from the icon and the name"
+);
 assert.ok(/display:\s*none\s*!important/.test(emptyTagsRule[1]),
   "…with !important: a plain display: none loses to Bootstrap's d-flex");
 // Stash's `.setting-section .setting > div:last-child { text-align: right }`
