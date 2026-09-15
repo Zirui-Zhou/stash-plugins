@@ -189,11 +189,13 @@ above the list reports the filter the list is *applied* to. The row inside the
 dialog reports the dialog's *working copy* — which is why Stash's own criteria
 update it the moment they are edited, several clicks before Apply. A language
 filter's working copy lives in this plugin's card rather than in Stash's copy, so
-the dialog's row is made to follow the card: Stash's tag is kept and re-worded
-while the two agree, hidden while they do not, and replaced by tags this plugin
-draws for exactly that case (see `manageDialogTags`). Hiding the tag and clearing
-the card's selection are wired together, so the ✗ on Stash's tag means the same
-thing as the ✗ on this plugin's.
+the dialog's row is worded from the card instead: one label per tag Stash drew,
+a tag hidden only when the card has nothing to say in its place, and a tag of this
+plugin's own drawn for a condition Stash has no tag for at all — the first
+language picked into a dialog that had none when it opened (see
+`manageDialogTags`). Clearing the card's selection and taking the tags away are
+wired together, so the ✗ on Stash's tag means the same thing as the ✗ on this
+plugin's.
 
 **Applying merges into what Apply committed, not into the list's model.** Stash
 commits the dialog's *copy*, and the model the plugin is handed is the list's, which

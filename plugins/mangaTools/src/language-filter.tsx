@@ -699,6 +699,7 @@ NS.registerLanguageCriterionOption = registerLanguageCriterionOption;
 NS.adoptLanguageCriterion = adoptLanguageCriterion;
 NS.relabelTags = relabelTags;
 NS.manageDialogTags = manageDialogTags;
+NS.ownTagLabels = ownTagLabels;
 NS.clickedTagRemove = clickedTagRemove;
 NS.filterFromQuery = filterFromQuery;
 
@@ -1131,7 +1132,7 @@ function dropFallbackRow(): void {
 }
 
 /**
- * Keeps the dialog's tag row saying what the card says.
+ * Words the dialog's tags from the card.
  *
  * This is the one place the plugin writes to the dialog's row rather than the
  * list's, and the reason is that the two rows mean different things. The list's
@@ -1141,49 +1142,43 @@ function dropFallbackRow(): void {
  * working copy lives in this plugin's card rather than in Stash's copy, so this
  * has to say for it what Stash says for its own criteria.
  *
- * Three states, and the middle one is the point:
+ * Stash's tags are the ones written into, one label per tag, because a tag is
+ * already a working, clickable piece of Stash's own UI and re-wording it is all
+ * that is wrong with it. A tag is hidden only when the card has nothing to say
+ * in its place — an emptied card, or fewer conditions than the dialog's copy
+ * holds — and never for any other reason, so nothing here alternates from one
+ * render to the next.
  *
- *   the card agrees with the applied filter   Stash's tags are already saying it,
- *                                             so they are shown, worded by us.
- *   the card differs                          Stash's tags would describe the
- *                                             applied filter, which is no longer
- *                                             what the row means, so they step
- *                                             aside and the card's own labels are
- *                                             returned to be drawn instead.
- *   the card holds nothing                    the tags go — the language is
- *                                             about to be taken off on Apply.
- *
- * A hidden tag is hidden rather than removed: it is Stash's element, React is
- * entitled to re-render it, and one it still owns is one it will not miss.
- *
- * @returns the row to draw the returned labels in, and the labels to draw —
- *   empty when Stash's own tags are doing the job.
+ * Hidden rather than removed: it is Stash's element, React is entitled to
+ * re-render it, and one it still owns is one it will not miss.
  */
-function manageDialogTags(
-  pending: boolean,
-  labels: string[] | null,
-  appliedLabels: string[] | null
-): { row: Element | null; labels: string[] } {
+function manageDialogTags(labels: string[]): void {
   var tags = dialogLanguageTags();
-  var none = { row: null, labels: [] as string[] };
 
   for (var i = 0; i < tags.length; i++) {
-    tags[i].style.display = pending ? "none" : "";
-  }
+    var label = i < labels.length ? labels[i] : null;
 
-  // Nothing of the card's own to draw: Stash's tags are the whole story, either
-  // because they already say what the card says or because the card is empty and
-  // the language is about to be taken off on Apply. Our row goes with them.
-  if (!pending || !labels || !labels.length) {
-    dropFallbackRow();
-    if (!pending && appliedLabels) writeTagLabels(tags, appliedLabels);
-    return none;
-  }
+    var text = tagText(tags[i]);
+    if (label !== null && text.nodeValue !== label) {
+      text.nodeValue = label;
+      tags[i].setAttribute(TAG_MARK, label);
+    }
 
-  // Stash's row when it has one — the dialog may hold no criteria at all, and
-  // then there is nowhere for the first language picked to be shown.
-  var row = dialogTagsRow();
-  return row ? { row: row, labels: labels } : none;
+    var display = label === null ? "none" : "";
+    if (tags[i].style.display !== display) tags[i].style.display = display;
+  }
+}
+
+/**
+ * The labels the card has to draw itself: those the dialog has no tag for.
+ *
+ * Stash draws a tag per condition of the criterion in its copy, so the first
+ * tags are the ones that already have somewhere to go and are handled by
+ * manageDialogTags. What is left over is a condition the dialog's copy does not
+ * have — the first language picked into a dialog that had none at all.
+ */
+function ownTagLabels(labels: string[]): string[] {
+  return labels.slice(dialogLanguageTags().length);
 }
 
 /**
@@ -1472,6 +1467,27 @@ export function DialogLanguageFilter(props: {
   });
 
   /**
+   * The dialog's tags, worded from the card — and its row taken away again when
+   * the card has nothing of its own to draw.
+   *
+   * A layout effect rather than the render body because it writes to DOM React
+   * owns; a layout effect runs after React has written that DOM and before the
+   * browser paints, so the wording is still what the card's first paint shows. It
+   * runs on every commit, which is what keeps the row up to date as the card is
+   * edited, and every write in it is guarded on the value actually changing — so
+   * a commit that has nothing to do leaves the DOM alone.
+   *
+   * What it is handed is worked out further down with the rest of what the card
+   * draws. That is fine for a `var` in the same render body — the effect runs
+   * after the body has finished — and it keeps this among the other hooks, where
+   * an early return can never come between them.
+   */
+  React.useLayoutEffect(function () {
+    manageDialogTags(dialogTagLabels);
+    if (!ownTagsRow) dropFallbackRow();
+  });
+
+  /**
    * What the card starts from, re-read from the filter each time the dialog opens.
    *
    * Stash snapshots the filter when its dialog mounts — `cloneDeep` in
@@ -1497,7 +1513,14 @@ export function DialogLanguageFilter(props: {
     if (syncedRef.current === sessionRef.current) return;
     syncedRef.current = sessionRef.current;
 
-    setChoice(readLanguageFilter(props.filter));
+    // A functional update that hands back the state it was given when the
+    // selection has not in fact moved, so this effect cannot ask for a re-render
+    // it does not need — a setState in a layout effect is a synchronous render,
+    // and one that changes nothing every time is a loop.
+    var applied = readLanguageFilter(props.filter);
+    setChoice(function (previous) {
+      return sameSelection(previous, applied) ? previous : applied;
+    });
     setQuery("");
   });
 
@@ -1546,17 +1569,15 @@ export function DialogLanguageFilter(props: {
     return NS.showFlags ? o.flag : null;
   };
 
-  // The dialog's tag row, kept saying what the card says — see manageDialogTags
-  // for why that row and the list's are worded differently. `pending` is the card
-  // having something the applied filter does not; while it does, Stash's tags
-  // describe the wrong filter and step aside for the ones returned here.
-  var pending = !sameSelection(choice, applied);
-  var appliedCriterion = languageCriterionOf(props.filter);
-  var ownTags = manageDialogTags(
-    pending,
-    pending ? tagLabels(intl, { value: selectionConditions(choice) }) : null,
-    appliedCriterion ? tagLabels(intl, appliedCriterion) : null
-  );
+  // The dialog's tags, and what is left for the card to draw itself — see
+  // manageDialogTags and ownTagLabels. The labels are the card's own, because the
+  // dialog's row is the one that reports the working copy; an empty card has
+  // nothing to say, which is what takes the tags away.
+  var dialogTagLabels = isEmptySelection(choice)
+    ? []
+    : tagLabels(intl, { value: selectionConditions(choice) }) || [];
+  var ownTags = ownTagLabels(dialogTagLabels);
+  var ownTagsRow = ownTags.length ? dialogTagsRow() : null;
 
   // The card's box, which Stash renders only while the card is open.
   var box = dialogEditorBox();
@@ -1692,9 +1713,9 @@ export function DialogLanguageFilter(props: {
       {host ? PluginApi.ReactDOM.createPortal(list, host) : null}
       {/* And, when the card has something Stash has no tag for, the tags of its
           own — one per condition, in the place Stash's would have been. */}
-      {ownTags.row && ownTags.labels.length
+      {ownTagsRow
         ? PluginApi.ReactDOM.createPortal(
-            ownTags.labels.map(function (label, index) {
+            ownTags.map(function (label, index) {
               return (
                 <LanguageTag
                   key={index}
@@ -1706,7 +1727,7 @@ export function DialogLanguageFilter(props: {
                 />
               );
             }),
-            ownTags.row
+            ownTagsRow
           )
         : null}
     </>

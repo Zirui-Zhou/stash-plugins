@@ -113,15 +113,12 @@ export interface MangaToolsNamespace {
    */
   relabelTags(labels: string[]): void;
   /**
-   * Keeps the dialog's tag row saying what the language card says: Stash's tags
-   * shown and worded when the two agree, hidden when they do not, and the card's
-   * own labels returned to be drawn in their place.
+   * Words the dialog's tags from the card, one label per tag, hiding the tags the
+   * card has nothing to say in — see the note above it in language-filter.tsx.
    */
-  manageDialogTags(
-    pending: boolean,
-    labels: string[] | null,
-    appliedLabels: string[] | null
-  ): { row: Element | null; labels: string[] };
+  manageDialogTags(labels: string[]): void;
+  /** The labels the card must draw itself, having found no tag of Stash's for them */
+  ownTagLabels(labels: string[]): string[];
   /** Was the ✗ of a language tag in the dialog's row what was clicked? */
   clickedTagRemove(target: Element | null): boolean;
   /**

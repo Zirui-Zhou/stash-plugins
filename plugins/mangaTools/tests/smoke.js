@@ -1979,20 +1979,26 @@ assert.strictEqual(adopt.criteria[0].criterionOption.type, "custom_fields",
 // helpers use, and `closest` answered from the list of selectors it sits inside.
 const tagWithText = (value, ancestors = []) => {
   const attributes = {};
-  return {
+  const tag = {
     firstChild:
       value === null
         ? { nodeType: 1, nodeValue: null }
         : { nodeType: 3, nodeValue: value },
     style: {},
+    // How many times the plugin wrote to this tag. The wording and the attribute
+    // recording it are written together, and only when the text actually changes,
+    // so this is what "left the DOM alone" can be asserted on.
+    writes: 0,
     closest: (sel) => (ancestors.indexOf(sel) === -1 ? null : {}),
     getAttribute: (name) => (name in attributes ? attributes[name] : null),
     setAttribute: (name, v) => {
       attributes[name] = v;
+      tag.writes += 1;
     },
     hasAttribute: (name) => name in attributes,
     attributes,
   };
+  return tag;
 };
 const ourTag = tagWithText("language (custom field) is ja, en");
 const studioTag = tagWithText("Studio is J-Model");
@@ -2055,9 +2061,8 @@ console.log("✓ the criterion handed to Stash (identity, stored form, and its t
 // ── 10i. The dialog's tag row ──────────────────────────────────────
 // The list's row reports the filter the list is applied to; the dialog's reports
 // the dialog's working copy, which for a language lives in this plugin's card
-// rather than in Stash's copy. So the two are worded differently and this is the
-// one place the plugin writes to the dialog's row: Stash's tags while the card
-// agrees with the applied filter, and the card's own while it does not.
+// rather than in Stash's copy. So the two are worded differently, and the dialog's
+// is worded from the card on every commit — Stash's own tags, one label each.
 const dialogHostEl = makeEl("div");
 dialogHostEl.className = "edit-filter-dialog";
 const dialogContentEl = makeEl("div");
@@ -2068,54 +2073,69 @@ documentRoot.appendChild(dialogHostEl);
 const dialogTagWithText = (value) =>
   tagWithText(value, [".edit-filter-dialog"]);
 
-// Agreeing: Stash's tag is shown and worded by us, and the card draws nothing
+// One tag, one label: Stash's tag is written into, and stays shown
 let dialogTag = dialogTagWithText("language (custom field) is ja");
 tagQuery = () => [dialogTag];
-let tagPlan = NS.manageDialogTags(false, null, ["语言 是 日语"]);
+NS.manageDialogTags(["语言 是 日语"]);
 tagQuery = () => [];
-assert.strictEqual(dialogTag.style.display, "", "Stash's tag should be shown");
 assert.strictEqual(dialogTag.firstChild.nodeValue, "语言 是 日语",
-  "…worded the way this plugin words it");
-assert.deepStrictEqual(tagPlan.labels, [],
-  "…and the card should draw no tag of its own");
-assert.strictEqual(tagPlan.row, null);
+  "Stash's tag should be worded the way this plugin words it");
+assert.strictEqual(dialogTag.style.display, "", "…and left showing");
+tagQuery = () => [dialogTag];
+assert.deepStrictEqual(NS.ownTagLabels(["语言 是 日语"]), [],
+  "…with nothing left for the card to draw itself");
+tagQuery = () => [];
 
-// Differing: Stash's tag describes the applied filter, which is not what the row
-// means while the card is mid-edit, so it steps aside
+// A second pass with the same labels must leave the DOM alone: this runs after
+// every commit, and a write per commit is a commit that never settles
+const writesSoFar = dialogTag.writes;
+tagQuery = () => [dialogTag];
+NS.manageDialogTags(["语言 是 日语"]);
+tagQuery = () => [];
+assert.strictEqual(dialogTag.writes, writesSoFar,
+  "re-wording a tag it has already worded should write nothing");
+
+// More labels than tags: the extra conditions have nowhere to go, so the card
+// draws them — this is the dialog that had no language at all when it opened
 dialogTag = dialogTagWithText("language (custom field) is ja");
 tagQuery = () => [dialogTag];
-tagPlan = NS.manageDialogTags(
-  true,
-  ["语言 是 日语", "语言 不是 韩语"],
-  ["语言 是 日语"]
-);
+NS.manageDialogTags(["语言 是 日语", "语言 不是 韩语"]);
 tagQuery = () => [];
-assert.strictEqual(dialogTag.style.display, "none", "Stash's tag should step aside");
-assert.strictEqual(dialogTag.firstChild.nodeValue, "language (custom field) is ja",
-  "…left as Stash drew it, since hiding it is only for now");
-assert.deepStrictEqual(tagPlan.labels, ["语言 是 日语", "语言 不是 韩语"],
-  "the card's own labels should be drawn instead");
-assert.ok(tagPlan.row, "…into the dialog's row, made if Stash has none");
-assert.strictEqual(dialogContentEl.children.length, 1,
-  "…which is the row this plugin keeps for exactly that");
-
-// …and back again: the tags return, worded as the applied filter reads
+assert.strictEqual(dialogTag.firstChild.nodeValue, "语言 是 日语",
+  "the first label goes into the tag Stash drew");
 tagQuery = () => [dialogTag];
-NS.manageDialogTags(false, null, ["语言 是 日语"]);
+assert.deepStrictEqual(NS.ownTagLabels(["语言 是 日语", "语言 不是 韩语"]),
+  ["语言 不是 韩语"], "…and the rest are the card's to draw");
 tagQuery = () => [];
-assert.strictEqual(dialogTag.style.display, "",
-  "reverting should bring Stash's tag back");
-assert.strictEqual(dialogTag.firstChild.nodeValue, "语言 是 日语");
-assert.strictEqual(dialogContentEl.children.length, 0,
-  "…and take this plugin's row away with it");
 
-// Card emptied: nothing for the row to say, and nothing to say it with
-dialogTag = dialogTagWithText("language (custom field) is ja");
-tagQuery = () => [dialogTag];
-tagPlan = NS.manageDialogTags(true, null, ["语言 是 日语"]);
+// Fewer labels than tags — an emptied card, or exclusions just taken off: the
+// tags with nothing to say step aside rather than repeat the last label
+const secondTag = dialogTagWithText("language (custom field) is not ko");
+tagQuery = () => [dialogTag, secondTag];
+NS.manageDialogTags(["语言 是 日语"]);
+tagQuery = () => [];
+assert.strictEqual(dialogTag.style.display, "", "a label with a tag keeps it shown");
+assert.strictEqual(secondTag.style.display, "none",
+  "a tag with no label to carry should step aside");
+
+// …and back again, which is the pair that must not oscillate: showing it again
+// is the same comparison read the other way
+tagQuery = () => [dialogTag, secondTag];
+NS.manageDialogTags(["语言 是 日语", "语言 不是 韩语"]);
+tagQuery = () => [];
+assert.strictEqual(secondTag.style.display, "",
+  "…and come back when the card has something for it again");
+
+// An empty card takes them all away: the language is about to be removed
+tagQuery = () => [dialogTag, secondTag];
+NS.manageDialogTags([]);
 tagQuery = () => [];
 assert.strictEqual(dialogTag.style.display, "none");
-assert.deepStrictEqual(tagPlan.labels, [], "an empty card draws no tag of its own");
+assert.strictEqual(secondTag.style.display, "none");
+tagQuery = () => [dialogTag, secondTag];
+assert.deepStrictEqual(NS.ownTagLabels([]), [],
+  "an empty card draws nothing of its own either");
+tagQuery = () => [];
 
 documentRoot.detach(dialogHostEl);
 
@@ -2163,7 +2183,7 @@ assert.strictEqual(
   "…and the list's own row is not the dialog's"
 );
 assert.strictEqual(NS.clickedTagRemove(null), false);
-console.log("✓ dialog tags (worded from the card / hidden while it differs / ✗ follows)");
+console.log("✓ dialog tags (worded from the card / tags with nothing to say step aside / ✗ follows)");
 
 // ── 10f. The selection operations both surfaces share ──────────────
 // Pure functions, so they can be tested directly rather than through two
