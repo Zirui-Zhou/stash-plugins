@@ -7,9 +7,13 @@
   "scripts": {
     "build": "node tools/build.mjs",
     "typecheck": "node tools/build.mjs --typecheck",
-    "test": "npm run typecheck && npm run build && node plugins/mangaTools/tests/smoke.js"
+    "lint": "biome lint --error-on-warnings",
+    "format": "biome format --write",
+    "format:check": "biome format",
+    "test": "npm run lint && npm run format:check && npm run typecheck && npm run build && node plugins/mangaTools/tests/smoke.js"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.0",
     "@types/react": "^18.3.31",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2"

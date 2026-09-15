@@ -1,0 +1,86 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.0/schema.json",
+
+  // Stash's own config, copied from ui/v2.5/biome.jsonc, with the two entries
+  // that only make sense inside its source tree dropped.
+  //
+  // Why Stash's rather than a config of our own: everything in this repository
+  // exists to extend Stash, the conventions below are already decided and
+  // documented there, and matching them means one set of habits instead of two.
+  // The version is pinned to exactly the one Stash uses, so the two cannot drift
+  // apart and start disagreeing about what is formatted.
+  //
+  // The one deliberate difference: `lineWidth` is written out as 80. Stash leaves
+  // it at Biome's default, which is also 80 — this only makes it a decision
+  // rather than an accident.
+  //
+  // Already true of this repo before adopting it: two-space indent, double
+  // quotes, semicolons, `es5` trailing commas. The formatter's only real work was
+  // re-wrapping a couple of dozen lines that had drifted past 80 columns.
+  "json": {
+    "parser": {
+      "allowComments": true
+    }
+  },
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    // The two example*.html files are reference material — DOM pasted out of a
+    // running Stash to work against — not code that ships or is maintained.
+    "includes": ["**", "!plugins/*/example*.html"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "lineWidth": 80
+  },
+  "linter": {
+    "enabled": true,
+    "domains": {
+      "react": "recommended",
+      "types": "recommended"
+    },
+    "rules": {
+      // generally want to enforce recommended rules
+      // so change recommended rules that emit info by default to error
+      //
+      "a11y": "off",
+      "complexity": {
+        "noUselessCatch": "error",
+        "noUselessEscapeInRegex": "error",
+        "noUselessFragments": "error",
+        "noUselessLabel": "error",
+        "noUselessLoneBlockStatements": "error",
+        "noUselessStringRaw": "error",
+        "noUselessSwitchCase": "error",
+        "noUselessTernary": "error",
+        "useFlatMap": "error",
+        "useIndexOf": "error",
+        "useLiteralKeys": "error",
+        "useOptionalChain": "error"
+      },
+      "style": {
+        // used where the type is known to be non-null, but the compiler can't figure it out
+        "noNonNullAssertion": "off",
+        // preferable, but not something we want to enforce right now
+        "useTemplate": "off",
+        // remove the following after fixing
+        "useImportType": "off"
+      },
+      "suspicious": {
+        // this is used extensively, and there's no obvious fix
+        "noArrayIndexKey": "off"
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      // es5 requires the least amount of changes and (imo) looks better than "all"
+      "trailingCommas": "es5"
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "actions": { "source": { "organizeImports": "off" } }
+  }
+}
