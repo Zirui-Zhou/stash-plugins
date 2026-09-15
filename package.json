@@ -7,7 +7,7 @@
   "scripts": {
     "build": "node tools/build.mjs",
     "typecheck": "node tools/build.mjs --typecheck",
-    "test": "npm run typecheck && npm run build && node tests/smoke.js"
+    "test": "npm run typecheck && npm run build && node plugins/mangaTools/tests/smoke.js"
   },
   "devDependencies": {
     "@types/react": "^18.3.31",

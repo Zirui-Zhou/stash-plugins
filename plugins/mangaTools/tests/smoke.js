@@ -3,10 +3,14 @@ const path = require("path");
 const fs = require("fs");
 const assert = require("assert");
 
-// The tests run against the *bundled* plugin, not the TypeScript sources — so
-// they exercise exactly what gets published, and a broken build shows up here.
-// Run `npm test`, which builds first.
-const PLUGIN = path.join(__dirname, "..", "plugins", "mangaTools", "build");
+// This spec sits beside the plugin it tests — src/, tests/ and build/ all live
+// under plugins/mangaTools/ — so nothing here has to name the plugin: the path
+// below reaches the build output by relative position alone.
+//
+// The tests run against the *bundled* plugin, not the TypeScript sources, so
+// they exercise exactly what gets published and a broken build shows up here.
+// Run `npm test` from the repository root, which builds first.
+const PLUGIN = path.join(__dirname, "..", "build");
 
 // ── Stubs ──────────────────────────────────────────────────────────
 const globalListeners = {};

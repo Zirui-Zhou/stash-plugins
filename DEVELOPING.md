@@ -14,6 +14,8 @@ conventions to follow when adding one. For installing them, see
    ├── src/
    │   ├── myPlugin.tsx     ← entry point; bundled into build/myPlugin.js
    │   └── plugin-api.ts    ← types for the interfaces Stash injects
+   ├── tests/
+   │   └── smoke.js         ← the plugin's own tests (see below)
    ├── myPlugin.yml         ← the plugin ID comes from this file name; it must be <id>.yml
    ├── myPlugin.css
    └── tsconfig.json
@@ -55,6 +57,24 @@ conventions to follow when adding one. For installing them, see
 available from the version number; if it does not change, no update is offered.
 Documentation and comment-only edits do not need a bump.
 
+### Where the tests live
+
+Beside the plugin they test, at `plugins/<id>/tests/` — not in a shared top-level
+`tests/`. The spec then reaches its build output as `../build` by position alone,
+with no plugin name in the path; `src/`, `tests/` and `build/` all belong to the
+plugin, so moving or deleting one takes its tests with it; and two plugins cannot
+collide over a name like `smoke.js`. `npm test` names each spec explicitly.
+
+When a second plugin's tests want the same stubs — the fake `PluginApi`, React,
+DOM and Apollo client in mangaTools' spec are all generic — lift them into a
+shared file both can import. Don't move the specs back to the root to share them.
+
+A `tests/` directory inside a plugin is safe from packaging: only what
+`src/<id>.tsx` imports is bundled, and only `.yml`/`.css`/`.md` are copied in from
+the plugin root. That is **not** true of a plain-JS plugin (no `tsconfig.json`),
+which is packaged whole — and packaging copies entry by entry, so a subdirectory in
+one fails the build rather than shipping.
+
 ### What gets zipped, and what does not
 
 Only the plugin's `build/` directory is packaged: the bundled JavaScript plus the
@@ -88,7 +108,7 @@ Set in `tools/build.mjs`:
 
 - **`format: "iife"`** — Stash loads the file through a plain `<script>` tag, so
   it has to be a script, not an ES module. This is the option that would break
-  the plugin outright if it changed, which is why `tests/smoke.js` asserts the
+  the plugin outright if it changed, which is why its own smoke test asserts the
   output contains no module syntax.
 - **`target: "es2019"`** — matches `tsconfig.base.json`, so nothing newer slips
   through the bundler than the type-checker was told to accept.

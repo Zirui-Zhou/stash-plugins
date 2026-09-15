@@ -192,6 +192,8 @@ mangaTools/
 │   ├── mangaTools.tsx     Badge, dropdown, bulk row, settings, patches
 │   ├── languages.ts       Language table (pure data, swappable on its own)
 │   └── plugin-api.ts      Types for PluginApi and the namespace above
+├── tests/
+│   └── smoke.js           Smoke test, run by `npm test` from the repo root
 ├── mangaTools.yml         Plugin config (the file name is the plugin ID)
 ├── mangaTools.css         Styles
 ├── tsconfig.json          Extends the repo's tsconfig.base.json
@@ -212,8 +214,9 @@ plugin itself never reads it.
 strips types without reading them. That is why `npm test` runs both; see
 [DEVELOPING.md](../../DEVELOPING.md).
 
-The smoke test lives at `tests/smoke.js` **outside this directory**, so it never
-ends up inside the zip that gets installed into a user's plugins folder.
+`tests/` is not packaged — the zip holds only what the entry point bundles plus
+the `.yml`, `.css` and `.md` copied in beside it, so the spec never reaches a
+user's plugins folder.
 
 ## Installation
 
