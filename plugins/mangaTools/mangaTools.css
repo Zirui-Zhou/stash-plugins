@@ -165,6 +165,21 @@
   vertical-align: -0.15rem;
 }
 
+/*
+ * The censorship icon, and only it — Stash's index.scss has an unscoped
+ * `.fa-icon { margin: 0 0.4rem }`, so every icon carries a left and right margin
+ * unless something takes it off. Its two exemptions are an icon alone in a button
+ * (the collapse header's chevron, which is why that one looks right) and one in a
+ * popover or dropdown item; neither is this.
+ *
+ * Zeroed rather than replaced, because the gap this row wants is the text space
+ * already in the markup — the same arrangement as the language row above it, so
+ * both read the same at any font size.
+ */
+.manga-tools-detail .fa-icon {
+  margin: 0;
+}
+
 /* ───────────────────────── Edit-page dropdown ───────────────────────── */
 
 /*
@@ -305,11 +320,18 @@
  * black in either theme.
  */
 .manga-tools-panel {
-  margin-top: 0.25rem;
-  /* The same as a row's, so the block closes the section like one more row
-     rather than a third kind of spacing. Bootstrap gives every heading that
-     margin, which is what the <h6>s above it are separated by. */
-  margin-bottom: 0.5rem;
+  /*
+   * Padding, not margin, and that is the whole point of it being here.
+   *
+   * The same value as a row's margin — Bootstrap gives every heading 0.5rem, and
+   * that is what the <h6>s in this section are separated by — but expressed as
+   * padding so the two *add* rather than collapse. Adjacent vertical margins
+   * collapse to the larger of the two, so as a margin this one was invisible
+   * whenever the block was open: the last row's own bottom margin swallowed it
+   * and the block closed with exactly one row's spacing and no breathing room of
+   * its own.
+   */
+  padding-bottom: 0.5rem;
 }
 
 .manga-tools-panel-body {

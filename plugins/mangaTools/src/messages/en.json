@@ -11,7 +11,7 @@
   "mangaTools.settings.showCoverBadge.heading": "Show the language on gallery covers",
   "mangaTools.settings.showCoverBadge.description": "The badge in the bottom-right of a gallery's cover. With flags turned off it shows the language name instead of a flag.",
 
-  "mangaTools.panel.heading": "Manga",
+  "mangaTools.panel.heading": "Manga info",
 
   "mangaTools.censorship.heading": "Censorship",
 

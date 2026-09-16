@@ -4315,8 +4315,8 @@ setTimeout(() => {
   const panel = panelOf(panelValues);
   assert.ok(panel, "a gallery page should render the panel");
   assert.ok(
-    hasText(panel, "漫画"),
-    "headed with this plugin's own word for it, since Stash has none"
+    hasText(panel, "漫画信息"),
+    "headed with this plugin's own words for it, since Stash has none"
   );
   assert.ok(
     hasText(panel, "简体中文"),
