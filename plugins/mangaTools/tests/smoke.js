@@ -16,6 +16,18 @@ const PLUGIN = path.join(__dirname, "..", "build");
 const globalListeners = {};
 const patched = {};
 const patchedBefore = {};
+const patchedAfter = {};
+
+/**
+ * Fault injection for the patch *registration* API, not for the callbacks.
+ *
+ * Set to a target name before the bundle loads, and the stub throws when the
+ * plugin tries to register that one — which is the shape of a Stash whose
+ * `PluginApi.patch` does not have the method the plugin is calling. What the
+ * test then checks is that the patches *below* it still registered.
+ */
+let patchRegistrationFault = null;
+const patchRegistrationFaultError = new Error("no such patch method");
 /** How many times the plugin asked for the gallery map — used to prove a
  *  successful bulk update triggers a refresh (and that a no-op one does not). */
 let galleryQueryCount = 0;
@@ -464,10 +476,16 @@ const PluginApi = {
   },
   patch: {
     before: (target, fn) => {
+      if (patchRegistrationFault === target) throw patchRegistrationFaultError;
       patchedBefore[target] = fn;
     },
     instead: (target, fn) => {
+      if (patchRegistrationFault === target) throw patchRegistrationFaultError;
       patched[target] = fn;
+    },
+    after: (target, fn) => {
+      if (patchRegistrationFault === target) throw patchRegistrationFaultError;
+      patchedAfter[target] = fn;
     },
   },
 };
@@ -594,12 +612,65 @@ global.Intl.DisplayNames = FakeDisplayNames;
 // to be on the window first, because the bundle reads it as it loads — the same
 // order Stash uses, where the API is injected before any plugin script runs.
 global.window.PluginApi = PluginApi;
-require(path.join(PLUGIN, "mangaTools.js"));
+
+const BUNDLE = require.resolve(path.join(PLUGIN, "mangaTools.js"));
+
+// One load with a registration faulted, to check the plugin survives it, and
+// then one clean load that every other assertion in this file runs against.
+//
+// The plugin registers its patches at load time, top to bottom. If one of those
+// calls throws — a Stash whose PluginApi.patch is missing a method, say — then
+// without the try/catch in registerPatch the module would stop there and every
+// patch *below* it would silently never register. That is the failure this
+// checks for, and it can only be provoked at load time, which is why it happens
+// here rather than beside the other patch assertions.
+patchRegistrationFault = "GalleryCard.Overlays";
+require(BUNDLE);
+patchRegistrationFault = null;
+
+for (const t of [
+  "GalleryCard.Popovers",
+  "CustomFieldsInput",
+  "CustomFieldInput",
+  "CustomFields",
+  "PluginSettings",
+  "RatingSystem",
+]) {
+  assert.ok(
+    patchedAfter[t] || patched[t],
+    `a patch that could not be registered must not stop the ones after it: ${t}`
+  );
+}
+assert.ok(
+  !patchedAfter["GalleryCard.Overlays"],
+  "the faulted patch really did fail to register"
+);
+console.log("✓ patch registration (one failing does not stop the rest)");
+
+// Re-load for real. The three maps are cleared first so nothing the faulted load
+// left behind can satisfy an assertion below.
+for (const map of [patched, patchedBefore, patchedAfter]) {
+  for (const k of Object.keys(map)) delete map[k];
+}
+delete require.cache[BUNDLE];
+require(BUNDLE);
 
 const NS = global.window.MangaTools;
 const original = (props) => ({ type: "ORIGINAL", props });
 const call = (target, props) => patched[target](props, undefined, original);
 const call2 = (target, props) => patched[target](props, original);
+
+/**
+ * Invokes an `after` patch the way Stash does: the original arguments first, then
+ * what everything before the patch produced.
+ *
+ * `substrate` stands in for Stash's own output — the studio overlay on a gallery
+ * card, the rating control on a detail page. Passed back by identity so a test
+ * can tell "the plugin added nothing" (the same object comes out) from "the
+ * plugin wrapped it" without either side having to guess at a shape.
+ */
+const callAfter = (target, props, substrate) =>
+  patchedAfter[target](props, substrate);
 
 /** Is a piece of text present anywhere in the tree? (whitespace-insensitive) */
 function hasText(node, text) {
@@ -941,15 +1012,27 @@ console.log("✓ dropdown order (by displayed name, in the reader's collation)")
 // is a plain React.FC, so patching it reports no error and simply never runs.
 // That is a real bug this project hit.
 const requiredPatches = [
-  "GalleryCard.Overlays",
   "CustomFieldsInput",
   "CustomFieldInput",
   "CustomFields",
   "PluginSettings",
-  "RatingSystem",
 ];
 for (const t of requiredPatches) {
   assert.ok(patched[t], `missing patch: ${t}`);
+}
+
+// The three that only add to Stash's own output are registered as `after`
+// patches. That is what leaves the original component uncalled — so one with
+// hooks inside (GalleryCard.Overlays uses useMemo) cannot be broken by the
+// patch — and what lets the output pass through untouched when the plugin has
+// nothing to add, which the identity checks below rely on.
+const requiredAfterPatches = [
+  "GalleryCard.Overlays",
+  "GalleryCard.Popovers",
+  "RatingSystem",
+];
+for (const t of requiredAfterPatches) {
+  assert.ok(patchedAfter[t], `missing after patch: ${t}`);
 }
 
 // GalleryList carries two patches, which is allowed: Stash runs the
@@ -3261,7 +3344,12 @@ console.log(
 
 setTimeout(() => {
   // ── 11. Badges (after the refresh promise settles) ───────────────
-  const card = (id) => call("GalleryCard.Overlays", { gallery: { id } });
+  // Stands in for Stash's own Overlays — the studio overlay. An `after` patch is
+  // handed it and returns it, so handing back the *same object* is how "the
+  // plugin added nothing" reads below, with no shape to guess at.
+  const overlaysResult = { type: "StudioOverlay", props: {} };
+  const card = (id) =>
+    callAfter("GalleryCard.Overlays", { gallery: { id } }, overlaysResult);
 
   // The badge wraps a Flag component, so one more render is needed to reach the span
   const badgeOf = (id) => {
@@ -3304,14 +3392,17 @@ setTimeout(() => {
     "简体中文",
     "should carry an aria-label"
   );
+  // Identity, not merely "a component": an `after` patch that has nothing to add
+  // returns the very object it was handed, so the original output is not merely
+  // equivalent, it is the same one.
   assert.strictEqual(
-    card("4").type,
-    original,
+    card("4"),
+    overlaysResult,
     "a gallery without a language must not be touched"
   );
   assert.strictEqual(
-    card("999").type,
-    original,
+    card("999"),
+    overlaysResult,
     "an unknown id must not be touched"
   );
 
@@ -3595,18 +3686,18 @@ setTimeout(() => {
   // The cover badge turns off on its own, whatever the flags setting says.
   NS.showCoverBadge = false;
   assert.strictEqual(
-    card("1").type,
-    original,
+    card("1"),
+    overlaysResult,
     "no badge at all when the cover badge is off"
   );
   assert.strictEqual(
-    card("3").type,
-    original,
+    card("3"),
+    overlaysResult,
     "and none for an unknown value either"
   );
 
   NS.showFlags = false;
-  assert.strictEqual(card("1").type, original, "nor with both switches off");
+  assert.strictEqual(card("1"), overlaysResult, "nor with both switches off");
 
   NS.showCoverBadge = true;
   NS.showFlags = true;
@@ -3711,6 +3802,9 @@ setTimeout(() => {
    * ambiguous — and on the real page a gallery appears in exactly one card, so
    * that is the state worth testing against.
    */
+  // Stash's own popover row, as an `after` patch is handed it.
+  const popoversResult = { type: "PopoverRow", props: {} };
+
   let lastCard = null;
   const cardMark = (id, { withRow = true } = {}) => {
     if (lastCard?.parentNode) documentRoot.removeChild(lastCard);
@@ -3729,9 +3823,12 @@ setTimeout(() => {
       cardEl.appendChild(row);
     }
 
-    const first = call("GalleryCard.Popovers", { gallery: { id } });
-    const markEl =
-      first.type === React.Fragment ? first.props.children[1] : null;
+    const first = callAfter(
+      "GalleryCard.Popovers",
+      { gallery: { id } },
+      popoversResult
+    );
+    const markEl = first === popoversResult ? null : first.props.children[1];
 
     // The anchor the mark draws, turned into a node the way React's commit
     // would — read off the rendered element rather than written out here, so a
@@ -3744,8 +3841,12 @@ setTimeout(() => {
 
     // The second pass is the one that can see the committed anchor, which is
     // exactly what useAfterMount asks a real React for.
-    const again = call("GalleryCard.Popovers", { gallery: { id } });
-    const el = again.type === React.Fragment ? again.props.children[1] : null;
+    const again = callAfter(
+      "GalleryCard.Popovers",
+      { gallery: { id } },
+      popoversResult
+    );
+    const el = again === popoversResult ? null : again.props.children[1];
     const drawn = el ? el.type(el.props) : null;
 
     return { cardEl, row, markEl, anchor, el, drawn };
@@ -3827,8 +3928,8 @@ setTimeout(() => {
       "which is the merge of the two answers working"
   );
   assert.strictEqual(
-    card("7").type,
-    original,
+    card("7"),
+    overlaysResult,
     "…and it still has no language badge"
   );
 
@@ -4110,8 +4211,11 @@ setTimeout(() => {
 
   // The row is mounted by the RatingSystem patch; render the fragment it returns
   // and follow the portal it makes.
+  // Stash's own rating control, as the `after` patch is handed it.
+  const ratingResult = { type: "RatingSystem", props: {} };
+
   const bulkRow = () => {
-    const frag = call("RatingSystem", { value: 0 });
+    const frag = callAfter("RatingSystem", { value: 0 }, ratingResult);
     const rowEl = frag.props.children[1];
     return rowEl.type(rowEl.props);
   };
@@ -4353,7 +4457,7 @@ setTimeout(() => {
   );
 
   // Off a gallery page there is no row at all
-  const onScene14 = call("RatingSystem", { value: 0 });
+  const onScene14 = callAfter("RatingSystem", { value: 0 }, ratingResult);
   assert.strictEqual(
     onScene14.props.children[1].type(onScene14.props.children[1].props),
     null,

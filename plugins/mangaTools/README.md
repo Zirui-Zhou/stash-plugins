@@ -644,9 +644,12 @@ canonical spelling.
   and the organized box; adding a fourth button that says "not set" would make
   every card noisier to say nothing about most of them. The state is still
   readable on the detail page, one click away.
-- **Every insertion point touches the DOM**, because Stash leaves no React
-  insertion point at those positions (see above). Each mount point is an empty
-  `<div>` that the plugin finds/creates and repositions while rendering; a React
+- **Most of the plugin's surfaces are placed by hand in the DOM**, because Stash
+  leaves no React insertion point at those positions (see above). How a surface
+  is *reached* and where its content *lands* are separate questions: the
+  censorship mark, for instance, is an ordinary `after` patch whose button is
+  portalled into Stash's own popover row. Each mount point is an empty `<div>`
+  that the plugin finds/creates and repositions while rendering; a React
   re-render that displaces it gets corrected automatically. The anchors are
   `.gallery-details` (detail page), `.form-group[data-field="studio_id"]` (edit
   page — confirmed to exist on v0.31.1), `[data-field="studio"]` (bulk dialog) and
@@ -814,15 +817,46 @@ used by both fields and by nothing else. What a third field would need is:
 
 1. a name and its values in `src/fields.ts`, plus a `normalize…` if it is not
    free-form
-2. whatever new mount point it needs — a card mark and a toolbar button are the
-   two shapes that exist, and `ensurePopoverSlot` / `ensureToolbarHost` are the
-   two ways this plugin finds a place to put one
+2. whatever new surface it needs — see **Adding a surface** below
 3. a message id per string and state in `src/messages/*.json`
 4. a line in `refresh()`'s field list, so a gallery carrying only that field is
    still found by the query that feeds the store
 
 Step 4 is the one that is easy to miss: the store is filled by one query per
 field, and a field not in that list exists in the data and nowhere on screen.
+
+**Adding a surface.** Where a new control goes decides how it is added, and there
+is a clear order to try:
+
+1. **`patch.after`** — the component is patchable and the control is *added to*
+   what it already renders. The original is never called, so nothing about it can
+   be disturbed, and its output passes through by identity when there is nothing
+   to add. `GalleryCard.Overlays` (the flag badge), `GalleryCard.Popovers` (the
+   censorship mark) and `RatingSystem` (the bulk row) are all this, and all three
+   mean "the plugin adds a sibling and changes nothing else" is checkable rather
+   than merely intended.
+2. **`patch.instead`** — the component is patchable but its *props or output* have
+   to change: `CustomFields` hands Stash a `values` map with this plugin's keys
+   taken out, and `CustomFieldInput` returns null for its own row. This is also
+   the only option when the control has to *precede* the original, as
+   `GalleryList`'s two mounts do.
+3. **A DOM mount point and a portal** — nothing on that part of the page is
+   patchable at all. That is true of the four anchored rows, of the gallery
+   detail toolbar and of the card's popover row, and it is why each of them
+   carries a comment saying which component *would* have been the natural place
+   and why it cannot be.
+
+   Two of those go further than the others: the censorship mark is portalled
+   **into Stash's own node** rather than beside it, because the row it belongs in
+   is a flex container and a sibling would be a line of its own.
+
+**Registering a patch goes through `registerPatch`**, which wraps the call in a
+try/catch. That is not about a bad target name — Stash accepts any name and
+simply never fires it, which is what the `patch active:` log is for. It is about
+the API itself: the patches are registered top to bottom at load time, so a
+`PluginApi.patch` that is missing a method would throw and silently kill every
+patch *below* it. The smoke test loads the bundle once with a registration
+deliberately faulted, to prove the rest still register.
 
 ### Translating
 

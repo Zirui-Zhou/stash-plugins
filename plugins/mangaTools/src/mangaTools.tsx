@@ -46,6 +46,7 @@ import {
   registerLanguageCriterionOption,
   SidebarLanguageFilter,
 } from "./language-filter";
+import type { ReactNode } from "react";
 import type { MangaToolsFilterModel } from "./plugin-api";
 import type {
   MangaToolsApolloClient,
@@ -53,6 +54,7 @@ import type {
   MangaToolsCustomFields,
   MangaToolsIntl,
   MangaToolsOption,
+  MangaToolsPatchFn,
 } from "./plugin-api";
 
 // Throws if Stash has not injected its API, the one thing that can go wrong at
@@ -109,6 +111,50 @@ type NativeFieldClasses = { group: string; label: string; control: string };
 // biome-ignore lint/suspicious/noExplicitAny: the component a patch is handed // has no nameable type — its props differ per target, and it is used as JSX.
 function originalFrom(args: unknown[]): any {
   return args[args.length - 1];
+}
+
+/**
+ * Pulls the rendered result out of a patch.after callback's arguments.
+ *
+ * `after` is the one patch kind whose last argument is not a component: Stash
+ * appends what everything before it produced — the original component's output,
+ * or an `instead` function's — and the callback returns what should be rendered
+ * in its place. Two accessors rather than one index for that reason: they look
+ * interchangeable and are not, and mixing them up yields a component rendered as
+ * a child rather than a crash.
+ */
+function resultFrom(args: unknown[]): ReactNode {
+  return args[args.length - 1] as ReactNode;
+}
+
+/**
+ * Registers a patch, and keeps one failing to register from taking the rest of
+ * the plugin with it.
+ *
+ * A patch whose *target does not exist* is not what this guards: Stash only
+ * pushes the callback onto a list, so a name it has never heard of registers
+ * happily and simply never fires — which is what `noteFired`'s log is for.
+ *
+ * What it guards is the API surface itself. This file runs top to bottom at load
+ * time, so a `PluginApi.patch` that is missing or renamed — a Stash older or
+ * newer than this plugin expects — would throw here and stop the module, and
+ * every patch *below* that point would silently never register. A half-working
+ * plugin with no error is the worst of both outcomes; this turns it into one
+ * line on the console naming the target that did not make it.
+ */
+function registerPatch(
+  kind: "before" | "instead" | "after",
+  target: string,
+  fn: MangaToolsPatchFn
+): void {
+  try {
+    PluginApi.patch[kind](target, fn);
+  } catch (e) {
+    console.error(
+      "[mangaTools] could not register the " + target + " patch:",
+      e
+    );
+  }
 }
 
 /**
@@ -1678,24 +1724,25 @@ function BulkLanguageRow() {
 
 // 1. The badge on the bottom of the gallery card cover.
 //
-//    The original component has to be rendered as a React element. Do not call
-//    original(props) directly the way the official example does —
-//    GalleryCard.Overlays uses useMemo internally, and calling it directly
-//    breaks the rules of hooks.
-PluginApi.patch.instead("GalleryCard.Overlays", (...args: unknown[]) => {
+//    `after`, not `instead`: nothing about Stash's own output is being changed,
+//    only added to. That is what lets the original component be left alone —
+//    GalleryCard.Overlays uses useMemo internally, so calling it directly (as the
+//    official example does) is exactly the thing not to do, and `after` never
+//    calls it at all.
+registerPatch("after", "GalleryCard.Overlays", (...args: unknown[]) => {
   const props = args[0] as { gallery?: { id?: string } };
-  const Original = originalFrom(args);
+  const result = resultFrom(args);
   noteFired("GalleryCard.Overlays");
 
   const id = props.gallery?.id;
   const value = id ? pickLanguage(store.get(String(id))) : "";
 
   // Nothing to add: the gallery has no language, or the badge is turned off.
-  if (!value || !NS.showCoverBadge) return <Original {...props} />;
+  if (!value || !NS.showCoverBadge) return result;
 
   return (
     <>
-      <Original {...props} />
+      {result}
       <LanguageBadge galleryId={id as string} />
     </>
   );
@@ -1709,17 +1756,17 @@ PluginApi.patch.instead("GalleryCard.Overlays", (...args: unknown[]) => {
 //     row is where Stash already puts this kind of attribute (organized, and the
 //     two counts), and it costs nothing on the covers of the many galleries that
 //     carry no mark at all.
-PluginApi.patch.instead("GalleryCard.Popovers", (...args: unknown[]) => {
+registerPatch("after", "GalleryCard.Popovers", (...args: unknown[]) => {
   const props = args[0] as { gallery?: { id?: string } };
-  const Original = originalFrom(args);
+  const result = resultFrom(args);
   noteFired("GalleryCard.Popovers");
 
   const id = props.gallery?.id;
-  if (!id || !storedCensorship(String(id))) return <Original {...props} />;
+  if (!id || !storedCensorship(String(id))) return result;
 
   return (
     <>
-      <Original {...props} />
+      {result}
       <CensorshipPopoverMark galleryId={String(id)} />
     </>
   );
@@ -1727,7 +1774,7 @@ PluginApi.patch.instead("GalleryCard.Popovers", (...args: unknown[]) => {
 
 // 2. Edit page: render the language field (it portals itself after the studio
 //    row, so it contributes nothing at this position).
-PluginApi.patch.instead("CustomFieldsInput", (...args: unknown[]) => {
+registerPatch("instead", "CustomFieldsInput", (...args: unknown[]) => {
   const props = args[0] as {
     values?: CustomFieldsMap;
     onChange?: (values: CustomFieldsMap) => void;
@@ -1757,7 +1804,7 @@ PluginApi.patch.instead("CustomFieldsInput", (...args: unknown[]) => {
 //    isNew must pass through: that is the "new field" row, and the user may be
 //    in the middle of typing a name that will turn out to be ours. Returning null would
 //    make the whole row vanish mid-keystroke.
-PluginApi.patch.instead("CustomFieldInput", (...args: unknown[]) => {
+registerPatch("instead", "CustomFieldInput", (...args: unknown[]) => {
   const props = args[0] as { field?: string; isNew?: boolean };
   const Original = originalFrom(args);
   noteFired("CustomFieldInput");
@@ -1965,7 +2012,7 @@ function DetailLanguageRow(props: { value: unknown }) {
 //    The button does not depend on those fields being there, only on this being
 //    a gallery: `CustomFields` is rendered by the gallery detail panel whatever
 //    a gallery carries, including nothing.
-PluginApi.patch.instead("CustomFields", (...args: unknown[]) => {
+registerPatch("instead", "CustomFields", (...args: unknown[]) => {
   const props = args[0] as { values?: CustomFieldsMap; fullWidth?: boolean };
   const Original = originalFrom(args);
   noteFired("CustomFields");
@@ -2027,7 +2074,7 @@ PluginApi.patch.instead("CustomFields", (...args: unknown[]) => {
 // 5. Settings page: swap the stock per-setting input for the multiselect above,
 //    but only for this plugin — every other plugin's settings go straight back
 //    to the original component untouched.
-PluginApi.patch.instead("PluginSettings", (...args: unknown[]) => {
+registerPatch("instead", "PluginSettings", (...args: unknown[]) => {
   const props = args[0] as { pluginID?: string };
   const Original = originalFrom(args);
   noteFired("PluginSettings");
@@ -2043,7 +2090,7 @@ PluginApi.patch.instead("PluginSettings", (...args: unknown[]) => {
 //    the props are handed straight back, so GalleryList renders exactly as it
 //    would without the plugin. This is the only way to see the selection: the
 //    dialog that uses it is not patchable.
-PluginApi.patch.before("GalleryList", (...args: unknown[]) => {
+registerPatch("before", "GalleryList", (...args: unknown[]) => {
   const props = args[0] as { selectedIds?: unknown };
   noteFired("GalleryList");
   captureSelection(props ? props.selectedIds : null);
@@ -2069,7 +2116,7 @@ PluginApi.patch.before("GalleryList", (...args: unknown[]) => {
 //    `instead` here rather than `before`: this one has to render. The two
 //    coexist — Stash runs before-functions first and passes their result on, so
 //    the selection above is still captured.
-PluginApi.patch.instead("GalleryList", (...args: unknown[]) => {
+registerPatch("instead", "GalleryList", (...args: unknown[]) => {
   const props = args[0] as { filter?: MangaToolsFilterModel };
   const Original = originalFrom(args);
   noteFired("GalleryList.filter");
@@ -2093,14 +2140,17 @@ PluginApi.patch.instead("GalleryList", (...args: unknown[]) => {
 //    component it renders — is used purely as a mount point; the row is
 //    positioned by the DOM anchor and its value reaches the mutation through
 //    installBulkLink, not through the dialog.
-PluginApi.patch.instead("RatingSystem", (...args: unknown[]) => {
-  const props = args[0] as object;
-  const Original = originalFrom(args);
+//
+//    `after` for the same reason as the card, and one more: RatingSystem is
+//    rendered by Stash's own scene and gallery pages with a rating system the
+//    user chose, so leaving its output exactly as it was is worth more here than
+//    anywhere else.
+registerPatch("after", "RatingSystem", (...args: unknown[]) => {
   noteFired("RatingSystem");
 
   return (
     <>
-      <Original {...props} />
+      {resultFrom(args)}
       <BulkLanguageRow />
     </>
   );

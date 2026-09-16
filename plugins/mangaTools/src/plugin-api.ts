@@ -359,9 +359,13 @@ export type MangaToolsGalleryUpdateFn = (options: {
 export type MangaToolsGql = (source: string) => unknown;
 
 /**
- * A patch callback. `patch.instead` appends `next()` to the arguments, and what
- * that returns is the original component — so the last argument is always the
- * component to fall back to. See originalFrom() in mangaTools.tsx.
+ * A patch callback.
+ *
+ * `before` and `instead` are both handed the original arguments; `instead` has
+ * `next()` appended, and what that returns is the original component — so for
+ * those two the last argument is the component to fall back to (see originalFrom).
+ * `after` is the odd one out: Stash appends the *rendered result* instead, and the
+ * callback is expected to return it (see resultFrom).
  */
 export type MangaToolsPatchFn = (...args: unknown[]) => unknown;
 
@@ -434,6 +438,18 @@ export interface IPluginApi {
      */
     before(target: string, fn: MangaToolsPatchFn): void;
     instead(target: string, fn: MangaToolsPatchFn): void;
+    /**
+     * Wraps a registered component's *output*. The callback receives the
+     * arguments with the rendered result appended, and returns what should be
+     * rendered instead — which, to add something, is the result and then it.
+     *
+     * Prefer this to `instead` whenever the original is only being appended to:
+     * it never calls the original component, so a component with hooks inside
+     * (GalleryCard.Overlays uses useMemo) cannot be broken by the patch, and it
+     * composes with another plugin's `instead` on the same target, which sees
+     * the original rather than whatever this plugin made of it.
+     */
+    after(target: string, fn: MangaToolsPatchFn): void;
   };
 }
 
