@@ -18,12 +18,16 @@
  *     which narrows the list to one language
  *
  * A second attribute, the censorship mark, works the same way and lives in
- * `plugin.mangaTools.censorship`. It surfaces in two places:
+ * `plugin.mangaTools.censorship`. It is a two-valued field rather than a boolean:
+ * "not marked" is the absence of the key, which is what the selector's own clear
+ * button produces. It surfaces in four places:
  *
+ *   - a selector on the gallery edit page, beside the language one
+ *   - a mark on the gallery detail page's toolbar, beside Stash's organized
+ *     button — the same icons, but a mark rather than a control
+ *   - a row in the details tab's block, as icon and word
  *   - an icon at the end of the gallery card's popover row, for the two marked
  *     states only — an unmarked gallery shows nothing, since most are unmarked
- *   - a button on the gallery detail page's toolbar, beside Stash's organized
- *     button, cycling not marked → censored → uncensored
  *
  * `languages.ts` holds the codes and their flags, `fields.ts` the field names
  * and the generic read/write helpers, `language-filter.tsx` the sidebar filter.
