@@ -137,6 +137,23 @@
   gap: 0.45rem;
 }
 
+/*
+ * The icon inside one of those options — the censorship dropdown's, since the
+ * language one draws a flag instead.
+ *
+ * Stash's index.scss has an unscoped `.fa-icon { margin: 0 0.4rem }`, so every
+ * icon carries a margin on both sides unless something takes it off. This icon is
+ * already spaced by the option's own `gap`, so the margin lands as a second gap
+ * and the option reads wider than the ones with flags in them.
+ *
+ * Scoped to `.manga-tools-option`, which is this plugin's own class, so nothing
+ * else on the page is touched — the details block's icon has a rule of its own
+ * for the same reason, and neither reaches the other.
+ */
+.manga-tools-option .fa-icon {
+  margin: 0;
+}
+
 /* biome-ignore lint/style/noDescendingSpecificity: ordered with the rest of the
    flag rules rather than by specificity — nothing here depends on the order, and
    the file reads in the order the pieces appear on screen. */
