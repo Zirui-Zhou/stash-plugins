@@ -11,6 +11,11 @@
   "mangaTools.settings.showCoverBadge.heading": "在封面显示语言",
   "mangaTools.settings.showCoverBadge.description": "画廊封面右下角的徽章。关掉国旗时显示语言名称而不是国旗。",
 
+  "mangaTools.settings.openDetailsBlock.heading": "简介的漫画信息默认展开",
+  "mangaTools.settings.openDetailsBlock.description": "画廊简介页里的那一节。收起时，那一行标题就是「这里有一节」的说明。这只决定打开时的默认状态，不决定它能不能打开。",
+  "mangaTools.settings.openEditBlock.heading": "编辑页的漫画信息默认展开",
+  "mangaTools.settings.openEditBlock.description": "画廊编辑表单里的那一块，语言和修正在那里设置。这只决定打开时的默认状态，不决定它能不能打开.",
+
   "mangaTools.manga.mark": "标记为漫画",
   "mangaTools.manga.marked": "漫画",
 

@@ -1292,20 +1292,40 @@ assert.deepStrictEqual(
   "the current value should be the enabled set"
 );
 
-// The two switches, laid out like Stash's own BooleanSetting.
+// The switches, laid out like Stash's own BooleanSetting, in the order the page
+// shows them.
 const switches = [];
 find(settingsEl, (n) => {
   if (n.type === "Switch") switches.push(n);
   return false;
 });
-assert.strictEqual(switches.length, 2, "both switches should render");
-assert.strictEqual(switches[0].props.id, "mangaTools-showFlags");
+assert.deepStrictEqual(
+  switches.map((n) => n.props.id),
+  [
+    "mangaTools-showFlags",
+    "mangaTools-showCoverBadge",
+    "mangaTools-openDetailsBlock",
+    "mangaTools-openEditBlock",
+  ],
+  "all four should render"
+);
 assert.strictEqual(switches[0].props.checked, true, "flags default to on");
-assert.strictEqual(switches[1].props.id, "mangaTools-showCoverBadge");
 assert.strictEqual(
   switches[1].props.checked,
   true,
   "the cover badge defaults to on"
+);
+// The two defaults are not the same value, which is the point of them being two
+// settings: a section of a dense page starts folded, a field does not.
+assert.strictEqual(
+  switches[2].props.checked,
+  false,
+  "the details block starts collapsed"
+);
+assert.strictEqual(
+  switches[3].props.checked,
+  true,
+  "the edit block starts open — it holds the only way to set a language"
 );
 
 // Selecting a new set writes it back through configurePlugin and updates the
@@ -1319,6 +1339,8 @@ assert.deepStrictEqual(
       enabledLanguages: "ja,zh-Hans",
       showFlags: true,
       showCoverBadge: true,
+      openDetailsBlock: false,
+      openEditBlock: true,
     },
   },
   "every setting is written together, so replace-vs-merge cannot matter"
@@ -1338,6 +1360,20 @@ assert.strictEqual(
   "clearing should restore null (all languages)"
 );
 
+// Flipping a block's default updates the shared state and persists the lot,
+// exactly as the display switches do.
+switches[2].props.onChange();
+assert.strictEqual(NS.openDetailsBlock, true, "the details default flips");
+assert.strictEqual(
+  capturedConfigWrite.input.openDetailsBlock,
+  true,
+  "and the whole map is written again"
+);
+// Put back by hand rather than by calling the switch again: it toggles the
+// `checked` it was *rendered* with, so a second call in the same render sets the
+// same value a second time.
+NS.openDetailsBlock = false;
+
 // Flipping a switch updates the shared state and persists the lot.
 switches[0].props.onChange();
 assert.strictEqual(
@@ -1347,7 +1383,13 @@ assert.strictEqual(
 );
 assert.deepStrictEqual(capturedConfigWrite, {
   plugin_id: "mangaTools",
-  input: { enabledLanguages: "", showFlags: false, showCoverBadge: true },
+  input: {
+    enabledLanguages: "",
+    showFlags: false,
+    showCoverBadge: true,
+    openDetailsBlock: false,
+    openEditBlock: true,
+  },
 });
 NS.showFlags = true;
 console.log(
@@ -4354,8 +4396,38 @@ setTimeout(() => {
   assert.ok(hasText(empty, "—"), "an unset value reads as a dash");
   assert.ok(hasText(empty, "未标注"), "and an unmarked gallery says so");
 
+  // The two settings decide the state each block opens in — and only that, which
+  // is why a block already on screen keeps whatever the reader did to it.
+  NS.openDetailsBlock = true;
+  assert.strictEqual(
+    find(panelOf(panelValues), (n) => n.type === "Collapse").props.in,
+    true,
+    "the details block opens when the setting says so"
+  );
+  NS.openDetailsBlock = false;
+  assert.strictEqual(
+    find(panelOf(panelValues), (n) => n.type === "Collapse").props.in,
+    false,
+    "and starts folded by default"
+  );
+
+  // The edit block has no Collapse — it shows or hides the rows themselves, so
+  // that the field row's negative margins keep cancelling against the form's own
+  // column rather than a wrapper of ours.
+  NS.openEditBlock = false;
+  assert.strictEqual(
+    find(editField({ [NS.FIELD_NAME]: "ja" }).node, (n) => n.type === "label"),
+    null,
+    "a folded edit block draws no rows"
+  );
+  NS.openEditBlock = true;
+  assert.ok(
+    find(editField({ [NS.FIELD_NAME]: "ja" }).node, (n) => n.type === "label"),
+    "and an open one draws them"
+  );
+
   console.log(
-    "✓ manga panel (a disclosure in the details tab: word / rows / icon guard)"
+    "✓ manga panel (a disclosure in the details tab: word / rows / icon guard / both defaults)"
   );
 
   // ── 13d. A gallery that is not manga is left alone ───────────────

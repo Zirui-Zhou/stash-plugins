@@ -11,6 +11,11 @@
   "mangaTools.settings.showCoverBadge.heading": "Show the language on gallery covers",
   "mangaTools.settings.showCoverBadge.description": "The badge in the bottom-right of a gallery's cover. With flags turned off it shows the language name instead of a flag.",
 
+  "mangaTools.settings.openDetailsBlock.heading": "Start the details block expanded",
+  "mangaTools.settings.openDetailsBlock.description": "The Manga info section in a gallery's details tab. Collapsed, its heading is what says the section is there. This decides the state a block opens in, not whether it can be opened.",
+  "mangaTools.settings.openEditBlock.heading": "Start the edit block expanded",
+  "mangaTools.settings.openEditBlock.description": "The Manga info block in a gallery's edit form, where its language and censorship are set. This decides the state a block opens in, not whether it can be opened.",
+
   "mangaTools.manga.mark": "Mark as manga",
   "mangaTools.manga.marked": "Manga",
 

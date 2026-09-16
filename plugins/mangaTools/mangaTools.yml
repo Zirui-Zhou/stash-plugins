@@ -52,3 +52,11 @@ settings:
     displayName: Show the language on gallery covers
     description: The badge in the bottom-right of a gallery's cover. With flags turned off it shows the language name instead of a flag.
     type: BOOLEAN
+  openDetailsBlock:
+    displayName: Start the details block expanded
+    description: The Manga info section in a gallery's details tab. Collapsed, the heading is what says the section is there. Only affects the state a block opens in.
+    type: BOOLEAN
+  openEditBlock:
+    displayName: Start the edit block expanded
+    description: The Manga info block in a gallery's edit form, holding the language and censorship selectors. Only affects the state a block opens in.
+    type: BOOLEAN

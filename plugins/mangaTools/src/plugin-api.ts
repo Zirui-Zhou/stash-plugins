@@ -115,6 +115,12 @@ export interface MangaToolsNamespace {
   showFlags: boolean;
   /** Whether the cover badge is drawn. Independent of showFlags. */
   showCoverBadge: boolean;
+  /**
+   * The state the two Manga info blocks open in. Only that — a block already on
+   * screen keeps whatever the reader did to it.
+   */
+  openDetailsBlock: boolean;
+  openEditBlock: boolean;
   parseFlag(raw: unknown, fallback: boolean): boolean;
 
   /**

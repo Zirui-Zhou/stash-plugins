@@ -516,6 +516,14 @@ function refreshSettings(): void {
         pluginCfg ? pluginCfg.showCoverBadge : null,
         true
       );
+      NS.openDetailsBlock = NS.parseFlag(
+        pluginCfg ? pluginCfg.openDetailsBlock : null,
+        DETAILS_OPEN_BY_DEFAULT
+      );
+      NS.openEditBlock = NS.parseFlag(
+        pluginCfg ? pluginCfg.openEditBlock : null,
+        EDIT_OPEN_BY_DEFAULT
+      );
       emit();
     })
     .catch((e) => {
@@ -1286,7 +1294,7 @@ function MangaFieldBlock(props: {
 
   const intl = PluginApi.libraries.Intl.useIntl();
   const Select = resolveSelect();
-  const state = React.useState(FIELD_OPEN_BY_DEFAULT);
+  const state = React.useState(NS.openEditBlock);
   const open = state[0];
   const setOpen = state[1];
   const Solid = PluginApi.libraries.FontAwesomeSolid || {};
@@ -1558,6 +1566,8 @@ function MangaToolsSettings(props: { pluginID: string }) {
             : "",
           showFlags: NS.showFlags,
           showCoverBadge: NS.showCoverBadge,
+          openDetailsBlock: NS.openDetailsBlock,
+          openEditBlock: NS.openEditBlock,
         },
       },
     }).catch((e) => {
@@ -1634,6 +1644,30 @@ function MangaToolsSettings(props: { pluginID: string }) {
         checked={NS.showCoverBadge}
         onChange={(next) => {
           NS.showCoverBadge = next;
+          emit();
+          persist();
+        }}
+      />
+
+      <BooleanSetting
+        id="mangaTools-openDetailsBlock"
+        heading={t(intl, "mangaTools.settings.openDetailsBlock.heading")}
+        subHeading={t(intl, "mangaTools.settings.openDetailsBlock.description")}
+        checked={NS.openDetailsBlock}
+        onChange={(next) => {
+          NS.openDetailsBlock = next;
+          emit();
+          persist();
+        }}
+      />
+
+      <BooleanSetting
+        id="mangaTools-openEditBlock"
+        heading={t(intl, "mangaTools.settings.openEditBlock.heading")}
+        subHeading={t(intl, "mangaTools.settings.openEditBlock.description")}
+        checked={NS.openEditBlock}
+        onChange={(next) => {
+          NS.openEditBlock = next;
           emit();
           persist();
         }}
@@ -2025,22 +2059,25 @@ class GuardedBlock extends React.Component<
 }
 
 /**
- * Whether the block starts open.
+ * The state each block opens in, and the defaults for the two settings that
+ * decide it.
  *
- * Collapsed, because the details tab already has a lot on it and the header is
- * what says this section exists. One word to change if that reads as hidden
- * rather than tidy.
+ * The details one starts collapsed: that tab already has a lot on it, and the
+ * heading is what says the section exists. The edit one starts open, because
+ * there it is not a section of a page full of sections — it is a field, and the
+ * dropdown inside it is the only way to set a language at all, so a fold that
+ * starts closed would be a fold over the feature.
+ *
+ * Only the *initial* state, either way: a setting is about how a block opens, not
+ * about whether it can be opened, so changing it does not reach into a block that
+ * is already on screen. `NS.openDetailsBlock` / `NS.openEditBlock` hold the live
+ * values, which `refreshSettings` overwrites from the plugin config.
  */
-const PANEL_OPEN_BY_DEFAULT = false;
+const DETAILS_OPEN_BY_DEFAULT = false;
+const EDIT_OPEN_BY_DEFAULT = true;
 
-/**
- * The same block on the gallery edit page, and the opposite default.
- *
- * Open, because there it is not a section of a page full of sections — it is a
- * field, and the dropdown inside it is the only way to set a language at all.
- * A fold that starts closed would be a fold over the feature.
- */
-const FIELD_OPEN_BY_DEFAULT = true;
+NS.openDetailsBlock = DETAILS_OPEN_BY_DEFAULT;
+NS.openEditBlock = EDIT_OPEN_BY_DEFAULT;
 
 /**
  * The gallery's manga attributes, as labelled rows.
@@ -2055,7 +2092,7 @@ function MangaDetailsPanel(props: { values: CustomFieldsMap }) {
   useGlobalVersion();
 
   const intl = PluginApi.libraries.Intl.useIntl();
-  const state = React.useState(PANEL_OPEN_BY_DEFAULT);
+  const state = React.useState(NS.openDetailsBlock);
   const open = state[0];
   const setOpen = state[1];
 
