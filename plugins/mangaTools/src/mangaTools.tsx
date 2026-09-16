@@ -11,7 +11,8 @@
  *
  *   - a flag badge on the bottom of the gallery card cover
  *   - a dropdown on the gallery edit page, so you never type a code by hand
- *   - the same dropdown in the bulk edit dialog, riding along with Apply
+ *   - the same dropdown in the bulk edit dialog, gated by the manga mark and
+ *     riding along with Apply
  *   - a collapsible block in the details tab, where the raw code would be — the
  *     language as its flag and localised name, the censorship mark beside it
  *   - a filter section in the gallery list's sidebar (language-filter.tsx),
@@ -24,6 +25,7 @@
  *
  *   - a selector on the gallery edit page, beside the language one
  *   - a row in the details tab's block, as icon and word
+ *   - a selector in the bulk edit dialog, gated the same way
  *
  * A third field decides whether any of it applies. A gallery carrying
  * `plugin.mangaTools.manga` is manga; one that does not is an ordinary Stash
@@ -1570,26 +1572,35 @@ function MangaToolsSettings(props: { pluginID: string }) {
 
 // ─────────────────────────── Bulk edit dialog ───────────────────────────
 
-/** What the bulk row is about to do to the selected galleries */
-type BulkLanguagePending = { kind: "set"; value: string } | { kind: "cleared" };
+/** What a bulk select is about to do to one of the two valued fields */
+type BulkValuePending = { kind: "set"; value: string } | { kind: "remove" };
 
 /**
- * The language the bulk dialog is about to apply, or null when the user has not
- * touched the row.
+ * What the bulk dialog is about to do to each of this plugin's fields.
  *
- * This is state the dialog itself does not know about, and cannot be given:
+ * State the dialog itself does not know about, and cannot be given:
  * EditGalleriesDialog is a plain React.FC (not a PatchComponent) and keeps its
  * pending edits in its own useState, so there is no way to add a field to them.
- * The row therefore lives outside that state and its value is merged into the
- * outgoing mutation instead — see installBulkLink.
+ * The rows therefore live outside that state and their values are merged into
+ * the outgoing mutation instead — see installBulkLink.
  *
- * It is dropped once the mutation succeeds and when the dialog closes, so a
- * cancelled dialog leaves nothing behind.
+ * `null` means "leave the field alone". A select's ✗ clears back to null; its
+ * "remove" option is the only way to empty a field across a whole selection.
+ * The two are deliberately distinct — "do not change" and "delete" are not the
+ * same thing, and a bulk dialog that could only do the first would be unable to
+ * strip a value Stash's own edit form can clear.
  *
- * There is deliberately no "remove" state: the field mirrors Stash's own studio
- * selector, where clearing the box means "do not change this", not "empty it".
+ * `bulkManga` is the master. The mark is what makes a gallery the plugin's at
+ * all, so the other two rows are only drawn while it is "mark"; and "unmark"
+ * wins over whatever they hold, because a gallery that stops being manga also
+ * stops carrying their values. See selectedMangaAggregate for the three states.
+ *
+ * All three are dropped once the mutation succeeds and when the dialog closes,
+ * so a cancelled dialog leaves nothing behind.
  */
-let bulkPending: BulkLanguagePending | null = null;
+let bulkLanguage: BulkValuePending | null = null;
+let bulkCensorship: BulkValuePending | null = null;
+let bulkManga: "mark" | "unmark" | null = null;
 
 /** Ids currently selected in the gallery list, captured from GalleryList */
 let selectedGalleryIds: string[] = [];
@@ -1646,6 +1657,43 @@ function selectedLanguageAggregate(): string | null {
   return first || null;
 }
 
+/**
+ * The censorship every selected gallery shares, or null when they differ (or
+ * when none of them carries one). The counterpart of selectedLanguageAggregate
+ * above, which this plugin's own three-valued field needs just as much as the
+ * language field does.
+ */
+function selectedCensorshipAggregate(): string | null {
+  if (!selectedGalleryIds.length) return null;
+
+  const first = censorshipOf(store.get(selectedGalleryIds[0]));
+  for (let i = 1; i < selectedGalleryIds.length; i++) {
+    if (censorshipOf(store.get(selectedGalleryIds[i])) !== first) return null;
+  }
+
+  return first || null;
+}
+
+/**
+ * Whether every selected gallery is manga, none of them is, or the two are
+ * mixed. The three states the manga mark's checkbox has to express — a checkbox
+ * can be checked, unchecked, or indeterminate, and which of those it shows is
+ * exactly this.
+ */
+function selectedMangaAggregate(): "all" | "none" | "mixed" {
+  if (!selectedGalleryIds.length) return "none";
+
+  let anyManga = false;
+  let anyOther = false;
+  for (let i = 0; i < selectedGalleryIds.length; i++) {
+    if (NS.isManga(store.get(selectedGalleryIds[i]))) anyManga = true;
+    else anyOther = true;
+    if (anyManga && anyOther) return "mixed";
+  }
+
+  return anyManga ? "all" : "none";
+}
+
 /** Set once, so the link chain is never wrapped twice */
 let bulkLinkInstalled = false;
 
@@ -1678,21 +1726,46 @@ function isGalleryBulkUpdate(query: unknown): boolean {
 }
 
 /**
- * Merges the pending language into a bulk gallery update, in place.
+ * Merges the pending fields into a bulk gallery update, in place.
  *
  * CustomFieldsInput is what makes this safe: `partial` updates just the named
- * keys, so the rest of every gallery's custom fields is left alone. Nothing is
- * merged when the user has not actually picked a language — a bulk edit of
- * photographers must go out exactly as Stash built it.
+ * keys, so the rest of every gallery's custom fields is left alone, and `remove`
+ * deletes only the named keys. Both may appear at once — the two pendings that
+ * can coexist are a "set" on one field and a "remove" on another, which the
+ * schema allows in a single input.
+ *
+ * Nothing is merged when the user has not touched any field — a bulk edit of
+ * photographers must go out exactly as Stash built it. `bulkManga` is the one
+ * pending the others defer to: unmarking clears every field this plugin owns, so
+ * when it is set the other two are ignored entirely; and only "mark" writes the
+ * manga field itself, since a selection that is already all-manga must not be
+ * rewritten.
  *
  * @returns true when the operation was modified
  */
-function applyPendingLanguage(operation: MangaToolsApolloOperation): boolean {
-  if (bulkPending?.kind !== "set") return false;
+function applyPendingFields(operation: MangaToolsApolloOperation): boolean {
+  const partial: { [name: string]: string } = {};
+  const remove: string[] = [];
 
-  // The route is checked here as well as by the row's mount, so "a language is
-  // only ever written on a gallery page" is a stated constraint rather than a
-  // consequence of where the row happens to render.
+  if (bulkManga === "unmark") {
+    remove.push(FIELD_NAME, CENSORSHIP_FIELD_NAME, MANGA_FIELD_NAME);
+  } else {
+    if (bulkManga === "mark") partial[MANGA_FIELD_NAME] = NS.MANGA_VALUE;
+
+    if (bulkLanguage?.kind === "set") partial[FIELD_NAME] = bulkLanguage.value;
+    else if (bulkLanguage?.kind === "remove") remove.push(FIELD_NAME);
+
+    if (bulkCensorship?.kind === "set")
+      partial[CENSORSHIP_FIELD_NAME] = bulkCensorship.value;
+    else if (bulkCensorship?.kind === "remove")
+      remove.push(CENSORSHIP_FIELD_NAME);
+  }
+
+  if (!Object.keys(partial).length && !remove.length) return false;
+
+  // The route is checked here as well as by the row's mount, so "these fields
+  // are only ever written on a gallery page" is a stated constraint rather than
+  // a consequence of where the row happens to render.
   if (!isGalleryContext()) return false;
 
   if (!isGalleryBulkUpdate(operation.query)) return false;
@@ -1702,7 +1775,9 @@ function applyPendingLanguage(operation: MangaToolsApolloOperation): boolean {
     : undefined;
   if (!input || !Array.isArray(input.ids)) return false;
 
-  const fields = { partial: { [FIELD_NAME]: bulkPending.value } };
+  const fields: { partial?: Record<string, string>; remove?: string[] } = {};
+  if (Object.keys(partial).length) fields.partial = partial;
+  if (remove.length) fields.remove = remove;
 
   operation.variables = Object.assign({}, operation.variables, {
     input: Object.assign({}, input, {
@@ -1718,7 +1793,7 @@ function applyPendingLanguage(operation: MangaToolsApolloOperation): boolean {
 }
 
 /**
- * Hooks Stash's Apollo link chain so the pending language rides along with the
+ * Hooks Stash's Apollo link chain so the pending fields ride along with the
  * dialog's own Apply.
  *
  * Why a link rather than patching the dialog: the dialog builds its mutation
@@ -1748,7 +1823,7 @@ function installBulkLink(): void {
     !client.link
   ) {
     console.error(
-      "[mangaTools] ApolloLink/setLink unavailable — languages cannot be set from the bulk edit dialog"
+      "[mangaTools] ApolloLink/setLink unavailable — the manga fields cannot be set from the bulk edit dialog"
     );
     return;
   }
@@ -1760,18 +1835,20 @@ function installBulkLink(): void {
   client.setLink(
     Apollo.ApolloLink.from([
       new Apollo.ApolloLink((operation, forward) => {
-        if (!applyPendingLanguage(operation)) {
+        if (!applyPendingFields(operation)) {
           return forward(operation);
         }
 
         console.info(
-          "[mangaTools] bulk update: sending the language with the dialog's own update"
+          "[mangaTools] bulk update: sending the manga fields with the dialog's own update"
         );
 
         // Cleared only once the update actually succeeded, so a failed Apply
         // can simply be retried with the row still filled in.
         return forward(operation).map((result) => {
-          bulkPending = null;
+          bulkLanguage = null;
+          bulkCensorship = null;
+          bulkManga = null;
 
           // The badges read the plugin's own store, which this update has just
           // invalidated. Without this the covers keep the old flag until the
@@ -1789,19 +1866,33 @@ function installBulkLink(): void {
   bulkLinkInstalled = true;
 }
 
+/** The "remove" option's value — cannot collide with a language code or a censorship value */
+const BULK_REMOVE_VALUE = "__manga_tools_remove__";
+
 /**
- * The bulk edit dialog's language row, rendered through a portal into a mount
+ * The bulk edit dialog's manga rows, rendered through a portal into a mount
  * point inserted between Stash's "studio" and "performers" rows.
  *
- * The value is deliberately **not** applied as it is picked: it is merged into
- * the dialog's own bulk update when Apply is pressed, so Cancel discards it
- * exactly like every other field in that dialog.
+ * Three rows, gated by the first. The mark is a tri-state checkbox — the same
+ * shape Stash's own "organized" field takes — because a selection can be all,
+ * none, or a mix, and a checkbox is the one control that says all three. The
+ * language and censorship selects are only drawn while the selection is being
+ * kept or made manga: the mark is what makes a gallery this plugin's at all, so
+ * offering those fields over a selection that is not manga would be writing
+ * values onto galleries that would then not display them. Unchecking a mark
+ * that exists shows a warning instead, and Apply is what actually removes it.
+ *
+ * The values are deliberately **not** applied as they are picked: they are
+ * merged into the dialog's own bulk update when Apply is pressed, so Cancel
+ * discards them exactly like every other field in that dialog.
  */
-function BulkLanguageRow() {
+function BulkFieldsRow() {
   useGlobalVersion();
 
   const intl = PluginApi.libraries.Intl.useIntl();
   const Select = resolveSelect();
+  const Solid = PluginApi.libraries.FontAwesomeSolid || {};
+  const Icon = PluginApi.components.Icon;
 
   const host = isGalleryContext() ? ensureBulkFieldHost() : null;
   const bump = React.useState(0)[1];
@@ -1820,13 +1911,15 @@ function BulkLanguageRow() {
     }
   });
 
-  // Losing the row means the dialog closed, so the pending value is no longer
+  // Losing the row means the dialog closed, so the pending values are no longer
   // wanted. Checked against the DOM rather than unconditionally, so an
-  // unrelated re-render cannot throw the value away while the dialog is open.
+  // unrelated re-render cannot throw them away while the dialog is open.
   React.useEffect(
     () => () => {
       if (!document.querySelector(BULK_ANCHOR)) {
-        bulkPending = null;
+        bulkLanguage = null;
+        bulkCensorship = null;
+        bulkManga = null;
       }
     },
     []
@@ -1834,23 +1927,106 @@ function BulkLanguageRow() {
 
   if (!isGalleryContext() || !Select || !host) return null;
 
+  const cls = readNativeFieldClasses(BULK_ANCHOR) || {
+    group: "row",
+    label: "col-form-label col-3",
+    control: "col-9",
+  };
+
+  // The mark, and the third state its checkbox has to express. `tri` is the
+  // checkbox's state as a boolean *or* the indeterminate it shows for a mixed
+  // selection — which is why it is not just `bulkManga !== "unmark"`.
+  const aggregate = selectedMangaAggregate();
+  const tri =
+    bulkManga === "mark"
+      ? true
+      : bulkManga === "unmark"
+        ? false
+        : aggregate === "all"
+          ? true
+          : aggregate === "none"
+            ? false
+            : undefined;
+
+  // React has no `indeterminate` prop, so it is set on the DOM node directly —
+  // the same thing Stash's IndeterminateCheckbox does with its ref.
+  const setIndeterminate = (el: HTMLInputElement | null) => {
+    if (el) el.indeterminate = tri === undefined;
+  };
+
+  // The cycle depends on what the selection already is, so the "no change" rest
+  // state is one click away in every case: all↔unmark, none↔mark, and for a
+  // mix, keep→mark→unmark→keep. Marking first matches a checkbox the reader
+  // has to confirm before it will ever remove a mark.
+  const cycleManga = () => {
+    if (aggregate === "all") {
+      bulkManga = bulkManga === "unmark" ? null : "unmark";
+    } else if (aggregate === "none") {
+      bulkManga = bulkManga === "mark" ? null : "mark";
+    } else {
+      bulkManga =
+        bulkManga === null ? "mark" : bulkManga === "mark" ? "unmark" : null;
+    }
+    emit();
+  };
+
+  const mangaRow = (
+    <div className={cls.group} data-field="manga_tools_manga">
+      <label className={cls.label} htmlFor="manga_tools_manga">
+        {t(intl, "mangaTools.manga.marked")}
+      </label>
+      <div className={cls.control}>
+        <input
+          type="checkbox"
+          className="form-check-input"
+          id="manga_tools_manga"
+          ref={setIndeterminate}
+          checked={tri === true}
+          onChange={cycleManga}
+        />
+      </div>
+    </div>
+  );
+
+  // The one option both selects share, and the way each draws it. It is a real
+  // option rather than the clear button, because clearing already means "leave
+  // this field alone" — the two must both be reachable, and they are opposites.
+  const removeOption: MangaToolsOption = {
+    value: BULK_REMOVE_VALUE,
+    label: t(intl, "mangaTools.bulk.remove"),
+    flag: null,
+  };
+  const banIcon = Solid.faBan || null;
+  const removeLabel = (
+    <span className="manga-tools-option">
+      {banIcon ? <Icon icon={banIcon} /> : null}
+      {removeOption.label}
+    </span>
+  );
+  const formatLanguageWithRemove = (opt: MangaToolsOption) =>
+    opt.value === BULK_REMOVE_VALUE ? removeLabel : formatLanguageOption(opt);
+  const formatCensorshipWithRemove = (opt: { value: string; label: string }) =>
+    opt.value === BULK_REMOVE_VALUE ? removeLabel : formatCensorshipOption(opt);
+
   let options: MangaToolsOption[] = NS.languageOptions(intl.locale).filter(
     (o) => !NS.enabledLanguages || NS.enabledLanguages.has(o.value)
   );
 
-  const pending = bulkPending;
-
   // Show exactly what is about to happen: what the user picked, otherwise the
   // selection's shared language. A mixed selection shows the placeholder — the
-  // same way the studio field behaves.
-  const shown =
-    pending && pending.kind === "set"
-      ? pending.value
-      : pending
-        ? ""
+  // same way the studio field behaves — and the remove option is its own state
+  // rather than an empty box, because an empty box means "leave alone".
+  const langShown =
+    bulkLanguage?.kind === "set"
+      ? bulkLanguage.value
+      : bulkLanguage?.kind === "remove"
+        ? BULK_REMOVE_VALUE
         : selectedLanguageAggregate() || "";
 
-  const current = shown ? NS.describe(shown, intl.locale) : null;
+  const current =
+    langShown && langShown !== BULK_REMOVE_VALUE
+      ? NS.describe(langShown, intl.locale)
+      : null;
 
   // A code that is not in the enabled list still has to be shown while it is
   // sitting in the row, or the selection would look like it was ignored.
@@ -1862,17 +2038,14 @@ function BulkLanguageRow() {
     ];
   }
 
-  const selected = current
-    ? { value: current.code, label: current.name, flag: current.flag }
-    : null;
+  const selected =
+    langShown === BULK_REMOVE_VALUE
+      ? removeOption
+      : current
+        ? { value: current.code, label: current.name, flag: current.flag }
+        : null;
 
-  const cls = readNativeFieldClasses(BULK_ANCHOR) || {
-    group: "row",
-    label: "col-form-label col-3",
-    control: "col-9",
-  };
-
-  const field = (
+  const languageRow = (
     <div className={cls.group} data-field="manga_tools_language">
       <label className={cls.label} htmlFor="manga_tools_language">
         {fieldLabel(intl)}
@@ -1888,15 +2061,19 @@ function BulkLanguageRow() {
           menuPortalTarget={document.body}
           placeholder={t(intl, "mangaTools.select.placeholder")}
           value={selected}
-          options={options}
-          formatOptionLabel={formatLanguageOption}
+          options={[...options, removeOption]}
+          formatOptionLabel={formatLanguageWithRemove}
           components={{ IndicatorSeparator: () => null }}
           // Clearing means "leave the language alone", exactly as clearing the
           // studio field means "leave the studio alone" — neither sends a value.
           onChange={(opt: MangaToolsOption | null) => {
-            bulkPending = opt
-              ? { kind: "set", value: opt.value }
-              : { kind: "cleared" };
+            if (!opt) {
+              bulkLanguage = null;
+            } else if (opt.value === BULK_REMOVE_VALUE) {
+              bulkLanguage = { kind: "remove" };
+            } else {
+              bulkLanguage = { kind: "set", value: opt.value };
+            }
             emit();
           }}
         />
@@ -1904,7 +2081,79 @@ function BulkLanguageRow() {
     </div>
   );
 
-  return PluginApi.ReactDOM.createPortal(field, host);
+  const censorshipOptions = [
+    { value: "censored", label: t(intl, "mangaTools.censorship.censored") },
+    {
+      value: "uncensored",
+      label: t(intl, "mangaTools.censorship.uncensored"),
+    },
+  ];
+
+  const censoredShown =
+    bulkCensorship?.kind === "set"
+      ? bulkCensorship.value
+      : bulkCensorship?.kind === "remove"
+        ? BULK_REMOVE_VALUE
+        : selectedCensorshipAggregate() || "";
+
+  const censoredSelected =
+    censoredShown === BULK_REMOVE_VALUE
+      ? removeOption
+      : censoredShown
+        ? {
+            value: censoredShown,
+            label: NS.censorshipLabel(intl, censoredShown),
+          }
+        : null;
+
+  const censorshipRow = (
+    <div className={cls.group} data-field="manga_tools_censorship">
+      <label className={cls.label} htmlFor="manga_tools_censorship">
+        {t(intl, "mangaTools.censorship.heading")}
+      </label>
+      <div className={cls.control}>
+        <Select
+          className="manga-tools-select"
+          classNamePrefix="react-select"
+          inputId="manga_tools_censorship"
+          isClearable
+          isSearchable={false}
+          menuPortalTarget={document.body}
+          placeholder={t(intl, "mangaTools.censorship.unset")}
+          value={censoredSelected}
+          options={[...censorshipOptions, removeOption]}
+          formatOptionLabel={formatCensorshipWithRemove}
+          components={{ IndicatorSeparator: () => null }}
+          onChange={(opt: { value: string } | null) => {
+            if (!opt) {
+              bulkCensorship = null;
+            } else if (opt.value === BULK_REMOVE_VALUE) {
+              bulkCensorship = { kind: "remove" };
+            } else {
+              bulkCensorship = { kind: "set", value: opt.value };
+            }
+            emit();
+          }}
+        />
+      </div>
+    </div>
+  );
+
+  // The gate in order: a warning while the reader is unmarking, the mark itself,
+  // and only then the two fields it guards.
+  return PluginApi.ReactDOM.createPortal(
+    <>
+      {tri === false && aggregate !== "none" ? (
+        <div className="alert alert-warning" role="alert">
+          {t(intl, "mangaTools.bulk.unmarkWarning")}
+        </div>
+      ) : null}
+      {mangaRow}
+      {tri === true ? languageRow : null}
+      {tri === true ? censorshipRow : null}
+    </>,
+    host
+  );
 }
 
 // ─────────────────────────── The manga panel ───────────────────────────
@@ -2265,7 +2514,7 @@ function ensureFieldHost(): HTMLElement | null {
   return ensureHostAfter(EDIT_ANCHOR, "edit");
 }
 
-/** The bulk edit dialog's mount point (see BulkLanguageRow) */
+/** The bulk edit dialog's mount point (see BulkFieldsRow) */
 function ensureBulkFieldHost(): HTMLElement | null {
   return ensureHostAfter(BULK_ANCHOR, "bulk");
 }
@@ -2427,10 +2676,10 @@ registerPatch("instead", "GalleryList", (...args: unknown[]) => {
   );
 });
 
-// 8. Bulk edit: mounts the language row into the bulk edit dialog. The dialog
+// 8. Bulk edit: mounts the manga rows into the bulk edit dialog. The dialog
 //    itself is not a PatchComponent, so RatingSystem — the only patchable
-//    component it renders — is used purely as a mount point; the row is
-//    positioned by the DOM anchor and its value reaches the mutation through
+//    component it renders — is used purely as a mount point; the rows are
+//    positioned by the DOM anchor and their values reach the mutation through
 //    installBulkLink, not through the dialog.
 //
 //    `after` for the same reason as the card, and one more: RatingSystem is
@@ -2443,7 +2692,7 @@ registerPatch("after", "RatingSystem", (...args: unknown[]) => {
   return (
     <>
       {resultFrom(args)}
-      <BulkLanguageRow />
+      <BulkFieldsRow />
     </>
   );
 });

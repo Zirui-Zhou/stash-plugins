@@ -4518,9 +4518,9 @@ setTimeout(() => {
     "✓ not manga (no badge, no card mark, no blocks — only the switch)"
   );
 
-  // ── 14. Bulk edit dialog: the language row rides along with Apply ──
+  // ── 14. Bulk edit dialog: the manga rows ride along with Apply ──
   // This runs here rather than with the other synchronous sections because the
-  // row's prefill comes from the plugin's gallery store, which only has data once
+  // rows' prefill comes from the plugin's gallery store, which only has data once
   // the refresh promise has settled.
   //
   // Stand in for EditGalleriesDialog's form: BulkUpdateFormGroup renders each row
@@ -4549,8 +4549,8 @@ setTimeout(() => {
   const selectGalleries = (ids) =>
     patchedBefore.GalleryList({ selectedIds: new Set(ids) }, undefined);
 
-  // The row is mounted by the RatingSystem patch; render the fragment it returns
-  // and follow the portal it makes.
+  // The rows are mounted by the RatingSystem patch; render the fragment it
+  // returns and follow the portal it makes.
   // Stash's own rating control, as the `after` patch is handed it.
   const ratingResult = { type: "RatingSystem", props: {} };
 
@@ -4559,17 +4559,41 @@ setTimeout(() => {
     const rowEl = frag.props.children[1];
     return rowEl.type(rowEl.props);
   };
-  const bulkSelectOf = () =>
+
+  // The component draws a fragment of [warning?, mark, language?, censorship?].
+  // The nulls are dropped, so this is exactly the rows that are on screen.
+  const bulkChildren = () => {
+    const kids = bulkRow().node.props.children;
+    return (Array.isArray(kids) ? kids : [kids]).filter(Boolean);
+  };
+  const selectOf = (inputId) =>
+    find(bulkRow().node, (n) => n.props && n.props.inputId === inputId);
+  const mangaBox = () =>
     find(
       bulkRow().node,
-      (n) => n.props && n.props.inputId === "manga_tools_language"
+      (n) =>
+        n.props &&
+        n.props.id === "manga_tools_manga" &&
+        n.props.type === "checkbox"
     );
+
+  // The mark's tri-state. React has no `indeterminate` prop, so the plugin sets
+  // it on the DOM node through the ref — probe it the way a real node would be.
+  const mangaState = () => {
+    const box = mangaBox();
+    const probe = {};
+    box.props.ref(probe);
+    return {
+      checked: box.props.checked,
+      indeterminate: probe.indeterminate === true,
+    };
+  };
 
   const b14 = bulkRow();
   assert.strictEqual(
     b14.__portal,
     true,
-    "the bulk row should render through a portal"
+    "the bulk rows should render through a portal"
   );
 
   const bulkHost = bulkForm.children[1];
@@ -4577,7 +4601,7 @@ setTimeout(() => {
   assert.strictEqual(
     bulkHost.previousElementSibling,
     bulkStudioRow,
-    "the row should go right after the studio row"
+    "the rows should go right after the studio row"
   );
   assert.strictEqual(
     bulkHost.nextElementSibling,
@@ -4586,72 +4610,152 @@ setTimeout(() => {
   );
   assert.strictEqual(b14.host, bulkHost);
 
-  // Structure and classes are copied from the native row, so it lines up with it
-  const bulkNode = b14.node;
-  assert.strictEqual(bulkNode.props.className, "row");
-  assert.strictEqual(bulkNode.props["data-field"], "manga_tools_language");
+  // Structure and classes are copied from the native row, so the rows line up
+  // with it. Nothing is selected yet, so only the mark is drawn.
+  const markRow = bulkChildren()[0];
+  assert.strictEqual(markRow.props.className, "row");
+  assert.strictEqual(markRow.props["data-field"], "manga_tools_manga");
   assert.strictEqual(
-    bulkNode.props.children[0].props.className,
+    markRow.props.children[0].props.className,
     "col-form-label col-3",
     "the label classes should be copied from the native row"
   );
-  assert.strictEqual(bulkNode.props.children[0].props.children, "语言");
+  assert.strictEqual(markRow.props.children[0].props.children, "漫画");
 
-  // Like the studio field: one value per gallery, cleared with the selector's own
-  // x. No extra button, and no way to blank the field across a selection.
-  assert.strictEqual(bulkSelectOf().props.isClearable, true);
+  // ── The mark is the gate ──
+  // Nothing selected reads as "not manga", so only the mark is drawn — no fields,
+  // no warning.
+  selectGalleries([]);
   assert.strictEqual(
-    find(bulkNode, (n) => n.props && n.props["aria-pressed"] !== undefined),
-    null,
-    "there should be no separate clear button"
+    bulkChildren().length,
+    1,
+    "an empty selection draws only the mark"
   );
-  assert.strictEqual(
-    bulkSelectOf().props.menuPortalTarget,
-    global.document.body,
-    "the menu has to escape the modal"
-  );
+  assert.deepStrictEqual(mangaState(), {
+    checked: false,
+    indeterminate: false,
+  });
 
-  // ── Prefill from the selection, the way the studio field does ──
-  // Gallery 1 and 6 are zh-Hans, 2 is zh-Hant, 4 has no language field at all.
+  // All-manga: the two fields appear, pre-filled from the selection. Gallery 1
+  // and 6 are zh-Hans; 1 is censored, 6 has no censorship value.
   selectGalleries(["1", "6"]);
+  assert.deepStrictEqual(mangaState(), { checked: true, indeterminate: false });
+  assert.deepStrictEqual(
+    bulkChildren().map((r) => r.props["data-field"]),
+    ["manga_tools_manga", "manga_tools_language", "manga_tools_censorship"],
+    "an all-manga selection shows the mark and both fields, in order"
+  );
   assert.strictEqual(
-    bulkSelectOf().props.value.value,
+    selectOf("manga_tools_language").props.value.value,
     "zh-Hans",
     "the whole selection agreeing should prefill that language"
   );
   assert.strictEqual(
-    bulkSelectOf().props.value.label,
+    selectOf("manga_tools_language").props.value.label,
     "简体中文",
     "in the UI language"
   );
-
-  selectGalleries(["1", "2"]);
   assert.strictEqual(
-    bulkSelectOf().props.value,
-    null,
-    "a mixed selection must not prefill"
-  );
-  assert.strictEqual(
-    bulkSelectOf().props.placeholder,
+    selectOf("manga_tools_language").props.placeholder,
     "选择语言…",
     "the placeholder is this plugin's own string, so it follows the UI language too"
   );
-
-  selectGalleries(["1", "4"]);
   assert.strictEqual(
-    bulkSelectOf().props.value,
-    null,
-    "a gallery with no language counts as differing, not as a match"
+    selectOf("manga_tools_language").props.menuPortalTarget,
+    global.document.body,
+    "the menu has to escape the modal"
+  );
+  assert.strictEqual(selectOf("manga_tools_language").props.isClearable, true);
+
+  // Both selects carry the "remove" option as their last entry, distinct from the
+  // clear button (clear = "leave alone", remove = "delete").
+  const langOptions = selectOf("manga_tools_language").props.options;
+  const censorOptions = selectOf("manga_tools_censorship").props.options;
+  const langRemove = langOptions[langOptions.length - 1];
+  const censorRemove = censorOptions[censorOptions.length - 1];
+  assert.strictEqual(langRemove.label, "移除");
+  assert.strictEqual(censorRemove.label, "移除");
+  assert.strictEqual(
+    langRemove.value,
+    censorRemove.value,
+    "the same sentinel value is used by both selects"
   );
 
-  selectGalleries([]);
+  // Censorship prefills the same way: a single censored gallery.
+  selectGalleries(["1"]);
   assert.strictEqual(
-    bulkSelectOf().props.value,
-    null,
-    "nothing selected, nothing to prefill"
+    selectOf("manga_tools_censorship").props.value.value,
+    "censored",
+    "a censored selection prefills"
   );
 
-  // ── Apply: the picked language rides along with the dialog's own update ──
+  // A mixed language selection must not prefill.
+  selectGalleries(["1", "2"]);
+  assert.strictEqual(selectOf("manga_tools_language").props.value, null);
+
+  // ── The mixed cycle: keep → mark → unmark → keep ──
+  // Gallery 8 is not manga (it is not even in the store), so 1+8 is mixed.
+  selectGalleries(["1", "8"]);
+  assert.deepStrictEqual(mangaState(), { checked: false, indeterminate: true });
+  assert.strictEqual(
+    bulkChildren().length,
+    1,
+    "a mixed selection draws no fields yet"
+  );
+
+  mangaBox().props.onChange(); // mark — the safe direction first
+  assert.deepStrictEqual(mangaState(), { checked: true, indeterminate: false });
+  assert.strictEqual(bulkChildren().length, 3, "marking reveals the fields");
+
+  mangaBox().props.onChange(); // unmark
+  assert.deepStrictEqual(mangaState(), {
+    checked: false,
+    indeterminate: false,
+  });
+  {
+    const rows = bulkChildren();
+    assert.strictEqual(
+      rows.length,
+      2,
+      "unmarking draws the warning above the mark"
+    );
+    assert.strictEqual(rows[0].props.className, "alert alert-warning");
+    assert.ok(
+      String(rows[0].props.children).includes("移除"),
+      "the warning names removal"
+    );
+    assert.strictEqual(rows[1].props["data-field"], "manga_tools_manga");
+  }
+
+  mangaBox().props.onChange(); // back to keep
+  assert.deepStrictEqual(mangaState(), { checked: false, indeterminate: true });
+
+  // An all-manga selection toggles keep ↔ unmark (no indeterminate state).
+  selectGalleries(["1", "6"]);
+  assert.deepStrictEqual(mangaState(), { checked: true, indeterminate: false });
+  mangaBox().props.onChange(); // unmark
+  assert.deepStrictEqual(mangaState(), {
+    checked: false,
+    indeterminate: false,
+  });
+  mangaBox().props.onChange(); // keep again
+  assert.deepStrictEqual(mangaState(), { checked: true, indeterminate: false });
+
+  // A none selection toggles keep ↔ mark.
+  selectGalleries(["8"]);
+  assert.deepStrictEqual(mangaState(), {
+    checked: false,
+    indeterminate: false,
+  });
+  mangaBox().props.onChange(); // mark
+  assert.deepStrictEqual(mangaState(), { checked: true, indeterminate: false });
+  mangaBox().props.onChange(); // keep again
+  assert.deepStrictEqual(mangaState(), {
+    checked: false,
+    indeterminate: false,
+  });
+
+  // ── Apply: the picked values ride along with the dialog's own update ──
   /** Runs an operation through the plugin's link and reports what came out */
   const runLink = (variables, rootField) => {
     let forwarded = null;
@@ -4689,21 +4793,22 @@ setTimeout(() => {
 
   const bulkVars = () => ({ input: { ids: ["1", "2"], photographer: "x" } });
 
-  // The link is installed the first time the row renders, and must not disturb
+  // The link is installed the first time the rows render, and must not disturb
   // the chain Stash already had.
-  assert.ok(installedLink, "the bulk row should install the link hook");
+  assert.ok(installedLink, "the bulk rows should install the link hook");
   assert.strictEqual(
     installedLink.__chain[1].__original,
     true,
     "the existing link chain must be passed through untouched"
   );
 
-  // Untouched: the operation must go out exactly as Stash built it.
+  // Untouched: nothing pending, so a bulk edit of photographers goes out exactly
+  // as Stash built it.
   let r14 = runLink(bulkVars());
   assert.strictEqual(
     r14.forwarded.variables.input.custom_fields,
     undefined,
-    "an untouched row must not add custom_fields"
+    "an untouched selection must not add custom_fields"
   );
   assert.strictEqual(
     r14.completed,
@@ -4711,37 +4816,22 @@ setTimeout(() => {
     "nothing to clear when nothing was injected"
   );
 
+  // A successful write refetches the store, or the badges go stale. The refetch
+  // itself is checked at the end, once the microtask queue has drained — see the
+  // note beside that assertion. This first write's shape is the immediate result.
+  selectGalleries(["1", "6"]);
   const queriesBefore = galleryQueryCount;
-  bulkSelectOf().props.onChange({
-    value: "zh-Hant",
-    label: "繁体中文",
-    flag: "tw",
+  selectOf("manga_tools_language").props.onChange({
+    value: "ja",
+    label: "日语",
+    flag: "jp",
   });
-  assert.strictEqual(
-    bulkSelectOf().props.value.value,
-    "zh-Hant",
-    "the row should echo the pick"
-  );
-
   r14 = runLink(bulkVars());
-  assert.deepStrictEqual(
-    r14.forwarded.variables.input.custom_fields,
-    { partial: { "plugin.mangaTools.language": "zh-Hant" } },
-    "the picked language should ride along with the dialog's own update"
-  );
-  assert.deepStrictEqual(
-    r14.forwarded.variables.input.ids,
-    ["1", "2"],
-    "the rest of the input must be left alone"
-  );
-  assert.strictEqual(r14.forwarded.variables.input.photographer, "x");
-  assert.strictEqual(
-    r14.completed !== null,
-    true,
-    "a successful update should clear the pending value"
-  );
+  assert.deepStrictEqual(r14.forwarded.variables.input.custom_fields, {
+    partial: { "plugin.mangaTools.language": "ja" },
+  });
 
-  // ...and once cleared, a second Apply must not repeat it.
+  // ...and the pending value is dropped, so a second Apply does not repeat it.
   r14 = runLink(bulkVars());
   assert.strictEqual(
     r14.forwarded.variables.input.custom_fields,
@@ -4749,8 +4839,96 @@ setTimeout(() => {
     "the value should only ever be sent once"
   );
 
-  // Other entities' bulk updates must never be touched, even with a value pending.
-  bulkSelectOf().props.onChange({ value: "ja", label: "日语", flag: "jp" });
+  // Language set.
+  selectOf("manga_tools_language").props.onChange({
+    value: "zh-Hant",
+    label: "繁体中文",
+    flag: "tw",
+  });
+  r14 = runLink(bulkVars());
+  assert.deepStrictEqual(r14.forwarded.variables.input.custom_fields, {
+    partial: { "plugin.mangaTools.language": "zh-Hant" },
+  });
+  assert.deepStrictEqual(
+    r14.forwarded.variables.input.ids,
+    ["1", "2"],
+    "the rest of the input must be left alone"
+  );
+  assert.strictEqual(r14.forwarded.variables.input.photographer, "x");
+
+  // Language remove — the one way to empty the field across a whole selection.
+  selectOf("manga_tools_language").props.onChange(langRemove);
+  r14 = runLink(bulkVars());
+  assert.deepStrictEqual(r14.forwarded.variables.input.custom_fields, {
+    remove: ["plugin.mangaTools.language"],
+  });
+
+  // Censorship set.
+  selectOf("manga_tools_censorship").props.onChange({ value: "uncensored" });
+  r14 = runLink(bulkVars());
+  assert.deepStrictEqual(r14.forwarded.variables.input.custom_fields, {
+    partial: { "plugin.mangaTools.censorship": "uncensored" },
+  });
+
+  // Censorship remove.
+  selectOf("manga_tools_censorship").props.onChange(censorRemove);
+  r14 = runLink(bulkVars());
+  assert.deepStrictEqual(r14.forwarded.variables.input.custom_fields, {
+    remove: ["plugin.mangaTools.censorship"],
+  });
+
+  // Mark: a none selection unified to manga.
+  selectGalleries(["8"]);
+  mangaBox().props.onChange(); // mark
+  r14 = runLink(bulkVars());
+  assert.deepStrictEqual(r14.forwarded.variables.input.custom_fields, {
+    partial: { "plugin.mangaTools.manga": "true" },
+  });
+
+  // Mark + set + remove can coexist in one input.
+  selectGalleries(["8"]);
+  mangaBox().props.onChange(); // mark
+  selectOf("manga_tools_language").props.onChange({
+    value: "ja",
+    label: "日语",
+    flag: "jp",
+  });
+  selectOf("manga_tools_censorship").props.onChange(censorRemove);
+  r14 = runLink(bulkVars());
+  assert.deepStrictEqual(r14.forwarded.variables.input.custom_fields, {
+    partial: {
+      "plugin.mangaTools.manga": "true",
+      "plugin.mangaTools.language": "ja",
+    },
+    remove: ["plugin.mangaTools.censorship"],
+  });
+
+  // Unmark wins over the other two: every field this plugin owns is removed, and
+  // the language/censorship pendings are ignored.
+  selectGalleries(["1", "6"]);
+  selectOf("manga_tools_language").props.onChange({
+    value: "ja",
+    label: "日语",
+    flag: "jp",
+  });
+  selectOf("manga_tools_censorship").props.onChange({ value: "censored" });
+  mangaBox().props.onChange(); // unmark
+  r14 = runLink(bulkVars());
+  assert.deepStrictEqual(r14.forwarded.variables.input.custom_fields, {
+    remove: [
+      "plugin.mangaTools.language",
+      "plugin.mangaTools.censorship",
+      "plugin.mangaTools.manga",
+    ],
+  });
+
+  // Other entities' bulk updates are never touched, even with a value pending.
+  selectGalleries(["1", "6"]);
+  selectOf("manga_tools_language").props.onChange({
+    value: "ja",
+    label: "日语",
+    flag: "jp",
+  });
   r14 = runLink(bulkVars(), "bulkSceneUpdate");
   assert.strictEqual(
     r14.forwarded.variables.input.custom_fields,
@@ -4766,7 +4944,7 @@ setTimeout(() => {
 
   // Clearing the x means "leave the language alone", exactly as clearing the
   // studio field means "leave the studio alone" — neither sends a value.
-  bulkSelectOf().props.onChange(null);
+  selectOf("manga_tools_language").props.onChange(null);
   r14 = runLink(bulkVars());
   assert.strictEqual(
     r14.forwarded.variables.input.custom_fields,
@@ -4775,17 +4953,13 @@ setTimeout(() => {
   );
   assert.strictEqual(r14.completed, null);
 
-  // The route is checked by the injection itself, not only by the row being
+  // The route is checked by the injection itself, not only by the rows being
   // mounted: a value left pending must not be written once the route has moved on.
-  bulkSelectOf().props.onChange({ value: "ko", label: "韩语", flag: "kr" });
-  r14 = runLink(bulkVars());
-  assert.deepStrictEqual(
-    r14.forwarded.variables.input.custom_fields,
-    { partial: { "plugin.mangaTools.language": "ko" } },
-    "precondition: it does apply while on a gallery page"
-  );
-
-  bulkSelectOf().props.onChange({ value: "ko", label: "韩语", flag: "kr" });
+  selectOf("manga_tools_language").props.onChange({
+    value: "ko",
+    label: "韩语",
+    flag: "kr",
+  });
   globalListeners["stash:location"]({
     detail: { data: { location: { pathname: "/scenes/5" } } },
   });
@@ -4801,21 +4975,23 @@ setTimeout(() => {
   assert.strictEqual(
     onScene14.props.children[1].type(onScene14.props.children[1].props),
     null,
-    "no bulk language row on a scene page"
+    "no bulk manga rows on a scene page"
   );
   globalListeners["stash:location"]({
     detail: { data: { location: { pathname: "/galleries" } } },
   });
   assert.notStrictEqual(bulkRow(), null, "restored on a gallery page");
   console.log(
-    "✓ bulk edit (placement / prefill / partial set / clear / scene isolation / one-shot / route)"
+    "✓ bulk edit (placement / gate+cycle / prefill / set+remove+mark+unmark / scene isolation / one-shot / route)"
   );
 
   // The badges read the plugin's own store, so a successful write refetches it —
   // otherwise the covers keep the old flag until the next poll. That refetch is
   // deliberately deferred until any fetch already in flight has settled (a fetch
   // started before the write would otherwise land afterwards and undo it), so the
-  // count can only be checked once the microtask queue has drained.
+  // count can only be checked once the microtask queue has drained. Every write
+  // above coalesced onto that one in-flight fetch, so there is exactly one
+  // refetch no matter how many fields were applied.
   setTimeout(() => {
     assert.strictEqual(
       galleryQueryCount,

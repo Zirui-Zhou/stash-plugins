@@ -29,5 +29,8 @@
 
   "mangaTools.censorship.censored": "有修正",
   "mangaTools.censorship.uncensored": "無修正",
-  "mangaTools.censorship.unset": "未標註"
+  "mangaTools.censorship.unset": "未標註",
+
+  "mangaTools.bulk.remove": "移除",
+  "mangaTools.bulk.unmarkWarning": "取消標記會從選中的畫廊中移除本外掛的漫畫、語言和修正欄位。"
 }
