@@ -1524,8 +1524,8 @@ assert.strictEqual(
 assert.strictEqual(r9.portal.node.type, "div");
 assert.strictEqual(r9.portal.node.props.className, "manga-tools-panel");
 assert.ok(
-  hasText(r9.portal.node, "漫画"),
-  "headed with this plugin's own word for it, since Stash has none"
+  hasText(r9.portal.node, "漫画信息"),
+  "headed with this plugin's own words for it, since Stash has none"
 );
 
 // The language row is the first .manga-tools-detail in the block — the same
