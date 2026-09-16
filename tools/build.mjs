@@ -414,7 +414,17 @@ function buildPlugin(dirName, sha, suffix, outDir) {
   const id = baseId + suffix;
   const ymlOutName = `${id}.yml`;
 
-  const ymlText = fs.readFileSync(path.join(dir, ymlName), "utf8");
+  // Line endings are normalised on the way in. The readers below are line-based,
+  // and on a Windows checkout with `core.autocrlf=true` every line ends with a
+  // `\r` that their patterns do not allow for — which comes out as a `ui.assets`
+  // map that silently parses to nothing, and a package that fails to carry the
+  // directory it names. tools/check-package-variant.mjs is what catches that, and
+  // it is how this was found. The manifest that gets packaged is written from
+  // this text, so it comes out with LF as well; nothing reads a manifest for its
+  // line endings.
+  const ymlText = fs
+    .readFileSync(path.join(dir, ymlName), "utf8")
+    .replace(/\r\n/g, "\n");
 
   // What the yml exposes to the browser beyond its own script and stylesheet.
   const assets = mapUnderKey(ymlText, "assets");
