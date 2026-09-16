@@ -319,5 +319,24 @@
 }
 
 .manga-tools-panel .collapse-button {
+  text-align: left;
   width: 100%;
 }
+
+/*
+ * The left alignment above is not cosmetic tidying, it is the whole reason this
+ * block has a rule at all.
+ *
+ * Bootstrap's `.btn` is `text-align: center`. Stash's own CollapseButton is left
+ * aligned by `.sidebar-section .collapse-button { text-align: left }` — a rule
+ * scoped to the sidebar, which this block is not in. The only other left-align
+ * Stash writes is on `button.collapse-button.btn-primary:hover, :focus, :active`
+ * (components/Shared/styles.scss), i.e. only *while* the button is hovered or
+ * focused. So without this line the label sits in the middle until the pointer
+ * touches it and snaps left, and back to the middle when focus moves on — which
+ * is what it looked like: a label that would not stay put.
+ *
+ * `.manga-tools-panel .collapse-button` is two classes against `.btn`'s one, so
+ * it wins without needing `!important`. Stash's hover rule is more specific
+ * still, and says the same thing.
+ */
