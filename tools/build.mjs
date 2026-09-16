@@ -13,8 +13,24 @@
  * https://<username>.github.io/stash-plugins/.
  *
  * Also runnable locally:
- *   node tools/build.mjs              package into dist/
- *   node tools/build.mjs --typecheck  type-check only, no output
+ *   node tools/build.mjs                       package into dist/
+ *   node tools/build.mjs --typecheck           type-check only, no output
+ *   node tools/build.mjs --id-suffix=Test      package a second, separately
+ *                                              installable copy — see below
+ *   node tools/build.mjs --out=/tmp/somewhere  write somewhere other than dist/
+ *
+ * `--id-suffix` exists so a branch can publish a build that installs *beside* the
+ * real plugin rather than over it. Stash keys installs on the plugin ID, and it
+ * hides any available package whose ID is already installed, so two sources
+ * offering the same ID cannot both be installed — the second never even appears.
+ * A suffixed build carries the suffix in its ID, its yml file name and its
+ * display name, which makes it a second plugin with its own enable toggle. The
+ * two then share the custom fields (the data) and the settings (the stable
+ * copy's), which is what makes it usable against a real library.
+ *
+ * It *replaces* rather than adds: with a suffix, every plugin is packaged under
+ * its suffixed ID and nothing else. That way the index a test branch publishes
+ * contains no entry that could update the real plugin.
  *
  * One npm dependency, esbuild, which bundles each plugin's TypeScript entry
  * point into the single .js file Stash loads. It is deliberately **not** a
@@ -158,6 +174,37 @@ function shortSha() {
   }
 }
 
+/**
+ * The value of a `--name=value` argument, or "" when the argument was not given.
+ *
+ * The script takes no positional arguments, so a few lines are enough — and they
+ * are better than `find(...)?.split("=")[1]`, which would read a malformed
+ * `--out` (given with no value) as "use the default" instead of failing.
+ */
+function argValue(name) {
+  const arg = process.argv.find((a) => a.startsWith(`${name}=`));
+  return arg ? arg.slice(name.length + 1).trim() : "";
+}
+
+/**
+ * The ID suffix from `--id-suffix=...`, or "" for an ordinary build.
+ *
+ * Restricted to letters and digits because it becomes part of a plugin ID, a
+ * file name and a URL. Anything else could produce a package Stash cannot install
+ * — or, worse, one whose ID differs from what the person who wrote the flag
+ * expected, which would overwrite the real plugin instead of sitting beside it.
+ */
+function idSuffix() {
+  const value = argValue("--id-suffix");
+  if (value && !/^[A-Za-z][A-Za-z0-9]*$/.test(value)) {
+    throw new Error(
+      `--id-suffix must be letters and digits, starting with a letter ` +
+        `(got ${JSON.stringify(value)})`
+    );
+  }
+  return value;
+}
+
 /** Lists the plugin directory names under plugins/. */
 function listPluginDirs() {
   if (!fs.existsSync(PLUGINS_DIR)) return [];
@@ -280,8 +327,14 @@ function compilePlugin(dir, id, files) {
  *
  * The plugin ID comes from the yml file name (that's how Stash defines it), not
  * from the directory name. If the two disagree, the yml wins.
+ *
+ * `suffix` is what turns the result into a second, separately installable copy
+ * — see the note on `--id-suffix` at the top of this file. It changes the ID, the
+ * name the yml is written under inside the zip, and the display name, and nothing
+ * else: the bundle keeps its file name, because the yml's `ui.javascript` names
+ * it and the yml is not rewritten there.
  */
-function buildPlugin(dirName, sha) {
+function buildPlugin(dirName, sha, suffix, outDir) {
   const dir = path.join(PLUGINS_DIR, dirName);
   const files = fs
     .readdirSync(dir)
@@ -295,7 +348,14 @@ function buildPlugin(dirName, sha) {
     );
   }
 
-  const id = ymlName.replace(/\.yml$/, "");
+  // Two IDs, and they are not interchangeable. `baseId` is what the *source*
+  // calls things — the entry point is `src/<baseId>.tsx`, and the bundle is
+  // `<baseId>.js`. `id` is what the *package* is called, which is what Stash
+  // installs under. Only the second carries the suffix.
+  const baseId = ymlName.replace(/\.yml$/, "");
+  const id = baseId + suffix;
+  const ymlOutName = `${id}.yml`;
+
   const ymlText = fs.readFileSync(path.join(dir, ymlName), "utf8");
 
   const baseVersion = topLevel(ymlText, "version");
@@ -310,11 +370,20 @@ function buildPlugin(dirName, sha) {
   // plugin's version against the version in the source manifest. The two have to
   // match, otherwise it reports an update forever. The repo keeps the
   // hand-written base version; the full version only exists in the build output.
-  const patchedYml = ymlText.replace(/^version:.*$/m, `version: ${version}`);
+  //
+  // The display name follows the same reasoning: two entries in Stash's plugin
+  // list both reading "Manga Tools" is exactly the confusion a suffixed build
+  // exists to avoid.
+  const patchedYml = ymlText
+    .replace(/^version:.*$/m, `version: ${version}`)
+    .replace(
+      /^name:(.*)$/m,
+      suffix ? `name:$1 (${suffix.toLowerCase()})` : "name:$1"
+    );
 
   // What actually gets packaged: the bundled output for a TypeScript plugin,
   // or the plugin directory itself for a plain-JS one.
-  const packageDir = compilePlugin(dir, id, files);
+  const packageDir = compilePlugin(dir, baseId, files);
   const packagedFiles = fs
     .readdirSync(packageDir)
     .filter((f) => !f.startsWith("."))
@@ -323,11 +392,14 @@ function buildPlugin(dirName, sha) {
   assertReferencedFilesExist(id, ymlText, packageDir);
 
   const stage = fs.mkdtempSync(path.join(os.tmpdir(), `stash-plugins-${id}-`));
-  const zipPath = path.join(DIST_DIR, `${id}.zip`);
+  const zipPath = path.join(outDir, `${id}.zip`);
+  const stagedNames = packagedFiles.map((f) =>
+    f === ymlName ? ymlOutName : f
+  );
   try {
     for (const f of packagedFiles) {
       if (f === ymlName) {
-        fs.writeFileSync(path.join(stage, f), patchedYml);
+        fs.writeFileSync(path.join(stage, ymlOutName), patchedYml);
       } else {
         fs.copyFileSync(path.join(packageDir, f), path.join(stage, f));
       }
@@ -339,7 +411,11 @@ function buildPlugin(dirName, sha) {
 
     // Name the files explicitly instead of using ".": that keeps the archive
     // entries flat, with no prefix. -X drops extended attributes and uid/gid.
-    execFileSync("zip", ["-r", "-X", "-q", zipPath, ...packagedFiles], {
+    //
+    // The names to ask for are the *staged* ones, which differ from the source
+    // names for exactly one file: a suffixed build writes the yml under its
+    // suffixed name, and the original is no longer in the stage.
+    execFileSync("zip", ["-r", "-X", "-q", zipPath, ...stagedNames], {
       cwd: stage,
     });
   } finally {
@@ -352,7 +428,9 @@ function buildPlugin(dirName, sha) {
 
   return {
     id,
-    name: topLevel(ymlText, "name") || id,
+    // Read off the patched yml, not the source: that is where the display name
+    // for a suffixed build is written.
+    name: topLevel(patchedYml, "name") || id,
     description: topLevel(ymlText, "description") || "",
     version,
     // Stash expects date as "YYYY-MM-DD HH:MM:SS"
@@ -403,19 +481,25 @@ function main() {
   }
 
   const sha = shortSha();
+  const suffix = idSuffix();
   const dirs = listPluginDirs();
+  const outDir = argValue("--out")
+    ? path.resolve(ROOT, argValue("--out"))
+    : DIST_DIR;
 
   if (dirs.length === 0) {
     console.error("No plugin directories found under plugins/");
     process.exit(1);
   }
 
-  fs.rmSync(DIST_DIR, { recursive: true, force: true });
-  fs.mkdirSync(DIST_DIR, { recursive: true });
+  // Rebuilt from scratch: a package for a plugin that has since been renamed or
+  // removed would otherwise linger and stay installable from the index.
+  fs.rmSync(outDir, { recursive: true, force: true });
+  fs.mkdirSync(outDir, { recursive: true });
 
-  const entries = dirs.map((d) => buildPlugin(d, sha));
+  const entries = dirs.map((d) => buildPlugin(d, sha, suffix, outDir));
   fs.writeFileSync(
-    path.join(DIST_DIR, "index.yml"),
+    path.join(outDir, "index.yml"),
     renderIndex(entries),
     "utf8"
   );
@@ -423,7 +507,9 @@ function main() {
   for (const e of entries) {
     console.log(`  ${e.id}  ${e.version}  ${e.sha256.slice(0, 12)}…`);
   }
-  console.log(`\nWrote ${entries.length} package(s) to dist/`);
+  console.log(
+    `\nWrote ${entries.length} package(s) to ${path.relative(ROOT, outDir)}/`
+  );
 }
 
 main();
