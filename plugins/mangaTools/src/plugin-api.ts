@@ -84,6 +84,8 @@ export interface MangaToolsNamespace {
   MANGA_VALUE: string;
   /** Whether a gallery's custom fields mark it as manga. */
   isManga(customFields: unknown): boolean;
+  /** The keys to remove when a gallery stops being manga, by their own spelling. */
+  fieldsToClear(customFields: unknown): string[];
   /** The values the censorship field takes, in cycle order. See fields.ts. */
   CENSORSHIP_VALUES: string[];
   /** A stored censorship value as one of CENSORSHIP_VALUES, or "" for anything else. */
@@ -402,11 +404,20 @@ export interface IPluginApi {
       gql?: MangaToolsGql;
       ApolloLink?: MangaToolsApolloLinkClass;
     };
-    /** react-bootstrap: the settings switches, and the sidebar section's button/collapse */
+    /** react-bootstrap: settings switches, the sidebar's button/collapse, the modal */
     Bootstrap?: {
       Form: { Switch: ComponentType<Record<string, unknown>> };
       Button: ComponentType<Record<string, unknown>>;
       Collapse: ComponentType<Record<string, unknown>>;
+      /**
+       * The dialog, for the one thing this plugin asks before doing. `Body` and
+       * `Footer` are react-bootstrap's static sub-components, so they are declared
+       * as optional properties of the component rather than as a namespace.
+       */
+      Modal?: ComponentType<Record<string, unknown>> & {
+        Body?: ComponentType<Record<string, unknown>>;
+        Footer?: ComponentType<Record<string, unknown>>;
+      };
     };
     Intl: { useIntl(): MangaToolsIntl };
     /** FontAwesome's icon definitions, looked up by name */

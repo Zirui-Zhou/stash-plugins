@@ -461,6 +461,10 @@ const PluginApi = {
       Form: { Label: () => null, Group: "FormGroup", Switch: "Switch" },
       Button: "Button",
       Collapse: "Collapse",
+      // The dialog, with the two static sub-components the plugin uses. An object
+      // rather than a marker string, because a string cannot carry properties —
+      // and the plugin checks for both before drawing anything.
+      Modal: { Body: "ModalBody", Footer: "ModalFooter" },
       FormGroup: "FormGroup",
       Row: "Row",
       Col: "Col",
@@ -3979,12 +3983,6 @@ setTimeout(() => {
     return children.find((c) => c?.__portal) || null;
   };
 
-  /** The FontAwesome name a state's icon resolved to, through the guard around it */
-  const iconNameOf = (child) => {
-    const drawn = child.type(child.props);
-    return drawn ? drawn.props.icon : null;
-  };
-
   const marked = markPortal("1");
   assert.ok(marked, "gallery 1 is marked, so its card should draw the mark");
   assert.strictEqual(
@@ -4014,48 +4012,36 @@ setTimeout(() => {
   );
   assert.strictEqual(
     marked.node.props.title,
-    "有修正",
-    "with the state as its tooltip, in the UI language"
+    "漫画",
+    "with this plugin's own word for what the gallery is, in the UI language"
   );
-  assert.strictEqual(
-    iconNameOf(marked.node.props.children),
-    "faChessKnight",
-    "and the knight for a censored release"
+  // The icon is the same masked span the toolbar switch draws, so the same asset
+  // and the same two colours serve both.
+  const cardIcon = marked.node.props.children.type(
+    marked.node.props.children.props
   );
+  assert.strictEqual(cardIcon.props.className, "manga-tools-manga-icon");
 
-  const uncensored = markPortal("3");
   assert.strictEqual(
-    uncensored.node.props.title,
-    "无修正",
-    "gallery 3 is the other state"
-  );
-  assert.strictEqual(
-    iconNameOf(uncensored.node.props.children),
-    "faChessPawn",
-    "which is the pawn"
+    markPortal("3").node.props.title,
+    "漫画",
+    "gallery 3 is manga too, and the icon says nothing about its censorship"
   );
 
   assert.strictEqual(
-    cardMark("4").markEl,
+    cardMark("8").markEl,
     null,
-    "gallery 4 carries a censorship value that is neither of the two, so it " +
-      "reads as unmarked and draws nothing"
+    "gallery 8 carries a language but is not manga, so its card draws nothing"
   );
   assert.strictEqual(
-    cardMark("2").markEl,
-    null,
-    "and a gallery with no censorship field at all draws nothing either"
-  );
-  assert.strictEqual(
-    cardMark("7").markEl !== null,
-    true,
-    "gallery 7 carries no language, so only the censorship query returns it — " +
-      "which is the merge of the two answers working"
+    card("8"),
+    overlaysResult,
+    "…neither a mark nor a badge: the plugin is not on that gallery at all"
   );
   assert.strictEqual(
     card("7"),
     overlaysResult,
-    "…and it still has no language badge"
+    "and gallery 7, which is manga but has no language, has no badge either"
   );
 
   // A card Stash draws no row for — no image count, no tags, no organized mark.
@@ -4136,11 +4122,11 @@ setTimeout(() => {
       "operation menu"
   );
 
-  // What it draws: the switch, and nothing else. It is the plugin's entry point,
-  // so it is the one thing shown on a gallery the plugin has not been given —
-  // and the one thing shown on a gallery it has, since the censorship mark that
-  // used to sit beside it moved to the details block and the edit page.
-  const toggle = first.drawn.node;
+  // What it draws: the switch, and — only while the question below is open — the
+  // dialog that asks it.
+  const drawn = first.drawn.node;
+  assert.strictEqual(drawn.type, React.Fragment);
+  const toggle = drawn.props.children[0];
   assert.strictEqual(toggle.type, "button", "a button, like organized");
   assert.strictEqual(
     toggle.props.className,
@@ -4149,6 +4135,11 @@ setTimeout(() => {
   );
   assert.strictEqual(toggle.props.title, "标记为漫画");
   assert.strictEqual(toggle.props["aria-pressed"], false);
+  assert.strictEqual(
+    drawn.props.children[1],
+    null,
+    "and nothing else, until the reader asks to stop managing the gallery"
+  );
 
   // The switch's icon is a masked span, not an svg: the artwork is a file, and a
   // file cannot see `currentColor` — the mask reads its shape and CSS supplies
@@ -4158,10 +4149,11 @@ setTimeout(() => {
   assert.strictEqual(icon.props.className, "manga-tools-manga-icon");
 
   // Marked: the switch says so.
-  const toggleOn = toolbarMark({
+  const markedToolbar = toolbarMark({
     ...detailValues("censored"),
     [NS.MANGA_FIELD_NAME]: "true",
   }).drawn.node;
+  const toggleOn = markedToolbar.props.children[0];
   assert.strictEqual(
     toggleOn.props.className,
     "minimal manga-tools-manga-toggle btn btn-secondary is-manga",
@@ -4170,8 +4162,7 @@ setTimeout(() => {
   assert.strictEqual(toggleOn.props.title, "漫画");
   assert.strictEqual(toggleOn.props["aria-pressed"], true);
 
-  // Clicking writes through Stash's own gallery update: present means marked,
-  // and clearing removes the key rather than writing an empty value.
+  // Clicking writes through Stash's own gallery update. Marking is one click.
   const writesBefore = galleryWrites.length;
   toggle.props.onClick();
   assert.deepStrictEqual(
@@ -4182,34 +4173,46 @@ setTimeout(() => {
         custom_fields: { partial: { [NS.MANGA_FIELD_NAME]: "true" } },
       },
     },
-    "flipping it on writes the canonical name"
-  );
-  toggleOn.props.onClick();
-  assert.deepStrictEqual(
-    galleryWrites[galleryWrites.length - 1],
-    {
-      input: { id: "3", custom_fields: { remove: [NS.MANGA_FIELD_NAME] } },
-    },
-    "and flipping it off removes the key"
+    "marking writes the canonical name"
   );
 
-  // A gallery whose key drifted in case is cleared by the spelling it has, or the
-  // click would look like it did nothing.
-  toolbarMark({
-    [NS.FIELD_NAME]: "ja",
-    "plugin.mangaTools.Manga": "true",
-  }).drawn.node.props.onClick();
-  assert.deepStrictEqual(
-    galleryWrites[galleryWrites.length - 1].input.custom_fields,
-    { remove: ["plugin.mangaTools.Manga"] }
+  // Unmarking asks first, because it takes this plugin's fields with it. The
+  // dialog itself cannot be driven from here — the test React's state setter is
+  // inert, so a click can open nothing — but what matters is assertable without
+  // it: the click writes nothing, and the list of what confirming would remove is
+  // its own function.
+  const writesAfterMarking = galleryWrites.length;
+  toggleOn.props.onClick();
+  assert.strictEqual(
+    galleryWrites.length,
+    writesAfterMarking,
+    "the click must not write: it asks a question, and this one takes data with it"
   );
+
+  assert.deepStrictEqual(
+    NS.fieldsToClear({
+      [NS.FIELD_NAME]: "ja",
+      "plugin.mangaTools.Censorship": "uncensored",
+      "plugin.mangaTools.Manga": "true",
+      other: "x",
+    }),
+    [NS.FIELD_NAME, "plugin.mangaTools.Censorship", "plugin.mangaTools.Manga"],
+    "confirming removes every field of this plugin's, by the spelling it has — " +
+      "the API removes by exact key, so a drifted one would survive otherwise"
+  );
+  assert.deepStrictEqual(
+    NS.fieldsToClear({ other: "x" }),
+    [NS.MANGA_FIELD_NAME],
+    "and a gallery with none of them still has something to remove"
+  );
+  assert.deepStrictEqual(NS.fieldsToClear(null), [NS.MANGA_FIELD_NAME]);
 
   // A rejected write leaves the switch as it was, so the click can be repeated.
   galleryWriteResult = new Error("nope");
   toolbarMark({
     ...detailValues("censored"),
     [NS.MANGA_FIELD_NAME]: "true",
-  }).drawn.node.props.onClick();
+  }).drawn.node.props.children[0].props.onClick();
   galleryWriteResult = null;
 
   // The write path is the edit form, through Stash's own values map — which is

@@ -14,6 +14,10 @@
   "mangaTools.manga.mark": "Mark as manga",
   "mangaTools.manga.marked": "Manga",
 
+  "mangaTools.manga.confirm": "Are you sure you want to stop managing this gallery? Its language and censorship values will be removed.",
+  "mangaTools.manga.confirmCancel": "Cancel",
+  "mangaTools.manga.confirmOk": "Unmark",
+
   "mangaTools.panel.heading": "Manga info",
 
   "mangaTools.censorship.heading": "Censorship",

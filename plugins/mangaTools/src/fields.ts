@@ -99,6 +99,32 @@ NS.isManga = (customFields: unknown): boolean =>
   NS.pickField(customFields, NS.MANGA_FIELD_NAME) !== "";
 
 /**
+ * The keys to remove when a gallery stops being manga.
+ *
+ * Unmarking takes this plugin's fields with it, because a gallery it no longer
+ * manages should not be left carrying half its data — values that nothing
+ * displays and nothing explains. Which is a decision about *this* plugin's fields
+ * rather than about absence, so it is a list of names rather than a sweep.
+ *
+ * The spelling matters. The API removes by exact key, so a removal naming the
+ * canonical form would leave a key that had drifted in case behind — and the
+ * gallery would keep showing a language it was supposed to have forgotten. The
+ * canonical name is the fallback for a gallery that somehow has none of them,
+ * which is the state an unmark can still be issued from.
+ */
+NS.fieldsToClear = (customFields: unknown): string[] => {
+  const names = [NS.MANGA_FIELD_NAME, NS.FIELD_NAME, NS.CENSORSHIP_FIELD_NAME];
+  const map = (customFields || {}) as MangaToolsCustomFields;
+  if (!map || typeof map !== "object") return [NS.MANGA_FIELD_NAME];
+
+  const keys = Object.keys(map).filter((key) =>
+    names.some((name) => name.toLowerCase() === key.toLowerCase())
+  );
+
+  return keys.length ? keys : [NS.MANGA_FIELD_NAME];
+};
+
+/**
  * Reads a named field out of a custom_fields map. The name is matched
  * case-insensitively, and the stored spelling is what comes back out of the map.
  * @returns "" when there is no such field, or it holds nothing

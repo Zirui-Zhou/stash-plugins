@@ -24,13 +24,13 @@
  *
  *   - a selector on the gallery edit page, beside the language one
  *   - a row in the details tab's block, as icon and word
- *   - an icon at the end of the gallery card's popover row, for the two marked
- *     states only — an unmarked gallery shows nothing, since most are unmarked
  *
- * A third field is the one that decides whether any of this applies. A gallery
- * carrying `plugin.mangaTools.manga` is manga; one that does not is an ordinary
- * Stash gallery with a single switch on its toolbar and nothing else of ours.
- * Everything above is drawn only on the first kind.
+ * A third field decides whether any of it applies. A gallery carrying
+ * `plugin.mangaTools.manga` is manga; one that does not is an ordinary Stash
+ * gallery, and the only thing of this plugin's on it is the switch that sets the
+ * mark. Everything above is drawn only on the first kind — and the card carries
+ * that same mark's icon at the end of its popover row, which is what says which
+ * kind a card is without opening anything.
  *
  * `languages.ts` holds the codes and their flags, `fields.ts` the field names
  * and the generic read/write helpers, `language-filter.tsx` the sidebar filter.
@@ -287,11 +287,6 @@ function censorshipOf(customFields: unknown): string {
   return NS.normalizeCensorship(
     NS.pickField(customFields, CENSORSHIP_FIELD_NAME)
   );
-}
-
-/** The censorship mark the store holds for a gallery */
-function storedCensorship(galleryId: string): string {
-  return censorshipOf(store.get(String(galleryId)));
 }
 
 /** Whether a custom-field key is one of ours, whatever its case */
@@ -919,8 +914,8 @@ function ensurePopoverSlot(galleryId: string): HTMLElement | null {
 }
 
 /**
- * The censorship mark at the end of a card's popover row, or null when the
- * gallery carries no mark.
+ * The manga icon at the end of a card's popover row, or null when the gallery is
+ * not one the plugin manages.
  *
  * An anchor plus a portal rather than the button itself, because the row it
  * belongs in is Stash's and React does not own it — see ensurePopoverSlot. The
@@ -931,18 +926,15 @@ function ensurePopoverSlot(galleryId: string): HTMLElement | null {
  * next one, on a real page: the anchor is not in the document until this render
  * has been committed.
  */
-function CensorshipPopoverMark(props: { galleryId: string }) {
+function MangaPopoverMark(props: { galleryId: string }) {
   useGlobalVersion();
   useAfterMount();
 
-  // Read here rather than bound at module scope: plugin scripts can run before
-  // Stash has registered its components, so a module-level read can come back
-  // undefined and never recover. language-filter.tsx reads it the same way.
   const intl = PluginApi.libraries.Intl.useIntl();
-  const value = storedCensorship(props.galleryId);
-  const slot = value ? ensurePopoverSlot(props.galleryId) : null;
+  const manga = storedIsManga(props.galleryId);
+  const slot = manga ? ensurePopoverSlot(props.galleryId) : null;
 
-  if (!value) return null;
+  if (!manga) return null;
 
   return (
     <>
@@ -952,9 +944,9 @@ function CensorshipPopoverMark(props: { galleryId: string }) {
             <button
               type="button"
               className="minimal btn btn-primary manga-tools-mark"
-              title={censorshipLabel(intl, value)}
+              title={t(intl, "mangaTools.manga.marked")}
             >
-              <CensorshipIcon value={value} />
+              <MangaIcon />
             </button>,
             slot
           )
@@ -1070,88 +1062,134 @@ function MangaIcon() {
 }
 
 /**
- * The spelling of a key a gallery actually carries, or the canonical name.
+ * Whether the store holds this gallery.
  *
- * The click below removes a key rather than writing an empty value, and removing
- * it by name only works for the spelling the gallery really has — a key that
- * drifted in case would otherwise survive the click and the mark would appear not
- * to clear.
+ * Since the query asks for the mark, being in the map and being manga are the same
+ * question — which is what makes the store the gate rather than a cache.
  */
-function storedKey(customFields: unknown, name: string): string {
-  const map = (customFields || {}) as CustomFieldsMap;
-  if (typeof map !== "object") return name;
-
-  const key = name.toLowerCase();
-  const keys = Object.keys(map);
-  for (let i = 0; i < keys.length; i++) {
-    if (keys[i].toLowerCase() === key) return keys[i];
-  }
-  return name;
+function storedIsManga(galleryId: string): boolean {
+  return store.has(String(galleryId));
 }
 
 /**
- * What this plugin puts in the gallery toolbar.
+ * Asks before a gallery stops being manga.
  *
- * The switch first, because it is the entry point: a gallery that does not carry
- * the mark is a plain Stash gallery as far as this plugin is concerned, and the
- * switch is the only thing it shows there. Everything else it does appears once
- * the mark is on — which is why the censorship mark beside it is conditional and
- * the switch is not.
+ * Because unmarking is not a flag coming off: the plugin's fields go with it — a
+ * gallery the plugin does not manage should not be left carrying half its data
+ * (see the note on the toggle). That is worth a question, and Stash's own modal is
+ * the way to ask it — the plugin has Bootstrap already.
  *
- * One click, like the organized button next to it, and for the same reason:
- * saying "this one is manga" is not editing the gallery, so it should not mean
- * opening the edit tab and saving a form. That does mean it writes immediately
- * rather than riding Save — the one place this plugin writes on its own, and the
- * reason it reaches for Stash's own gallery-update mutation.
+ * A modal rather than a second click on the switch: the switch has two states and
+ * a two-step click would need a third, which is exactly the kind of state naming
+ * this plugin went to some trouble to avoid.
  */
+function ConfirmUnmark(props: { onCancel: () => void; onConfirm: () => void }) {
+  const intl = PluginApi.libraries.Intl.useIntl();
+  const Bootstrap = PluginApi.libraries.Bootstrap;
+  const Modal = Bootstrap?.Modal;
+  const Button = Bootstrap?.Button;
+  if (!Modal || !Button || !Modal.Body || !Modal.Footer) return null;
+
+  return (
+    <Modal show size="sm" onHide={props.onCancel}>
+      <Modal.Body>{t(intl, "mangaTools.manga.confirm")}</Modal.Body>
+      <Modal.Footer>
+        <Button variant="secondary" onClick={props.onCancel}>
+          {t(intl, "mangaTools.manga.confirmCancel")}
+        </Button>
+        <Button variant="danger" onClick={props.onConfirm}>
+          {t(intl, "mangaTools.manga.confirmOk")}
+        </Button>
+      </Modal.Footer>
+    </Modal>
+  );
+}
+
 function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
   useGlobalVersion();
   useAfterMount();
 
   const intl = PluginApi.libraries.Intl.useIntl();
   const update = PluginApi.utils.StashService.useGalleryUpdate();
-  const state = React.useState(false);
-  const busy = state[0];
-  const setBusy = state[1];
+  const busyState = React.useState(false);
+  const busy = busyState[0];
+  const setBusy = busyState[1];
+  const confirmState = React.useState(false);
+  const confirming = confirmState[0];
+  const setConfirming = confirmState[1];
 
   const host = ensureToolbarHost();
   if (!host) return null;
 
   const marked = NS.isManga(props.values);
 
-  const onToggle = () => {
-    const input: Record<string, unknown> = { id: props.galleryId };
-    input.custom_fields = marked
-      ? { remove: [storedKey(props.values, MANGA_FIELD_NAME)] }
-      : { partial: { [MANGA_FIELD_NAME]: NS.MANGA_VALUE } };
-
+  /**
+   * Takes the mark off, and this plugin's fields with it.
+   *
+   * Semantically the gallery is no longer the plugin's: leaving `language` and
+   * `censorship` behind would be leaving data that nothing displays and nothing
+   * explains. Every key is removed by the spelling it actually has, so a key that
+   * drifted in case goes too.
+   *
+   * (A setting for this — clear on unmark, or keep — is the obvious next thing;
+   * for now clearing unconditionally, behind the question above, is the honest
+   * default: the alternative silently keeps data the reader cannot see.)
+   */
+  const write = (fields: Record<string, unknown>) => {
     setBusy(true);
-    update[0]({ variables: { input } }).then(
-      () => setBusy(false),
+    update[0]({
+      variables: { input: { id: props.galleryId, custom_fields: fields } },
+    }).then(
+      () => {
+        setBusy(false);
+        setConfirming(false);
+      },
       (e: unknown) => {
         setBusy(false);
+        setConfirming(false);
         console.error("[mangaTools] could not write the manga mark:", e);
       }
     );
   };
 
+  const onToggle = () => {
+    if (!marked) {
+      write({ partial: { [MANGA_FIELD_NAME]: NS.MANGA_VALUE } });
+      return;
+    }
+
+    setConfirming(true);
+  };
+
+  const onConfirmUnmark = () => {
+    write({ remove: NS.fieldsToClear(props.values) });
+  };
+
   return PluginApi.ReactDOM.createPortal(
-    <button
-      type="button"
-      className={
-        "minimal manga-tools-manga-toggle btn btn-secondary" +
-        (marked ? " is-manga" : "")
-      }
-      title={t(
-        intl,
-        marked ? "mangaTools.manga.marked" : "mangaTools.manga.mark"
-      )}
-      aria-pressed={marked}
-      disabled={busy}
-      onClick={onToggle}
-    >
-      <MangaIcon />
-    </button>,
+    <>
+      <button
+        type="button"
+        className={
+          "minimal manga-tools-manga-toggle btn btn-secondary" +
+          (marked ? " is-manga" : "")
+        }
+        title={t(
+          intl,
+          marked ? "mangaTools.manga.marked" : "mangaTools.manga.mark"
+        )}
+        aria-pressed={marked}
+        disabled={busy}
+        onClick={onToggle}
+      >
+        <MangaIcon />
+      </button>
+      {confirming ? (
+        <ConfirmUnmark
+          onCancel={() => setConfirming(false)}
+          onConfirm={onConfirmUnmark}
+        />
+      ) : null}
+    </>,
     host
   );
 }
@@ -2120,26 +2158,29 @@ registerPatch("after", "GalleryCard.Overlays", (...args: unknown[]) => {
   );
 });
 
-// 1b. The censorship mark at the end of the same card's popover row.
+// 1b. The manga icon at the end of the same card's popover row.
 //
 //     Deliberately not another cover badge: the language badge is a flag, which
-//     reads at a glance, while "censored" is a property you look up rather than
-//     scan for — and two overlapping chips on one cover would fight. The popover
-//     row is where Stash already puts this kind of attribute (organized, and the
-//     two counts), and it costs nothing on the covers of the many galleries that
-//     carry no mark at all.
+//     reads at a glance, while "this is one the plugin manages" is not a value you
+//     scan for. The popover row is where Stash already puts this kind of thing
+//     (organized, and the two counts), and it costs nothing on the many cards that
+//     are not manga, which is most of them.
+//
+//     The gate is the store rather than a value: on a card there is nothing else to
+//     ask, and the store holds exactly the galleries the query found — which, since
+//     the query asks for the mark, is the same set as "is manga".
 registerPatch("after", "GalleryCard.Popovers", (...args: unknown[]) => {
   const props = args[0] as { gallery?: { id?: string } };
   const result = resultFrom(args);
   noteFired("GalleryCard.Popovers");
 
   const id = props.gallery?.id;
-  if (!id || !storedCensorship(String(id))) return result;
+  if (!id || !storedIsManga(String(id))) return result;
 
   return (
     <>
       {result}
-      <CensorshipPopoverMark galleryId={String(id)} />
+      <MangaPopoverMark galleryId={String(id)} />
     </>
   );
 });
@@ -2166,22 +2207,26 @@ registerPatch("instead", "CustomFieldsInput", (...args: unknown[]) => {
   );
 });
 
-// 3. Edit page: stop rendering the existing language input row, since the
-//    field above handles it now. Every other field goes straight back to the
+// 3. Edit page: stop rendering the input row of every field this plugin owns —
+//    they are all handled above now. Every other field goes straight back to the
 //    original component, so the plugin has zero effect on them.
 //
 //    isNew must pass through: that is the "new field" row, and the user may be
-//    in the middle of typing a name that will turn out to be ours. Returning null would
-//    make the whole row vanish mid-keystroke.
+//    in the middle of typing a name that will turn out to be ours. Returning null
+//    would make the whole row vanish mid-keystroke.
+//
+//    All three, not just the language: this patch is what stops a raw
+//    `plugin.mangaTools.censorship` row appearing in the form, and it went
+//    unnoticed that it only ever checked for the language one until the other two
+//    fields existed.
 registerPatch("instead", "CustomFieldInput", (...args: unknown[]) => {
   const props = args[0] as { field?: string; isNew?: boolean };
   const Original = originalFrom(args);
   noteFired("CustomFieldInput");
 
-  const isLanguageField =
-    !!props.field && String(props.field).toLowerCase() === FIELD_KEY;
+  const isOwnRow = !!props.field && isOwnField(String(props.field));
 
-  if (!props.isNew && isLanguageField) {
+  if (!props.isNew && isOwnRow) {
     return null;
   }
 

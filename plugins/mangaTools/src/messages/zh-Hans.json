@@ -14,6 +14,10 @@
   "mangaTools.manga.mark": "标记为漫画",
   "mangaTools.manga.marked": "漫画",
 
+  "mangaTools.manga.confirm": "确定不再把这个画廊作为漫画管理吗？它的语言和修正的值会被删除。",
+  "mangaTools.manga.confirmCancel": "取消",
+  "mangaTools.manga.confirmOk": "取消标记",
+
   "mangaTools.panel.heading": "漫画信息",
 
   "mangaTools.censorship.heading": "修正",
