@@ -306,17 +306,22 @@
  */
 .manga-tools-panel {
   margin-top: 0.25rem;
+  /* The same as a row's, so the block closes the section like one more row
+     rather than a third kind of spacing. Bootstrap gives every heading that
+     margin, which is what the <h6>s above it are separated by. */
+  margin-bottom: 0.5rem;
 }
 
 .manga-tools-panel-body {
   margin-top: 0.25rem;
 }
 
-/* The header sits in .gallery-details, where Stash styles no .collapse-header
-   (its own rule is scoped to .sidebar-section), so the padding is set here. */
-.manga-tools-panel .collapse-header {
-  padding: 0.25rem 0;
-}
+/*
+ * No padding on the header. The button inside it already carries Bootstrap's
+ * `.btn` padding — one layer is the block's height, two is a taller one for no
+ * reason — and Stash's `button.collapse-button { padding-left: 0 }` already
+ * pulls the label flush with the rows below it.
+ */
 
 .manga-tools-panel .collapse-button {
   text-align: left;
