@@ -1474,7 +1474,15 @@ assert.strictEqual(
 );
 console.log("✓ CustomFieldInput isolation (including the 2-argument form)");
 
-// ── 9. CustomFields detail page: lift the language entry, portal it into .gallery-details ──
+// ── 9. CustomFields detail page: lift our fields out, portal the panel into .gallery-details ──
+// The panel is gated on being on a gallery *page*, not on the fields being
+// present: it is a place for these attributes, and a gallery carrying neither
+// still gets the block (collapsed, so it costs a line). A detail page for a
+// scene, group or performer has no `.gallery-details` and no id, so it gets
+// nothing.
+globalListeners["stash:location"]({
+  detail: { data: { location: { pathname: "/galleries/1" } } },
+});
 // Mount a detail panel into the DOM stub to stand in for a gallery detail page
 const galleryPanel = makeEl("div");
 galleryPanel.className = "gallery-details";
@@ -1486,8 +1494,11 @@ galleryPanel.appendChild(stockH6);
 const detail = (values) => {
   const frag = call("CustomFields", { values, fullWidth: true });
   const rest = frag.props.children[0].props.values;
-  const rowEl = frag.props.children[1];
-  return { rest, portal: rowEl.type(rowEl.props) };
+  // children[1] is the guard around the panel; the panel is what returns the
+  // portal. The guard is a class, so it is instantiated rather than called.
+  const guarded = frag.props.children[1];
+  const panelEl = guarded?.props?.children;
+  return { rest, portal: panelEl ? panelEl.type(panelEl.props) : null };
 };
 
 let r9 = detail({ "plugin.mangaTools.language": "zh-Hant", author: "x" });
@@ -1509,12 +1520,22 @@ assert.strictEqual(
   "the portal should render into this mount point"
 );
 
-// Content: <h6> + flag + localised name, matching the rows above it
-assert.strictEqual(r9.portal.node.type, "h6");
-assert.strictEqual(r9.portal.node.props.className, "manga-tools-detail");
-const rowFlag = find(r9.portal.node, (n) =>
-  /fi fi-/.test(n.props.className || "")
+// Content: a collapsible block whose rows are the <h6>s Stash draws around it
+assert.strictEqual(r9.portal.node.type, "div");
+assert.strictEqual(r9.portal.node.props.className, "manga-tools-panel");
+assert.ok(
+  hasText(r9.portal.node, "漫画"),
+  "headed with this plugin's own word for it, since Stash has none"
 );
+
+// The language row is the first .manga-tools-detail in the block — the same
+// class, and so the same font and spacing, as the rows it sits between.
+const langRow = find(
+  r9.portal.node,
+  (n) => n.props?.className === "manga-tools-detail"
+);
+assert.strictEqual(langRow.type, "h6", "drawn as its neighbours are");
+const rowFlag = find(langRow, (n) => /fi fi-/.test(n.props.className || ""));
 assert.strictEqual(rowFlag.props.className, "fi fi-tw manga-tools-flag");
 assert.ok(hasText(r9.portal.node, "繁体中文"), "the name should be localised");
 assert.ok(
@@ -1525,7 +1546,7 @@ assert.ok(
 // Spacing comes from a text space, not a CSS margin, so pin the text children
 // down. With a flag: "label + space" + flag + " " + name — equal gaps either side.
 assert.deepStrictEqual(
-  r9.portal.node.props.children.filter((c) => typeof c === "string"),
+  langRow.props.children.filter((c) => typeof c === "string"),
   ["语言: ", " ", "繁体中文"]
 );
 
@@ -1570,8 +1591,12 @@ assert.strictEqual(
   "an unknown value should have no flag"
 );
 assert.ok(hasText(r9.portal.node, "klingon"));
+const unknownRow = find(
+  r9.portal.node,
+  (n) => n.props?.className === "manga-tools-detail"
+);
 assert.deepStrictEqual(
-  r9.portal.node.props.children.filter((c) => typeof c === "string"),
+  unknownRow.props.children.filter((c) => typeof c === "string"),
   ["语言: ", "klingon"],
   'without a flag there must not be a double space in "语言:  klingon"'
 );
@@ -1592,13 +1617,12 @@ assert.ok(
 );
 currentLocale = "zh-CN";
 
-// No language field at all → hands off completely
-const noLang = call("CustomFields", { values: { author: "x" } });
-assert.strictEqual(
-  noLang.type,
-  original,
-  "without a language field the original is used unchanged"
-);
+// Neither of our fields set: the block still renders, with a dash for a value
+// that is not there. It is a place for these attributes, so an empty one still
+// answers "where would this go" — and collapsed it costs one line.
+r9 = detail({ author: "x" });
+assert.deepStrictEqual(r9.rest, { author: "x" }, "nothing of ours to lift out");
+assert.ok(hasText(r9.portal.node, "—"), "an unset value reads as a dash");
 assert.ok(call("CustomFields", {}), "empty values must not throw");
 assert.ok(call("CustomFields", {}), "missing values must not throw");
 
@@ -3672,6 +3696,10 @@ setTimeout(() => {
   console.log("✓ edit write / clear / option flags and names");
 
   // ── 13b. The two display switches, and that they are independent ──
+  // The panel only renders on a gallery *page* now, so the route has to be one.
+  globalListeners["stash:location"]({
+    detail: { data: { location: { pathname: "/galleries/1" } } },
+  });
   NS.showFlags = false;
 
   const formattedFlat = sel.props.formatOptionLabel({
@@ -3693,8 +3721,12 @@ setTimeout(() => {
     null,
     "the detail row must not draw a flag when flags are off"
   );
+  const flatRow = find(
+    flatDetail.portal.node,
+    (n) => n.props?.className === "manga-tools-detail"
+  );
   assert.deepStrictEqual(
-    flatDetail.portal.node.props.children.filter((c) => typeof c === "string"),
+    flatRow.props.children.filter((c) => typeof c === "string"),
     ["语言: ", "繁体中文"],
     "without a flag there must not be a double space"
   );
@@ -4136,10 +4168,9 @@ setTimeout(() => {
     CF,
     "a gallery carrying a language but no mark is offered it too"
   );
-  assert.strictEqual(
-    languageOnly.props.children[1].props.value,
-    "ja",
-    "…and still gets its language row"
+  assert.ok(
+    hasText(detail({ [NS.FIELD_NAME]: "ja" }).portal.node, "日语"),
+    "…and still gets its language, shown by the panel rather than a row of its own"
   );
 
   // Clicking cycles: censored → uncensored → not marked → censored.
@@ -4279,7 +4310,7 @@ setTimeout(() => {
       : el.type(el.props);
   };
   const panelOf = (values) =>
-    renderChild(customFieldsEl(values).props.children[3]);
+    renderChild(customFieldsEl(values).props.children[1]);
 
   const panel = panelOf(panelValues);
   assert.ok(panel, "a gallery page should render the panel");
@@ -4333,22 +4364,8 @@ setTimeout(() => {
   assert.ok(hasText(empty, "—"), "an unset value reads as a dash");
   assert.ok(hasText(empty, "未标注"), "and an unmarked gallery says so");
 
-  // The tab's own checks are not here while TAB_EXPERIMENT is off — the two
-  // placements are being bisected, and a test for a tab that is deliberately not
-  // mounted would be testing the flag rather than the tab. The block that
-  // asserts the injection, the activation and the keyboard switch is in
-  // `git show 1ee679d:plugins/mangaTools/tests/smoke.js`, to be restored with the
-  // flag.
-  assert.strictEqual(
-    // Two levels: the boundary, then the component inside it.
-    renderChild(renderChild(customFieldsEl(panelValues).props.children[4])),
-    null,
-    "with the experiment off, the tab is not mounted at all — so nothing about " +
-      "it can be what keeps the page from loading"
-  );
   console.log(
-    "✓ manga panel (both placements are built; the tab is off while the page " +
-      "load failure is bisected)"
+    "✓ manga panel (a disclosure in the details tab: word / rows / icon guard)"
   );
 
   // ── 14. Bulk edit dialog: the language row rides along with Apply ──

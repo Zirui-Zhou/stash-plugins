@@ -293,69 +293,31 @@
 }
 
 /*
- * ──────────────────── The manga panel and its tab ────────────────────
+ * ─────────────────────────── The manga panel ───────────────────────────
  *
- * EXPERIMENT — see the note in mangaTools.tsx. The panel is rendered in two
- * places at once while the two are being compared; the tab's own styling is the
- * small part at the end.
+ * Deliberately almost nothing: the collapse header copies Stash's own
+ * `CollapseButton` markup and the rows are its own `<h6>` detail rows, so both
+ * are styled by Stash's stylesheet and this block only has to place them.
  *
- * The rows are a two-column grid rather than a definition list, because the
- * label column has to line up with the labels Stash draws in its own detail rows
- * and their width is not a fixed em value.
+ * In particular there is no `color` rule. The header's colour comes from
+ * `button.minimal` (styles/_theme.scss), which is the class that gives a button
+ * the page's text colour — a bare <button> keeps the browser's own, which is
+ * black in either theme.
  */
 .manga-tools-panel {
-  margin-top: 1rem;
-}
-
-.manga-tools-panel-title {
-  font-size: 1rem;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
-}
-
-.manga-tools-row {
-  display: grid;
-  grid-template-columns: minmax(6rem, max-content) 1fr;
-  gap: 0.25rem 0.75rem;
-  margin-bottom: 0.25rem;
-}
-
-.manga-tools-row-label {
-  opacity: 0.75;
-}
-
-/* An unset value, which is a state and not a value — see MangaDetailsPanel */
-.manga-tools-panel-unset {
-  opacity: 0.5;
-}
-
-/*
- * The tab this plugin injects. It needs no rule of its own to look like the
- * others — its classes are read off a live sibling at runtime — so this is only
- * here for the case where that read fails and a bare .tab-pane has to be hidden
- * by something. Bootstrap's own rule does exactly this, and repeating it is
- * cheaper than a tab that shows its contents on every other tab.
- */
-.manga-tools-tab-slot > .manga-tools-panel:first-child {
-  margin-top: 0;
-}
-
-/*
- * The disclosure header. Sized and weighted like the headings Stash draws in its
- * own panels, but it is a button because it opens something.
- */
-.manga-tools-panel-toggle {
-  align-items: center;
-  background: none;
-  border: 0;
-  cursor: pointer;
-  display: flex;
-  font-size: 1rem;
-  font-weight: 600;
-  gap: 0.25rem;
-  padding: 0;
+  margin-top: 0.25rem;
 }
 
 .manga-tools-panel-body {
-  margin-top: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+/* The header sits in .gallery-details, where Stash styles no .collapse-header
+   (its own rule is scoped to .sidebar-section), so the padding is set here. */
+.manga-tools-panel .collapse-header {
+  padding: 0.25rem 0;
+}
+
+.manga-tools-panel .collapse-button {
+  width: 100%;
 }
