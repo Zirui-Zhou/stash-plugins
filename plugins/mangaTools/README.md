@@ -338,13 +338,16 @@ behind holding the old mark.
 
 ### Settings
 
-Three settings under **Settings → Plugins → Manga Tools**:
+Six settings under **Settings → Plugins → Manga Tools**:
 
 | Setting | Type | Effect |
 |---|---|---|
 | **Enabled languages** | multiselect | Limits which languages the edit-page dropdown offers; empty = every language |
 | **Show flags** | switch | Draw flags, or the language name on its own |
 | **Show the language on gallery covers** | switch | The badge in the bottom-right of a gallery's cover |
+| **Start the details block expanded** | switch | The state the details tab's Manga info section opens in |
+| **Start the edit block expanded** | switch | The same, for the edit form's block |
+| **Hide the performers field on a manga gallery** | switch | A manga gallery's edit page leaves Stash's performers field out |
 
 An empty language list shows an "All languages" placeholder rather than every
 tag; only a chosen subset renders tags.
@@ -365,12 +368,21 @@ Taiwan flag and `en` gets the UK one), and a name can be preferable to a
 misleading flag. The name chip is the same one an unrecognised value already
 renders.
 
-**Both switches default to on, and an absent value reads as the default** — so an
-install that predates them behaves exactly as it did until something is turned
-off. Nothing is written to the config until then.
+**The switches default to what the plugin already did, and an absent value reads
+as the default** — both display switches on, the details block folded, the edit
+block open, the performers field hidden. So an install that predates them behaves
+exactly as it did until something is turned off. Nothing is written to the config
+until then.
+
+**Hiding the performers field only hides it.** The row is Stash's, its value lives
+in Stash's form, and the plugin neither renders it nor touches it: one CSS rule
+keyed on the mount point the language row already needs takes it off the page, so
+a manga gallery that does have performers keeps them when it is saved. The bulk
+edit dialog (where the selection may mix manga and ordinary galleries) and the
+details tab are unaffected.
 
 Every setting is saved as one map. `configurePlugin`'s input is the plugin's whole
-settings object, and writing all three at once is correct whether that object is
+settings object, and writing all of them at once is correct whether that object is
 replaced or merged — which the plugin cannot confirm, since the resolver is not
 part of the published API.
 
@@ -378,8 +390,8 @@ It is a *custom* UI rather than Stash's stock per-setting inputs. Stash
 can only render STRING/NUMBER/BOOLEAN settings one plain input each, so "which
 languages are enabled" would otherwise be a comma-separated text box. The plugin
 patches `PluginSettings` to render a react-select multiselect (flag + localised
-name, the same renderer as the edit dropdown) plus the two switches, which are
-laid out exactly like Stash's own `BooleanSetting`.
+name, the same renderer as the edit dropdown) plus the switches, which are laid
+out exactly like Stash's own `BooleanSetting`.
 
 **Only the edit dropdown is affected.** Display is untouched: a gallery whose
 language is disabled still shows its flag badge and detail row exactly as before —

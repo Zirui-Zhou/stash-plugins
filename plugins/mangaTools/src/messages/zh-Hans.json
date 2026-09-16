@@ -16,6 +16,9 @@
   "mangaTools.settings.openEditBlock.heading": "编辑页的漫画信息默认展开",
   "mangaTools.settings.openEditBlock.description": "画廊编辑表单里的那一块，语言和修正在那里设置。这只决定打开时的默认状态，不决定它能不能打开.",
 
+  "mangaTools.settings.hidePerformers.heading": "在漫画的编辑页隐藏「演员」",
+  "mangaTools.settings.hidePerformers.description": "漫画一般没有演员，所以编辑页不显示这一栏。只是隐藏：画廊已有的演员仍然留在画廊上，保存时也不会被清掉。批量编辑对话框和简介页不受影响。",
+
   "mangaTools.manga.mark": "标记为漫画",
   "mangaTools.manga.marked": "漫画",
   "mangaTools.manga.isManga": "是否为漫画",

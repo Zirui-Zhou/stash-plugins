@@ -215,6 +215,24 @@
   display: contents;
 }
 
+/*
+ * A manga gallery's edit page leaves Stash's performers field out, when the
+ * setting asks it to: the mount point is inserted directly after the studio row,
+ * which is the row before the performers one, so one sibling selector is enough.
+ *
+ * Hidden with CSS rather than by not rendering the row, because the row is
+ * Stash's and its value lives in Stash's form. `display: none` takes the field
+ * off the page and leaves the value untouched, so a gallery that does have
+ * performers keeps them on save; nothing this plugin does can clear one.
+ *
+ * The class is toggled on this plugin's own node (see MangaFieldBlock) rather
+ * than written onto Stash's row, so a re-render of the form cannot undo it.
+ */
+.manga-tools-field-host.hide-performers
+~ .form-group[data-field="performer_ids"] {
+  display: none;
+}
+
 .manga-tools-select {
   min-width: 14rem;
 }

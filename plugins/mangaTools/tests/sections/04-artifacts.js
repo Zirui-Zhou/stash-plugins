@@ -82,8 +82,25 @@ module.exports = () => {
     ),
     "the settings block must reset Stash's text-align: right"
   );
+  // The performers field is hidden by CSS rather than by not rendering the row —
+  // Stash's form keeps the value, so nothing can clear it. That makes this rule
+  // the whole of the feature, and its sibling combinator the load-bearing part of
+  // it: the mount point carrying the class (set in 8–9b) has to be a sibling that
+  // comes before Stash's row, which is where the plugin puts it.
+  const performersRule =
+    /\.manga-tools-field-host\.hide-performers\s*~\s*\.form-group\[data-field="performer_ids"\]\s*\{([^}]*)\}/.exec(
+      css
+    );
+  assert.ok(
+    performersRule,
+    "a manga gallery's edit page should hide the performers field"
+  );
+  assert.ok(
+    /display:\s*none/.test(performersRule[1]),
+    "…by taking the field off the page, and not by emptying anything"
+  );
   console.log(
-    "✓ CSS checks (braces / hover / positioning / flag sizing / settings alignment)"
+    "✓ CSS checks (braces / hover / positioning / flag sizing / settings alignment / performers)"
   );
 
   // ── 10b. Bundle shape ──────────────────────────────────────────────

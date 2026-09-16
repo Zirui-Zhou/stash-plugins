@@ -5,6 +5,7 @@
 
 const assert = require("node:assert");
 const {
+  NS,
   call,
   call2,
   documentRoot,
@@ -259,7 +260,12 @@ module.exports = () => {
   );
 
   const fieldHostEl = editForm.children[1];
-  assert.strictEqual(fieldHostEl.className, "manga-tools-field-host");
+  assert.strictEqual(
+    fieldHostEl.className,
+    "manga-tools-field-host hide-performers",
+    "the mount point should carry the class that hides the performers row — " +
+      "this is a manga gallery's edit page, and that is the default"
+  );
   assert.strictEqual(
     fieldHostEl.previousElementSibling,
     studioRow,
@@ -271,6 +277,28 @@ module.exports = () => {
     "and right before the performer row — i.e. between studio and performers"
   );
   assert.strictEqual(fieldPortal.host, fieldHostEl);
+
+  // Hiding the field is the whole of it: the row Stash drew is still there, still
+  // holding its value, which is what stops a manga gallery that does have
+  // performers from losing them when it is saved. The rule that hides it is in the
+  // stylesheet — asserted in 10–10b — and needs this class and that row to be
+  // siblings, which is the placement just above.
+  assert.deepStrictEqual(
+    performerRow.attributes,
+    {},
+    "the row itself must be left exactly as Stash rendered it — nothing of this " +
+      "plugin's is written onto it, so nothing here can clear its value"
+  );
+
+  // With the setting off, Stash's field is back
+  NS.hidePerformers = false;
+  editField({ "plugin.mangaTools.language": "ja" });
+  assert.strictEqual(
+    fieldHostEl.className,
+    "manga-tools-field-host",
+    "and the class goes when the reader asks for the field back"
+  );
+  NS.hidePerformers = true;
 
   // What is portalled is the block — a header row and, below it, the field row.
   assert.strictEqual(fieldPortal.node.props.className, "manga-tools-panel");
@@ -396,8 +424,8 @@ module.exports = () => {
     studioRow,
     "a re-render should pull it back"
   );
-  const fieldHosts = editForm.children.filter(
-    (c) => c.className === "manga-tools-field-host"
+  const fieldHosts = editForm.children.filter((c) =>
+    c.classList.contains("manga-tools-field-host")
   );
   assert.strictEqual(
     fieldHosts.length,

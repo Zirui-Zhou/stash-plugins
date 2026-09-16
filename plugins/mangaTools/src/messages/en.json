@@ -16,6 +16,9 @@
   "mangaTools.settings.openEditBlock.heading": "Start the edit block expanded",
   "mangaTools.settings.openEditBlock.description": "The Manga info block in a gallery's edit form, where its language and censorship are set. This decides the state a block opens in, not whether it can be opened.",
 
+  "mangaTools.settings.hidePerformers.heading": "Hide the performers field on a manga gallery",
+  "mangaTools.settings.hidePerformers.description": "A manga gallery rarely has performers, so its edit page leaves the field out. Only the field is hidden: whatever a gallery already has stays on the gallery and is kept when it is saved. The bulk edit dialog and the details tab are unaffected.",
+
   "mangaTools.manga.mark": "Mark as manga",
   "mangaTools.manga.marked": "Manga",
   "mangaTools.manga.isManga": "Is manga",

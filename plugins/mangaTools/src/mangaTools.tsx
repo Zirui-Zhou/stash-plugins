@@ -519,6 +519,10 @@ function refreshSettings(): void {
         pluginCfg ? pluginCfg.openEditBlock : null,
         EDIT_OPEN_BY_DEFAULT
       );
+      NS.hidePerformers = NS.parseFlag(
+        pluginCfg ? pluginCfg.hidePerformers : null,
+        HIDE_PERFORMERS_BY_DEFAULT
+      );
       emit();
     })
     .catch((e) => {
@@ -1203,6 +1207,16 @@ function MangaFieldBlock(props: {
   // ensureFieldHost is idempotent and returns null when the anchor is absent.
   const host = isGalleryContext() ? ensureFieldHost() : null;
 
+  // A manga gallery rarely has performers, so the row Stash draws for them steps
+  // aside when the setting asks it to — see .hide-performers in mangaTools.css.
+  // Hidden rather than not rendered, because the row is Stash's: its value stays
+  // in Stash's form, so a gallery that does have performers keeps them on save,
+  // and nothing here can lose data. The class goes on this plugin's own node,
+  // which React does not manage, so a re-render of Stash's form cannot undo it.
+  if (host) {
+    host.classList.toggle("hide-performers", NS.hidePerformers);
+  }
+
   const bump = React.useState(0)[1];
 
   // On first mount the studio row **has not been committed to the DOM yet**:
@@ -1466,6 +1480,7 @@ function MangaToolsSettings(props: { pluginID: string }) {
           showCoverBadge: NS.showCoverBadge,
           openDetailsBlock: NS.openDetailsBlock,
           openEditBlock: NS.openEditBlock,
+          hidePerformers: NS.hidePerformers,
         },
       },
     }).catch((e) => {
@@ -1566,6 +1581,18 @@ function MangaToolsSettings(props: { pluginID: string }) {
         checked={NS.openEditBlock}
         onChange={(next) => {
           NS.openEditBlock = next;
+          emit();
+          persist();
+        }}
+      />
+
+      <BooleanSetting
+        id="mangaTools-hidePerformers"
+        heading={t(intl, "mangaTools.settings.hidePerformers.heading")}
+        subHeading={t(intl, "mangaTools.settings.hidePerformers.description")}
+        checked={NS.hidePerformers}
+        onChange={(next) => {
+          NS.hidePerformers = next;
           emit();
           persist();
         }}
@@ -2224,9 +2251,13 @@ class GuardedBlock extends React.Component<
  */
 const DETAILS_OPEN_BY_DEFAULT = false;
 const EDIT_OPEN_BY_DEFAULT = true;
+/** A mark is what makes a gallery manga, so a manga gallery's edit page hides
+ *  the performers field unless the reader asks for it back. See the CSS rule. */
+const HIDE_PERFORMERS_BY_DEFAULT = true;
 
 NS.openDetailsBlock = DETAILS_OPEN_BY_DEFAULT;
 NS.openEditBlock = EDIT_OPEN_BY_DEFAULT;
+NS.hidePerformers = HIDE_PERFORMERS_BY_DEFAULT;
 
 /**
  * The gallery's manga attributes, as labelled rows.

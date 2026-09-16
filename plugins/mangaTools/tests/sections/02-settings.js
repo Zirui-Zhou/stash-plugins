@@ -276,8 +276,9 @@ module.exports = () => {
       "mangaTools-showCoverBadge",
       "mangaTools-openDetailsBlock",
       "mangaTools-openEditBlock",
+      "mangaTools-hidePerformers",
     ],
-    "all four should render"
+    "all five should render"
   );
   assert.strictEqual(switches[0].props.checked, true, "flags default to on");
   assert.strictEqual(
@@ -297,6 +298,11 @@ module.exports = () => {
     true,
     "the edit block starts open — it holds the only way to set a language"
   );
+  assert.strictEqual(
+    switches[4].props.checked,
+    true,
+    "and a manga gallery's edit page hides the performers field by default"
+  );
 
   // Selecting a new set writes it back through configurePlugin and updates the
   // shared NS.enabledLanguages immediately.
@@ -311,6 +317,7 @@ module.exports = () => {
         showCoverBadge: true,
         openDetailsBlock: false,
         openEditBlock: true,
+        hidePerformers: true,
       },
     },
     "every setting is written together, so replace-vs-merge cannot matter"
@@ -359,9 +366,25 @@ module.exports = () => {
       showCoverBadge: true,
       openDetailsBlock: false,
       openEditBlock: true,
+      hidePerformers: true,
     },
   });
   NS.showFlags = true;
+
+  // Turning the performers switch off is how a reader asks for Stash's field
+  // back; the gallery's edit page follows it, since the switch is read there.
+  switches[4].props.onChange();
+  assert.strictEqual(
+    NS.hidePerformers,
+    false,
+    "the performers switch is live state like the rest"
+  );
+  assert.strictEqual(
+    state.capturedConfigWrite.input.hidePerformers,
+    false,
+    "…and is written with the others"
+  );
+  NS.hidePerformers = true;
   console.log(
     "✓ settings UI (multiselect + switches write configurePlugin, update shared state)"
   );

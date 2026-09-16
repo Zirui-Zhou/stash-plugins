@@ -135,6 +135,12 @@ export interface MangaToolsNamespace {
    */
   openDetailsBlock: boolean;
   openEditBlock: boolean;
+  /**
+   * Whether a manga gallery's edit page hides Stash's performers field. The
+   * field is hidden, never emptied: the values Stash's form holds are left
+   * alone, so saving a gallery that has performers keeps them.
+   */
+  hidePerformers: boolean;
   parseFlag(raw: unknown, fallback: boolean): boolean;
 
   /**

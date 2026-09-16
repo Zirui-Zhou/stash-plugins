@@ -16,6 +16,9 @@
   "mangaTools.settings.openEditBlock.heading": "編輯頁的漫畫資訊預設展開",
   "mangaTools.settings.openEditBlock.description": "畫廊編輯表單裡的那一塊，語言和修正在那裡設定。這只決定打開時的預設狀態，不決定它能不能打開.",
 
+  "mangaTools.settings.hidePerformers.heading": "在漫畫的編輯頁隱藏「演員」",
+  "mangaTools.settings.hidePerformers.description": "漫畫一般沒有演員，所以編輯頁不顯示這一欄。只是隱藏：畫廊已有的演員仍然留在畫廊上，儲存時也不會被清掉。批量編輯對話框和簡介頁不受影響。",
+
   "mangaTools.manga.mark": "標記為漫畫",
   "mangaTools.manga.marked": "漫畫",
   "mangaTools.manga.isManga": "是否為漫畫",

@@ -332,6 +332,32 @@ function makeEl(tag) {
     get lastElementChild() {
       return el.children[el.children.length - 1] || null;
     },
+    // The plugin asks the mount point it made to carry a class or not, which a
+    // real node answers with a class list. It reads and writes `className` — the
+    // same property the assertions read — so the two cannot disagree, as with
+    // `class` and `data-*` on setAttribute above.
+    get classList() {
+      const names = () => el.className.split(/\s+/).filter(Boolean);
+      const write = (list) => {
+        el.className = list.join(" ");
+      };
+      return {
+        contains: (name) => names().indexOf(name) !== -1,
+        add(name) {
+          if (names().indexOf(name) === -1) write(names().concat([name]));
+        },
+        remove(name) {
+          write(names().filter((n) => n !== name));
+        },
+        toggle(name, force) {
+          const has = names().indexOf(name) !== -1;
+          const want = force === undefined ? !has : force;
+          if (want && !has) write(names().concat([name]));
+          else if (!want && has) write(names().filter((n) => n !== name));
+          return want;
+        },
+      };
+    },
     // The tag helpers ask a row which tags are inside it. This stub keeps no
     // classes of its own, so it answers with nothing — and the plugin then makes
     // the row it keeps for itself, which is what the assertions below reach for.
