@@ -228,6 +228,11 @@ const fakeClient = {
 };
 
 // ── Minimal DOM stub: only the methods the mount points actually use ──
+
+/** data-some-name -> dataset.someName, the way the DOM does it */
+const datasetKey = (name) =>
+  name.replace(/-([a-z])/g, (_m, ch) => ch.toUpperCase());
+
 function makeEl(tag) {
   const el = {
     tagName: tag,
@@ -251,6 +256,41 @@ function makeEl(tag) {
       el.children.push(child);
       child.parentNode = el;
       return child;
+    },
+    // Real elements have attributes, and this stub had only the two the plugin
+    // used to touch — className and dataset. The tab injector sets more of them
+    // (role, aria-selected, data-rb-event-key, href), so it gets a store. `data-*`
+    // is mirrored into dataset and `class` into className, which is what
+    // querySelector below reads — so the two representations never disagree.
+    attributes: {},
+    listeners: {},
+    text: "",
+    setAttribute(name, value) {
+      el.attributes[name] = String(value);
+      if (name === "class") el.className = String(value);
+      const m = /^data-(.+)$/.exec(name);
+      if (m) el.dataset[datasetKey(m[1])] = String(value);
+    },
+    getAttribute(name) {
+      return name in el.attributes ? el.attributes[name] : null;
+    },
+    // The injector writes a tab's label as text rather than as a child element,
+    // because the nav item it builds is not React's and has no component to
+    // render. One string, so one property is enough.
+    get textContent() {
+      return el.text;
+    },
+    set textContent(value) {
+      el.text = String(value);
+      el.children.length = 0;
+    },
+    addEventListener(name, fn) {
+      el.listeners[name] = fn;
+    },
+    // Enough of an event for the plugin's preventDefault guard, which checks for
+    // it because a listener can be handed a non-event in a test.
+    click() {
+      if (el.listeners.click) el.listeners.click({ preventDefault: () => {} });
     },
     insertBefore(child, ref) {
       if (child.parentNode) child.parentNode.detach(child);
@@ -277,14 +317,23 @@ function makeEl(tag) {
       const i = el.parentNode.children.indexOf(el);
       return i > 0 ? el.parentNode.children[i - 1] : null;
     },
-    // Only ".cls", ".cls[data-field=...]", "[data-*=...]", a bare tag name
-    // and ".cls .cls" are supported — which is all these tests need. The bare
-    // attribute form is what the bulk dialog's anchor uses: its rows are
-    // Bootstrap `.row` divs, with no class of Stash's own to match on. The
-    // two-token form is the one selector the filter dialog's tag row is found by,
-    // and it is two tokens rather than a selector engine on purpose. Any data-*
-    // attribute is matched, not just data-field, because the censorship mark
-    // finds its card's row by the gallery id on its anchor.
+    // Only a few selector shapes are supported — which is all these tests need,
+    // and it stays that way deliberately rather than growing into a selector
+    // engine:
+    //
+    //   .cls                     a class
+    //   .cls .cls                a class inside a class (the filter dialog's row)
+    //   .cls[data-field=...]     a class plus a data attribute
+    //   [data-*=...]             a data attribute alone — the bulk dialog's
+    //                            anchor, whose rows are Bootstrap `.row` divs
+    //                            with no class of Stash's own
+    //   tag[data-*=...]          a tag plus a data attribute — how the tab
+    //                            injector finds Stash's own tab anchors, which it
+    //                            matches by `data-rb-event-key`
+    //   tag                      a bare tag name
+    //
+    // Any data-* attribute is matched, not just data-field, because the
+    // censorship mark finds its card's row by the gallery id on its anchor.
     querySelector(sel) {
       const mDesc = /^\.([\w-]+) \.([\w-]+)$/.exec(sel);
       if (mDesc) {
@@ -294,16 +343,19 @@ function makeEl(tag) {
 
       const mAttr = /^\.([\w-]+)(?:\[data-field="([^"]+)"\])?$/.exec(sel);
       const mData = /^\[data-([\w-]+)="([^"]+)"\]$/.exec(sel);
+      const mTagData = /^([a-z]+)\[data-([\w-]+)="([^"]+)"\]$/.exec(sel);
       const mTag = /^([a-z]+)$/.exec(sel);
-      if (!mAttr && !mData && !mTag) return null;
+      if (!mAttr && !mData && !mTagData && !mTag) return null;
 
       const matches = (c) => {
         if (mData) {
-          // data-some-name -> dataset.someName, the way the DOM does it
-          const key = mData[1].replace(/-([a-z])/g, (_m, ch) =>
-            ch.toUpperCase()
+          return c.dataset[datasetKey(mData[1])] === mData[2];
+        }
+        if (mTagData) {
+          return (
+            c.tagName === mTagData[1] &&
+            c.dataset[datasetKey(mTagData[2])] === mTagData[3]
           );
-          return c.dataset[key] === mData[2];
         }
         if (mAttr) {
           return (
@@ -505,7 +557,11 @@ global.window = {
 const observed = [];
 global.MutationObserver = function MutationObserver(callback) {
   this.callback = callback;
-  this.observe = (target, options) => observed.push({ target, options });
+  // The callback is kept as well as the wiring, so a test can fire the observer
+  // where the mutation it watches for cannot be provoked through the stub — the
+  // tab injector watches for a class React changes on its own re-render.
+  this.observe = (target, options) =>
+    observed.push({ target, options, callback });
   this.disconnect = () => {};
 };
 
@@ -4177,6 +4233,158 @@ setTimeout(() => {
       "✓ censorship (field rules / card mark in Stash's row / cycling toolbar button)"
     );
   }, 0);
+
+  // ── 13c. The manga panel, and the tab it is rendered into as well ────
+  //
+  // EXPERIMENT, on the `test` branch. What is being judged is the *placement*,
+  // so what these hold down is the machinery: that the panel says the same thing
+  // in both places, and that the tab injection builds and switches Stash's own
+  // markup rather than a guess at it.
+  currentLocale = "zh-CN";
+  globalListeners["stash:location"]({
+    detail: { data: { location: { pathname: "/galleries/1" } } },
+  });
+
+  const panelValues = {
+    [NS.FIELD_NAME]: "zh-Hans",
+    [NS.CENSORSHIP_FIELD_NAME]: "censored",
+    alsoNotOurs: "x",
+  };
+  const customFieldsEl = (values) => call("CustomFields", { values });
+  const panelOf = (values) => {
+    const el = customFieldsEl(values).props.children[3];
+    return el ? el.type(el.props) : null;
+  };
+
+  const panel = panelOf(panelValues);
+  assert.ok(panel, "a gallery page should render the panel");
+  assert.ok(
+    hasText(panel, "漫画"),
+    "headed with this plugin's own word for it, since Stash has none"
+  );
+  assert.ok(
+    hasText(panel, "简体中文"),
+    "the language as its localised name, not the code"
+  );
+  assert.ok(hasText(panel, "有修正"), "and the censorship state");
+
+  // Unset is a state and is shown as one — an em dash, not a missing row. The
+  // panel is a place for these attributes, so an empty one still answers
+  // "where would this go". (Worth revisiting if this ever ships: everywhere else
+  // the plugin keeps an unset value quiet.)
+  const empty = panelOf({ alsoNotOurs: "x" });
+  assert.ok(hasText(empty, "—"), "an unset value reads as a dash");
+  assert.ok(hasText(empty, "未标注"), "and an unmarked gallery says so");
+
+  // ── the injected tab ──
+  // A gallery page's tab bar as Stash draws it, and the content beside it. The
+  // plugin is looking for a particular anchor — the tab links carry
+  // data-rb-event-key — so the fixture uses the same markup the browser shows.
+  const tabRoot = makeEl("div");
+  const tabNav = makeEl("div");
+  tabNav.className = "mr-auto nav nav-tabs";
+  const detailsItem = makeEl("div");
+  detailsItem.className = "nav-item";
+  const detailsLink = makeEl("a");
+  detailsLink.className = "nav-link active";
+  detailsLink.setAttribute("role", "tab");
+  detailsLink.setAttribute("data-rb-event-key", "gallery-details-panel");
+  detailsLink.setAttribute("aria-selected", "true");
+  detailsItem.appendChild(detailsLink);
+  tabNav.appendChild(detailsItem);
+
+  const tabContent = makeEl("div");
+  tabContent.className = "tab-content";
+  const detailsPane = makeEl("div");
+  detailsPane.className = "tab-pane fade active show";
+  tabContent.appendChild(detailsPane);
+
+  tabRoot.appendChild(tabNav);
+  tabRoot.appendChild(tabContent);
+  documentRoot.appendChild(tabRoot);
+
+  const tabEl = customFieldsEl(panelValues).props.children[4];
+  assert.ok(tabEl, "a gallery page should mount the tab");
+  const tabPortal = tabEl.type(tabEl.props);
+  assert.ok(tabPortal?.__portal, "the panel is portalled into it");
+
+  const ourItem = tabNav.children[1];
+  const ourLink = ourItem.children[0];
+  const ourPane = tabContent.children[1];
+  assert.strictEqual(tabNav.children.length, 2, "one tab was added");
+  assert.strictEqual(
+    ourItem.className,
+    "nav-item",
+    "the nav item copies the class off Stash's own item rather than naming it"
+  );
+  assert.strictEqual(
+    ourLink.className,
+    "nav-link",
+    "…and the link off Stash's own link, with active stripped — an added tab " +
+      "must not look selected before it is"
+  );
+  assert.strictEqual(ourLink.dataset.rbEventKey, "manga-tools-panel");
+  assert.strictEqual(
+    ourLink.textContent,
+    "漫画",
+    "labelled from the catalogs — Stash's own tab labels come from its locale " +
+      "files, and this one has no entry there"
+  );
+  assert.strictEqual(
+    ourPane.className,
+    "tab-pane fade",
+    "the pane copies a live pane's classes, without the parts that show it"
+  );
+  assert.strictEqual(
+    tabPortal.host,
+    ourPane.children[0],
+    "and the panel is portalled into a slot of its own inside the pane"
+  );
+
+  // Switching to it has to hide Stash's pane as well as showing this one: both
+  // are in the document, and Bootstrap decides which is visible from the classes.
+  ourLink.click();
+  assert.ok(
+    ourPane.className.split(/\s+/).includes("active"),
+    "clicking the tab shows the pane"
+  );
+  assert.ok(ourPane.className.split(/\s+/).includes("show"));
+  assert.ok(
+    !detailsPane.className.split(/\s+/).includes("active"),
+    "and hides Stash's, which is active in the fixture"
+  );
+  assert.ok(!detailsLink.className.split(/\s+/).includes("active"));
+
+  // The case a click listener cannot see, and the reason for the observer: four
+  // of Stash's tabs are reachable by keyboard, and those call the state setter
+  // directly, so nothing is clicked.
+  //
+  // Two observers watch document.body by this point — the filter dialog's and
+  // this one — and they are told apart by what they watch: only the tab's cares
+  // about a class changing on an element it did not draw.
+  const tabObserver = observed.find(
+    (o) => o.target === documentRoot && o.options.attributeFilter
+  );
+  assert.ok(tabObserver, "the tab state is watched for attribute changes");
+  assert.ok(
+    observed.some(
+      (o) => o.target === documentRoot && !o.options.attributeFilter
+    ),
+    "…and it is not the observer the filter dialog already had"
+  );
+  detailsLink.className = "nav-link active";
+  detailsLink.setAttribute("aria-selected", "true");
+  tabObserver.callback();
+  assert.ok(
+    !ourPane.className.split(/\s+/).includes("active"),
+    "a tab switched by keyboard must take the pane back off the screen — a " +
+      "click listener cannot see that switch at all"
+  );
+  assert.ok(!ourLink.className.split(/\s+/).includes("active"));
+
+  console.log(
+    "✓ manga panel + injected tab (both placements / classes read off Stash's own / keyboard switch)"
+  );
 
   // ── 14. Bulk edit dialog: the language row rides along with Apply ──
   // This runs here rather than with the other synchronous sections because the

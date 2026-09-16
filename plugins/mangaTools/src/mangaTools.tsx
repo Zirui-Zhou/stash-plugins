@@ -1720,6 +1720,371 @@ function BulkLanguageRow() {
   return PluginApi.ReactDOM.createPortal(field, host);
 }
 
+// ──────────────────── The manga panel, and its own tab ────────────────────
+//
+// EXPERIMENT (branch `test`). The same panel is rendered twice, on purpose, so
+// the two placements can be compared side by side in a browser: once inline in
+// the details tab, once inside a tab this block injects. Whichever wins, the
+// other is a few lines to delete — see DEVELOPING.md, "Trying a change without
+// disturbing the real plugin".
+//
+// The panel is read-only. That is not an oversight: what is being judged here is
+// the *placement*, and the injection below is the only part with unknowns in it.
+// Adding write controls would mean a second way to edit a field that already has
+// one, and would answer nothing the two placements disagree about.
+
+/** One label and one value. Stash's own detail rows are a label and a value. */
+function PanelRow(props: { label: string; children: ReactNode }) {
+  return (
+    <div className="manga-tools-row">
+      <span className="manga-tools-row-label">{props.label}</span>
+      <span className="manga-tools-row-value">{props.children}</span>
+    </div>
+  );
+}
+
+/**
+ * The gallery's manga attributes, as labelled rows.
+ *
+ * Deliberately rendered whether or not anything is set, with a dash for an
+ * unset value: the panel is a place for these attributes, so an empty one is
+ * still the answer to "where would this go". (If this is ever shipped outside the
+ * experiment that is worth revisiting — the rest of the plugin keeps an unset
+ * value quiet.)
+ */
+function MangaDetailsPanel(props: { values: CustomFieldsMap }) {
+  useGlobalVersion();
+
+  const intl = PluginApi.libraries.Intl.useIntl();
+  const language = NS.describe(pickLanguage(props.values), intl.locale);
+  const mark = censorshipOf(props.values);
+  const Icon = PluginApi.components.Icon;
+
+  return (
+    <div className="manga-tools-panel">
+      <h5 className="manga-tools-panel-title">
+        {t(intl, "mangaTools.panel.heading")}
+      </h5>
+
+      <PanelRow label={fieldLabel(intl)}>
+        {!language ? (
+          <span className="manga-tools-panel-unset">—</span>
+        ) : (
+          <>
+            {NS.showFlags && language.flag ? (
+              <Flag
+                flag={language.flag as string}
+                className="manga-tools-flag"
+              />
+            ) : null}
+            {NS.showFlags && language.flag ? " " : null}
+            {language.name}
+          </>
+        )}
+      </PanelRow>
+
+      <PanelRow label={t(intl, "mangaTools.censorship.heading")}>
+        <Icon icon={censorshipIcon(mark)} />
+        {mark ? " " : null}
+        {censorshipLabel(intl, mark)}
+      </PanelRow>
+    </div>
+  );
+}
+
+// ── The tab this plugin adds ──
+//
+// The one part of this plugin that reaches into markup React is actively
+// rendering *and* has to agree with it about state. Everything else either adds
+// beside Stash's output or portals into a node nothing else touches.
+//
+// What makes it awkward, concretely: the tab bar is hardcoded JSX inside
+// `Gallery` (which is not a patchable component), react-bootstrap owns which tab
+// is active, and four of Stash's tabs are reachable by keyboard shortcut in a way
+// that never touches an anchor:
+//
+//   Mousetrap.bind("e", () => setActiveTabKey("gallery-edit-panel"));
+//
+// so a click listener cannot see every switch. The observer below is what
+// notices those, and that is the whole reason it exists.
+
+/** The eventKey of the tab this plugin adds, as Stash's own anchors carry theirs */
+const TAB_KEY = "manga-tools-panel";
+
+/** The tab Stash shows a gallery's details under — the anchor into the right nav */
+const DETAILS_TAB_KEY = "gallery-details-panel";
+
+/** Marks the two nodes this plugin made, so it can find them again */
+const TAB_MARK = "data-manga-tools-tab";
+/** The node inside the pane that the panel is portalled into */
+const TAB_SLOT_CLASS = "manga-tools-tab-slot";
+
+/**
+ * Whether the reader last asked for this tab.
+ *
+ * The plugin's half of a state that react-bootstrap also keeps. Everything below
+ * is about keeping the two from disagreeing, and about noticing when they do.
+ */
+let tabWanted = false;
+
+/** As elementOf, for the walk up the tree. Elements, not nodes — text nodes have no children. */
+function parentElementOf(el: Element | null): HTMLElement | null {
+  return (el?.parentNode as HTMLElement | null) || null;
+}
+
+/** The nearest ancestor carrying a class, the element itself included */
+function closestWithClass(
+  el: Element | null,
+  name: string
+): HTMLElement | null {
+  let at = el as HTMLElement | null;
+  while (at) {
+    if (hasClass(at, name)) return at;
+    at = parentElementOf(at);
+  }
+  return null;
+}
+
+/** The first direct child carrying a class */
+function childWithClass(parent: Element, name: string): HTMLElement | null {
+  for (let i = 0; i < parent.children.length; i++) {
+    if (hasClass(parent.children[i], name)) {
+      return parent.children[i] as HTMLElement;
+    }
+  }
+  return null;
+}
+
+/** The first direct child that is an element at all */
+function firstChildElement(parent: Element): HTMLElement | null {
+  return (parent.children[0] as HTMLElement | undefined) || null;
+}
+
+/** Adds or removes a class. Written out because the tests' DOM stub has no classList. */
+function toggleClass(el: Element, name: string, on: boolean): void {
+  const parts = (el.className || "").split(/\s+/).filter(Boolean);
+  const has = parts.indexOf(name) >= 0;
+  if (on && !has) parts.push(name);
+  if (!on && has) parts.splice(parts.indexOf(name), 1);
+  el.className = parts.join(" ");
+}
+
+/** A class list with the parts that make a tab visible taken out */
+function inactiveClasses(className: string, fallback: string): string {
+  const parts = (className || "").split(/\s+/).filter(Boolean);
+  const kept = parts.filter((c) => c !== "active" && c !== "show");
+  return kept.length ? kept.join(" ") : fallback;
+}
+
+/**
+ * The `.tab-content` belonging to the same container as `nav`.
+ *
+ * Walked up rather than assumed: `Tab.Container` renders its children with no
+ * wrapper of its own, and how many levels above the nav its sibling content sits
+ * depends on how Stash laid the page out. The first ancestor that holds one is
+ * the nearest, so the walk stops at the right one without counting levels.
+ */
+function tabContentFor(nav: Element): HTMLElement | null {
+  let at = parentElementOf(nav);
+  while (at) {
+    const found = at.querySelector(".tab-content");
+    if (found) return found as HTMLElement;
+    at = parentElementOf(at);
+  }
+  return null;
+}
+
+/** Stash's own tab link for `key`, anywhere on the page */
+function stashTabLink(key: string): HTMLElement | null {
+  return document.querySelector(
+    'a[data-rb-event-key="' + key + '"]'
+  ) as HTMLElement | null;
+}
+
+/**
+ * Adds this plugin's tab to Stash's tab bar, if it is not there already, and
+ * returns the node inside its pane for the panel to be portalled into.
+ *
+ * The nav item and the pane are built to match a live sibling's markup rather
+ * than from written-out class names — the same reasoning as the edit page's field
+ * row copying its column widths off the native field. react-bootstrap decides
+ * what an inactive tab look like, so it is asked rather than guessed at.
+ *
+ * Idempotent, and called during render like every other mount point here: it
+ * finds what it made last time, or makes it, and corrects its position.
+ */
+function ensureTabHost(label: string): HTMLElement | null {
+  const detailsLink = stashTabLink(DETAILS_TAB_KEY);
+  const nav = closestWithClass(detailsLink, "nav-tabs");
+  if (!nav || !detailsLink) return null;
+
+  const content = tabContentFor(nav);
+  if (!content) return null;
+
+  // ── the nav item ──
+  let item = nav.querySelector(
+    "[" + TAB_MARK + '="nav"]'
+  ) as HTMLElement | null;
+  if (!item) {
+    item = document.createElement("div");
+    item.className = parentElementOf(detailsLink)?.className || "nav-item";
+    item.setAttribute(TAB_MARK, "nav");
+
+    const link = document.createElement("a");
+    link.className = inactiveClasses(detailsLink.className, "nav-link");
+    link.setAttribute("href", "#");
+    link.setAttribute("role", "tab");
+    link.setAttribute("data-rb-event-key", TAB_KEY);
+    link.setAttribute("aria-selected", "false");
+    link.addEventListener("click", (e) => {
+      if (e && typeof e.preventDefault === "function") e.preventDefault();
+      tabWanted = true;
+      syncTabState();
+    });
+
+    item.appendChild(link);
+    nav.appendChild(item);
+  } else if (nav.lastElementChild !== item) {
+    // React re-renders its own items; ours goes back to the end.
+    nav.appendChild(item);
+  }
+
+  // The label follows the UI language, so it is written on every pass rather than
+  // once at creation.
+  const link = firstChildElement(item);
+  if (link) link.textContent = label;
+
+  // ── the pane ──
+  let pane = content.querySelector(
+    "[" + TAB_MARK + '="pane"]'
+  ) as HTMLElement | null;
+  if (!pane) {
+    const like = childWithClass(content, "tab-pane");
+    pane = document.createElement("div");
+    pane.className = inactiveClasses(like?.className || "", "tab-pane");
+    pane.setAttribute(TAB_MARK, "pane");
+    pane.setAttribute("role", "tabpanel");
+    content.appendChild(pane);
+  } else if (content.lastElementChild !== pane) {
+    content.appendChild(pane);
+  }
+
+  // ── the slot the panel goes in ──
+  let slot = childWithClass(pane, TAB_SLOT_CLASS);
+  if (!slot) {
+    slot = document.createElement("div");
+    slot.className = TAB_SLOT_CLASS;
+    pane.appendChild(slot);
+  }
+  return slot;
+}
+
+/**
+ * Makes the page agree with `tabWanted`.
+ *
+ * Activating means hiding Stash's own pane as well as showing this one, because
+ * both are in the document at once and Bootstrap's CSS decides which is visible
+ * from the classes. Deactivating only clears ours: from there Stash's own render
+ * is what puts its pane back, which is the one direction that cannot drift.
+ *
+ * The case that has to be *recognised* rather than assumed is Stash switching away
+ * by a route no listener can see. React cannot take a class off a link it does not
+ * know this plugin made, so the signature is both of them active at once — Stash's
+ * new one, and this plugin's stale one. On a first activation only one is active,
+ * which is what keeps "arriving" from being read as "leaving".
+ */
+function syncTabState(): void {
+  const detailsLink = stashTabLink(DETAILS_TAB_KEY);
+  const nav = closestWithClass(detailsLink, "nav-tabs");
+  const content = nav ? tabContentFor(nav) : null;
+  const item =
+    nav &&
+    (nav.querySelector("[" + TAB_MARK + '="nav"]') as HTMLElement | null);
+  const ourLink = item ? firstChildElement(item) : null;
+  const ourPane =
+    content &&
+    (content.querySelector("[" + TAB_MARK + '="pane"]') as HTMLElement | null);
+  if (!nav || !content || !ourLink || !ourPane) return;
+
+  const links: HTMLElement[] = [];
+  for (let i = 0; i < nav.children.length; i++) {
+    const link = firstChildElement(nav.children[i]);
+    if (link) links.push(link);
+  }
+
+  const oursActive = hasClass(ourLink, "active");
+  const theirsActive = links.some(
+    (l) => l !== ourLink && hasClass(l, "active")
+  );
+  if (tabWanted && oursActive && theirsActive) tabWanted = false;
+
+  if (!tabWanted) {
+    toggleClass(ourLink, "active", false);
+    ourLink.setAttribute("aria-selected", "false");
+    toggleClass(ourPane, "active", false);
+    toggleClass(ourPane, "show", false);
+    return;
+  }
+
+  toggleClass(ourLink, "active", true);
+  ourLink.setAttribute("aria-selected", "true");
+  toggleClass(ourPane, "active", true);
+  toggleClass(ourPane, "show", true);
+
+  for (const link of links) {
+    if (link === ourLink) continue;
+    toggleClass(link, "active", false);
+    link.setAttribute("aria-selected", "false");
+  }
+
+  for (let i = 0; i < content.children.length; i++) {
+    const pane = content.children[i] as HTMLElement;
+    if (pane === ourPane) continue;
+    toggleClass(pane, "active", false);
+    toggleClass(pane, "show", false);
+  }
+}
+
+/**
+ * Watches for Stash's tab state moving without this plugin's involvement.
+ *
+ * Only a class and an aria attribute are watched, and on the whole document
+ * because the nav is rebuilt as the page navigates. The same shape as the
+ * observer language-filter.tsx keeps for the filter dialog, for the same reason:
+ * the state that matters belongs to React and no event reports it.
+ */
+let tabObserver = false;
+
+function watchTabState(): void {
+  if (tabObserver || typeof MutationObserver !== "function") return;
+  tabObserver = true;
+  const observer = new MutationObserver(() => {
+    syncTabState();
+  });
+  observer.observe(document.body, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ["class", "aria-selected"],
+  });
+}
+
+/** The panel, rendered into the tab this plugin added */
+function MangaTab(props: { values: CustomFieldsMap }) {
+  useGlobalVersion();
+  useAfterMount();
+  watchTabState();
+
+  const intl = PluginApi.libraries.Intl.useIntl();
+  const slot = ensureTabHost(t(intl, "mangaTools.panel.heading"));
+  if (!slot) return null;
+
+  return PluginApi.ReactDOM.createPortal(
+    <MangaDetailsPanel values={props.values} />,
+    slot
+  );
+}
+
 // ───────────────────────────── Patch registration ─────────────────────────────
 
 // 1. The badge on the bottom of the gallery card cover.
@@ -2067,6 +2432,22 @@ registerPatch("instead", "CustomFields", (...args: unknown[]) => {
           fieldKey={censorshipKey || CENSORSHIP_FIELD_NAME}
         />
       ) : null}
+      {/*
+        EXPERIMENT — the panel, in both places at once, so the two placements can
+        be compared in a browser. Whichever wins, the other is a line to delete;
+        see the note above MangaDetailsPanel.
+
+        Inline here needs no mount point and no portal, because `CustomFields` is
+        the last thing in the details tab's column: this simply renders as the
+        next block down. The tab is the one that has to work for its living.
+
+        Last in this fragment rather than beside the language row: the order only
+        decides which of the portalled children comes first in the tree, and
+        leaving the existing children where they were keeps the tests that index
+        into them meaningful.
+      */}
+      {galleryId ? <MangaDetailsPanel values={values} /> : null}
+      {galleryId ? <MangaTab values={values} /> : null}
     </>
   );
 });

@@ -291,3 +291,51 @@
 .manga-tools-censorship.is-unmarked {
   color: rgba(191, 204, 214, 0.5);
 }
+
+/*
+ * ──────────────────── The manga panel and its tab ────────────────────
+ *
+ * EXPERIMENT — see the note in mangaTools.tsx. The panel is rendered in two
+ * places at once while the two are being compared; the tab's own styling is the
+ * small part at the end.
+ *
+ * The rows are a two-column grid rather than a definition list, because the
+ * label column has to line up with the labels Stash draws in its own detail rows
+ * and their width is not a fixed em value.
+ */
+.manga-tools-panel {
+  margin-top: 1rem;
+}
+
+.manga-tools-panel-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.manga-tools-row {
+  display: grid;
+  grid-template-columns: minmax(6rem, max-content) 1fr;
+  gap: 0.25rem 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.manga-tools-row-label {
+  opacity: 0.75;
+}
+
+/* An unset value, which is a state and not a value — see MangaDetailsPanel */
+.manga-tools-panel-unset {
+  opacity: 0.5;
+}
+
+/*
+ * The tab this plugin injects. It needs no rule of its own to look like the
+ * others — its classes are read off a live sibling at runtime — so this is only
+ * here for the case where that read fails and a bare .tab-pane has to be hidden
+ * by something. Bootstrap's own rule does exactly this, and repeating it is
+ * cheaper than a tab that shows its contents on every other tab.
+ */
+.manga-tools-tab-slot > .manga-tools-panel:first-child {
+  margin-top: 0;
+}
