@@ -52,6 +52,10 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildSync } from "esbuild";
+// A real YAML parser, for one check: that a plugin's manifest is readable at all.
+// The readers below are hand-rolled and tolerant; this is the only thing here that
+// can tell a broken manifest from a working one. See buildPlugin.
+import { load as parseYaml } from "js-yaml";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLUGINS_DIR = path.join(ROOT, "plugins");
@@ -425,6 +429,25 @@ function buildPlugin(dirName, sha, suffix, outDir) {
   const ymlText = fs
     .readFileSync(path.join(dir, ymlName), "utf8")
     .replace(/\r\n/g, "\n");
+
+  // The manifest has to be valid YAML, checked with a real parser, before any of
+  // the readers below look at it.
+  //
+  // They are tolerant by design — each picks the one key it wants out of the text
+  // and ignores the rest — so none of them can tell a manifest that is subtly
+  // wrong from one that is right, and neither can anything else in this pipeline:
+  // Stash reads this file with a real parser, and a manifest it cannot parse costs
+  // the plugin its scripts, its styles and its settings at once. It appears in the
+  // plugin list, and does nothing. That is not hypothetical: the 0.5.3 release
+  // shipped a description containing a colon, which is a mapping indicator inside
+  // a plain scalar, and the plugin was dead until 0.5.4.
+  try {
+    parseYaml(ymlText);
+  } catch (e) {
+    throw new Error(
+      `plugins/${dirName}/${ymlName}: not valid YAML — ${e.message}`
+    );
+  }
 
   // What the yml exposes to the browser beyond its own script and stylesheet.
   const assets = mapUnderKey(ymlText, "assets");

@@ -9,7 +9,7 @@ name: Manga Tools
 description: Adapts Stash galleries to manga/comic management.
 # Shown as the link button beside the plugin in Settings → Plugins.
 url: https://github.com/Zirui-Zhou/stash-plugins/tree/main/plugins/mangaTools
-version: 0.5.3
+version: 0.5.4
 ui:
   javascript:
     - mangaTools.js
@@ -66,5 +66,5 @@ settings:
     type: BOOLEAN
   hidePerformers:
     displayName: Hide the performers field on a manga gallery
-    description: A manga gallery rarely has performers, so its edit page leaves the field out. Only the field is hidden: whatever a gallery already has stays on the gallery and is kept when it is saved. The bulk edit dialog and the details tab are unaffected.
+    description: A manga gallery rarely has performers, so its edit page leaves the field out. Only the field is hidden — whatever a gallery already has stays on the gallery and is kept when it is saved. The bulk edit dialog and the details tab are unaffected.
     type: BOOLEAN
