@@ -180,12 +180,74 @@ npm install         # once
 npm run typecheck   # tsc over every plugin, no output
 npm run build       # bundle + package into dist/ (no type-check)
 npm test            # all of the above, plus the smoke tests
+
+# Package a second, separately installable copy — see "Trying a change" below.
+node tools/build.mjs --id-suffix=Test
+# …and somewhere other than dist/, which leaves the ordinary build alone.
+node tools/build.mjs --id-suffix=Test --out=/tmp/somewhere
 ```
 
 > **Enabling Pages the first time**: repository Settings → Pages → Source, choose
 > `Deploy from a branch`, pick the `gh-pages` branch and the `/ (root)` directory.
 > This can only be set once CI has run at least once and the `gh-pages` branch
 > exists.
+
+### Trying a change without disturbing the real plugin
+
+A UI change is not something you can judge from a diff — it has to be looked at,
+in a browser, over a real library. Doing that by installing the branch normally
+does not work: **Stash keys installs on the plugin ID, and it hides any available
+package whose ID is already installed.** Two sources offering `mangaTools` cannot
+both be installed; while one is installed, the other's entry does not even appear
+in Available Plugins. And uninstalling to swap between them means a plugin reload
+every time you want to look.
+
+So a branch publishes a *different plugin* instead:
+
+1. **A branch**, `test` or whatever it is called. Everything experimental lives
+   here, and `main` stays as it is for the duration.
+2. **`.github/workflows/publish-test.yml`**, which already exists on `test`. On a
+   push to that branch it runs `npm test` and then
+   `node tools/build.mjs --id-suffix=Test`, and publishes `dist/` to the
+   **`gh-pages-test`** branch. Nothing *serves* that branch — it is a place to put
+   two files, in the same spirit as `gh-pages`, and it is always a single orphan
+   commit because the workflow forces that.
+3. **A second plugin source in Stash** pointing at the branch over raw:
+
+   ```
+   https://raw.githubusercontent.com/<username>/stash-plugins/gh-pages-test/index.yml
+   ```
+
+   The zip sits beside the index (`path:` in the manifest is relative), so a raw
+   URL resolves both.
+
+   That URL only answers once the workflow has run at least once.
+
+4. **Install it.** It appears as *Manga Tools (test)* — a second plugin, with its
+   own enable toggle, sitting beside the real one. Enable one and disable the
+   other; whichever is enabled is the one whose patches are registered.
+
+   The two share the custom fields (the same data, so an experiment runs against
+   the real library) and read the *real* plugin's settings, because the ID in the
+   source is still `mangaTools` where that matters. Which means the test copy's
+   own settings row is inert — edit the real one.
+
+**It publishes only the suffixed plugin.** With a suffix, `build.mjs` packages
+every plugin under `<id><suffix>` and nothing else, so there is no entry in that
+manifest that could update the real plugin. `tools/check-package-variant.mjs`
+holds that in place, and checks the part the manifest cannot show: that the yml
+*inside the zip* was renamed too. If it were not, installing the test source would
+silently overwrite the real plugin — the manifest would say `mangaToolsTest`
+while Stash, reading the yml's file name, installed `mangaTools`.
+
+**Publishing the real plugin never depends on this.** The workflow is its own
+file on its own branch with its own concurrency group, so a broken experiment
+cannot stop `main` from publishing, and a push to `test` cannot cancel a publish
+of `main`. That is the whole reason it is not a second job in `build.yml`.
+
+**When the experiment is over**, either merge it or delete the branch. The
+`gh-pages-test` branch and the second source in Stash can be removed at the same
+time; neither is referenced from anywhere else.
 
 ## Conventions and gotchas
 
