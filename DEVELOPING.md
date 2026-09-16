@@ -213,8 +213,9 @@ So a branch publishes a *different plugin* instead:
 
 1. **A branch**, `test` or whatever it is called. Everything experimental lives
    here, and `main` stays as it is for the duration.
-2. **`.github/workflows/publish-test.yml`**, which already exists on `test`. On a
-   push to that branch it runs `npm test` and then
+2. **`.github/workflows/publish-test.yml`**, which is already in the repo. It is
+   inert unless a branch named `test` is pushed to — the name is in the workflow's
+   `on:` — and then it runs `npm test`, then
    `node tools/build.mjs --id-suffix=Test`, and publishes `dist/` to the
    **`gh-pages-test`** branch. Nothing *serves* that branch — it is a place to put
    two files, in the same spirit as `gh-pages`, and it is always a single orphan
