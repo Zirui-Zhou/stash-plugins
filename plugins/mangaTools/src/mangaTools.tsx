@@ -2227,11 +2227,10 @@ NS.openEditBlock = EDIT_OPEN_BY_DEFAULT;
 /**
  * The gallery's manga attributes, as labelled rows.
  *
- * Deliberately rendered whether or not anything is set, with a dash for an
- * unset value: the panel is a place for these attributes, so an empty one is
- * still the answer to "where would this go". (If this is ever shipped outside the
- * experiment that is worth revisiting — the rest of the plugin keeps an unset
- * value quiet.)
+ * A row is drawn only when its value is set — an unset one is simply absent,
+ * the same way the rest of the plugin keeps an unset value quiet. With no value
+ * at all the whole panel is dropped, since a fold whose only content is its own
+ * heading is not worth a line.
  */
 function MangaDetailsPanel(props: { values: CustomFieldsMap }) {
   useGlobalVersion();
@@ -2248,6 +2247,10 @@ function MangaDetailsPanel(props: { values: CustomFieldsMap }) {
   const Button = PluginApi.libraries.Bootstrap?.Button;
   const Collapse = PluginApi.libraries.Bootstrap?.Collapse;
 
+  // Nothing set means nothing to say: with no language and no mark the whole
+  // panel is dropped, rather than left as an empty fold with only its heading.
+  if (!language && !mark) return null;
+
   // The same mount point the plain language row used: the end of .gallery-details,
   // which lands after "photographer" and before "details".
   const host = ensureDetailHost();
@@ -2260,23 +2263,28 @@ function MangaDetailsPanel(props: { values: CustomFieldsMap }) {
 
   // Two <h6>s, exactly as the rows above and below are drawn — the pieces are
   // separate children rather than a label and a value in a wrapper, so the text
-  // nodes come out the way Stash's own rows produce them.
+  // nodes come out the way Stash's own rows produce them. Each is drawn only
+  // when its value is set.
   const body = (
     <div className="manga-tools-panel-body">
-      <h6 className="manga-tools-detail">
-        {fieldLabel(intl) + ": "}
-        {showFlag ? (
-          <Flag flag={language?.flag as string} className="manga-tools-flag" />
-        ) : null}
-        {showFlag ? " " : null}
-        {language ? language.name : "—"}
-      </h6>
-      <h6 className="manga-tools-detail">
-        {t(intl, "mangaTools.censorship.heading") + ": "}
-        <CensorshipIcon value={mark} />
-        {mark ? " " : null}
-        {NS.censorshipLabel(intl, mark)}
-      </h6>
+      {language ? (
+        <h6 className="manga-tools-detail">
+          {fieldLabel(intl) + ": "}
+          {showFlag ? (
+            <Flag flag={language.flag as string} className="manga-tools-flag" />
+          ) : null}
+          {showFlag ? " " : null}
+          {language.name}
+        </h6>
+      ) : null}
+      {mark ? (
+        <h6 className="manga-tools-detail">
+          {t(intl, "mangaTools.censorship.heading") + ": "}
+          <CensorshipIcon value={mark} />
+          {mark ? " " : null}
+          {NS.censorshipLabel(intl, mark)}
+        </h6>
+      ) : null}
     </div>
   );
 
@@ -2593,9 +2601,8 @@ registerPatch("instead", "CustomFields", (...args: unknown[]) => {
       />
       {/*
         The panel, in the details tab, where the plain language row used to be.
-        It renders whether or not this gallery carries either field, because it is
-        a place for these attributes and an empty one still answers "where would
-        this go"; collapsed, it costs one line.
+        Drawn for a manga gallery that carries a value; the panel itself drops
+        out entirely when neither field is set.
       */}
       {galleryId && NS.isManga(values) ? (
         <GuardedBlock name="manga panel">

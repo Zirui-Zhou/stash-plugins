@@ -1513,11 +1513,10 @@ assert.strictEqual(
 console.log("✓ CustomFieldInput isolation (including the 2-argument form)");
 
 // ── 9. CustomFields detail page: lift our fields out, portal the panel into .gallery-details ──
-// The panel is gated on being on a gallery *page*, not on the fields being
-// present: it is a place for these attributes, and a gallery carrying neither
-// still gets the block (collapsed, so it costs a line). A detail page for a
-// scene, group or performer has no `.gallery-details` and no id, so it gets
-// nothing.
+// The panel is gated on being on a gallery *page* and carrying a value: a
+// gallery with neither field draws nothing, so an unset value is kept quiet the
+// same way the rest of the plugin keeps it. A detail page for a scene, group or
+// performer has no `.gallery-details` and no id, so it gets nothing.
 globalListeners["stash:location"]({
   detail: { data: { location: { pathname: "/galleries/1" } } },
 });
@@ -1658,12 +1657,11 @@ assert.ok(
 );
 currentLocale = "zh-CN";
 
-// Neither of our fields set: the block still renders, with a dash for a value
-// that is not there. It is a place for these attributes, so an empty one still
-// answers "where would this go" — and collapsed it costs one line.
+// Neither of our fields set: no panel at all — a fold whose only content is its
+// own heading is not worth a line, and the unset value stays quiet.
 r9 = detail({ author: "x" });
 assert.deepStrictEqual(r9.rest, { author: "x" }, "nothing of ours to lift out");
-assert.ok(hasText(r9.portal.node, "—"), "an unset value reads as a dash");
+assert.strictEqual(r9.portal, null, "with no value there is no panel to draw");
 assert.ok(call("CustomFields", {}), "empty values must not throw");
 assert.ok(call("CustomFields", {}), "missing values must not throw");
 
@@ -4385,10 +4383,9 @@ setTimeout(() => {
   );
   assert.ok(hasText(panel, "有修正"), "and the censorship state");
 
-  // Unset is a state and is shown as one — an em dash, not a missing row. The
-  // panel is a place for these attributes, so an empty one still answers
-  // "where would this go". (Worth revisiting if this ever ships: everywhere else
-  // the plugin keeps an unset value quiet.)
+  // A row with no value is simply absent, and with neither value there is no
+  // panel at all — an unset value stays quiet, as the rest of the plugin keeps
+  // it.
   // The icon lookup is by string at runtime, so a name the running Stash's
   // FontAwesome does not have comes back undefined — and undefined handed to
   // Stash's Icon *throws inside a render*, which takes the whole page down rather
@@ -4407,23 +4404,44 @@ setTimeout(() => {
     );
   assert.ok(iconOf(panel), "a name the bundled set has draws its icon");
 
-  const board = PluginApi.libraries.FontAwesomeSolid.faChessBoard;
-  delete PluginApi.libraries.FontAwesomeSolid.faChessBoard;
-  let withoutBoard = null;
+  const knight = PluginApi.libraries.FontAwesomeSolid.faChessKnight;
+  delete PluginApi.libraries.FontAwesomeSolid.faChessKnight;
+  let withoutKnight = null;
   try {
-    withoutBoard = iconOf(panelOf({ alsoNotOurs: "x" }));
+    withoutKnight = iconOf(panelOf({ [NS.CENSORSHIP_FIELD_NAME]: "censored" }));
   } finally {
-    PluginApi.libraries.FontAwesomeSolid.faChessBoard = board;
+    PluginApi.libraries.FontAwesomeSolid.faChessKnight = knight;
   }
   assert.strictEqual(
-    withoutBoard,
+    withoutKnight,
     null,
     "a name it does not have draws nothing at all, rather than throwing"
   );
 
-  const empty = panelOf({ alsoNotOurs: "x" });
-  assert.ok(hasText(empty, "—"), "an unset value reads as a dash");
-  assert.ok(hasText(empty, "未标注"), "and an unmarked gallery says so");
+  assert.strictEqual(
+    renderChild(panelOf({ alsoNotOurs: "x" })),
+    null,
+    "with neither value set there is no panel at all"
+  );
+
+  const languageOnly = renderChild(panelOf({ [NS.FIELD_NAME]: "zh-Hans" }));
+  assert.ok(
+    hasText(languageOnly, "简体中文"),
+    "a language on its own draws just the language row"
+  );
+  assert.ok(
+    !hasText(languageOnly, "未标注"),
+    "and not a censorship row with nothing in it"
+  );
+
+  const censoredOnly = renderChild(
+    panelOf({ [NS.CENSORSHIP_FIELD_NAME]: "censored" })
+  );
+  assert.ok(
+    hasText(censoredOnly, "有修正"),
+    "a mark on its own draws just the censorship row"
+  );
+  assert.ok(!hasText(censoredOnly, "简体中文"), "and not a language row");
 
   // The two settings decide the state each block opens in — and only that, which
   // is why a block already on screen keeps whatever the reader did to it.
