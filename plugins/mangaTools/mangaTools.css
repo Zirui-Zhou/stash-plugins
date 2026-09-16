@@ -417,12 +417,20 @@ button.minimal.manga-tools-manga-toggle.is-manga {
  * em, and the vertical-align is FontAwesome's own — the toolbar holds both kinds
  * and they have to sit on the same line.
  *
- * The URL is absolute. A relative one would resolve against this stylesheet's own
- * address, which is not the same directory as the assets; the cost is that a
- * Stash served under a base path would need this line changed.
+ * The URL is **relative**, and that is the only form that can work. An absolute
+ * /plugin/<id>/assets/... has to name the plugin's ID, which this code does not
+ * know: `mangaTools` is what the source says, but the ID is whatever the yml file
+ * is called, and the test build's is `mangaToolsTest`. A relative URL is resolved
+ * against this stylesheet's own address instead, which Stash derives from that
+ * same ID — so the icon follows the plugin wherever it is installed, and follows
+ * a Stash served under a base path too.
+ *
+ * `assets/` sits beside this file in the plugin, and the yml maps `/` to that
+ * directory, so the relative URL lands on /plugin/<id>/assets/<path> as long as
+ * the stylesheet is served from anywhere under /plugin/<id>/.
  */
 .manga-tools-manga-icon {
-  --manga-tools-icon: url("/plugin/mangaTools/assets/icons/naruto-119-svgrepo-com.svg");
+  --manga-tools-icon: url("assets/icons/manga.svg");
 
   background-color: currentColor;
   display: inline-block;

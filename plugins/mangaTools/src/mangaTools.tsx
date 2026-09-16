@@ -525,9 +525,37 @@ type LocationEvent = {
   detail?: { data?: { location?: { pathname?: string } } };
 };
 
+/**
+ * The URL Stash loaded this plugin's script from, or "" when it cannot be found.
+ *
+ * A plugin cannot ask where its own files are served from, and it cannot work it
+ * out either: the plugin ID is decided by the yml's file name, not by anything in
+ * the source, so the installed copy may be `mangaToolsTest` while the code says
+ * `mangaTools`. The script tag is the one self-reference on the page, which is
+ * what makes it the only way to find out.
+ */
+function ownScriptUrl(): string {
+  const scripts = document.querySelectorAll("script[src]");
+  for (let i = 0; i < scripts.length; i++) {
+    const src = (scripts[i] as HTMLScriptElement).src || "";
+    // The bundle keeps its own file name whatever the plugin is installed as.
+    if (/\/mangaTools\.js(\?|$)/.test(src)) return src;
+  }
+  return "";
+}
+
 function start(): void {
   if (started) return;
   started = true;
+
+  // Worth a line: mangaTools.css reaches the switch's icon through a URL relative
+  // to the stylesheet, which is only right while plugin files are served from
+  // under /plugin/<id>/. This says what that actually is, so a missing icon can be
+  // diagnosed from the console rather than by guessing at URLs.
+  console.info(
+    "[mangaTools] my own script is served from " +
+      (ownScriptUrl() || "(not found among the page's script tags)")
+  );
 
   refresh();
   refreshSettings();

@@ -29,7 +29,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SUFFIX = "Test";
 
 /** A file the plugin serves rather than bundles — see mangaTools.yml's ui.assets */
-const ASSET = "assets/icons/naruto-119-svgrepo-com.svg";
+const ASSET = "assets/icons/manga.svg";
 
 /**
  * The entries of an index.yml, as far as this script looks at them.
