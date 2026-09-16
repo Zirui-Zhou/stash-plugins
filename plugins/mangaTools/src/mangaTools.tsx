@@ -258,17 +258,13 @@ function currentGalleryId(): string {
 // ───────────────────── Reading and writing custom fields ─────────────────────
 
 /**
- * Reads the language value out of custom_fields, and writes a new one back.
+ * Reads the language value out of custom_fields.
  *
- * Both are two lines over the generic helpers in fields.ts; they exist so the
- * call sites below say which field they mean rather than repeating its name.
+ * Two lines over the generic helper in fields.ts, so that the call sites below
+ * say which field they mean rather than repeating its name.
  */
 function pickLanguage(customFields: unknown): string {
   return NS.pickField(customFields, FIELD_NAME);
-}
-
-function setLanguage(customFields: unknown, code: string): CustomFieldsMap {
-  return NS.setField(customFields, FIELD_NAME, code);
 }
 
 /**
@@ -724,33 +720,6 @@ function censorshipLabel(intl: MangaToolsIntl, value: string): string {
   return t(intl, "mangaTools.censorship.unset");
 }
 
-/**
- * What a click on the toolbar button will do.
- *
- * The button is a cycle, so this names the *next* state rather than the current
- * one, and that tooltip is the whole of how a three-state button explains
- * itself — the icon shows where you are, the tooltip where you would go.
- */
-function censorshipAction(intl: MangaToolsIntl, value: string): string {
-  if (value === "censored")
-    return t(intl, "mangaTools.censorship.markUncensored");
-  if (value === "uncensored") return t(intl, "mangaTools.censorship.clear");
-  return t(intl, "mangaTools.censorship.markCensored");
-}
-
-/**
- * The state a click moves to: not marked → censored → uncensored → not marked.
- *
- * Driven off CENSORSHIP_VALUES rather than written out, so the cycle order is
- * stated in one place and a third value would extend it without a second edit.
- * "" is the state before the first value and the one after the last.
- */
-function nextCensorship(value: string): string {
-  const values = NS.CENSORSHIP_VALUES;
-  const i = values.indexOf(value);
-  return i === -1 ? values[0] : values[i + 1] || "";
-}
-
 /** Class of the empty span kept beside Stash's popover row, one per card */
 const POPOVER_ANCHOR_CLASS = "manga-tools-popover-anchor";
 /** Class of the node inside that row that our button is portalled into */
@@ -900,30 +869,10 @@ function CensorshipPopoverMark(props: { galleryId: string }) {
   );
 }
 
-// ────────────────────── Censorship toolbar button ──────────────────────
+// ─────────────────────── Censorship toolbar mark ───────────────────────
 
 /** Class of the mount point in the gallery toolbar */
 const TOOLBAR_HOST_CLASS = "manga-tools-toolbar-host";
-
-/**
- * Whether this Stash has the mutation the censorship button writes through.
- *
- * Asked once, at load, so that a Stash predating `useGalleryUpdate` leaves the
- * button out rather than calling a hook that is not there — and, more to the
- * point, rather than throwing inside the detail page's render, which would take
- * the whole custom-fields panel down with it. Stash injects StashService itself
- * (it is a namespace import of `src/core/StashService`), so a version that
- * lacks this function is the only way the lookup can fail.
- */
-const CAN_WRITE_CENSORSHIP =
-  typeof PluginApi.utils.StashService.useGalleryUpdate === "function";
-
-if (!CAN_WRITE_CENSORSHIP) {
-  console.error(
-    "[mangaTools] this Stash has no useGalleryUpdate, so the censorship button " +
-      "will not be shown. The language features are unaffected."
-  );
-}
 
 /** As with the other mount points, held at module scope so a re-render reuses
  *  the same node rather than making a new one every time. */
@@ -968,102 +917,36 @@ function ensureToolbarHost(): HTMLElement | null {
 }
 
 /**
- * Records a mark in the store, so the card behind the detail page follows a
- * write without waiting for the next poll.
+ * The gallery detail page's censorship mark, on the toolbar.
  *
- * The store is this plugin's own Map, not an Apollo query, so Stash's cache
- * eviction on a gallery update does not reach it.
+ * This was the control: a button that cycled through the three states and wrote
+ * whichever it landed on. It is a mark now, because the edit page has a selector
+ * for the same field and a selector has no third state to explain — unset is its
+ * own clear button, exactly as it is for the language. So there is nothing left
+ * for this to do beyond saying what the gallery is.
+ *
+ * Kept rather than deleted because the icon up here is wanted for something else
+ * later. It is a `<span>`, not a button, so that a mark does not look like
+ * something to click.
  */
-function setStoredCensorship(galleryId: string, value: string): void {
-  const id = String(galleryId);
-  const next = new Map(store);
-  next.set(id, NS.setField(next.get(id), CENSORSHIP_FIELD_NAME, value));
-  store = next;
-  emit();
-}
-
-/**
- * The gallery detail page's censorship button.
- *
- * A cycle rather than a menu, matching the organized button it sits beside: one
- * square in a toolbar, and the tooltip names what the next click will do.
- *
- * A plain `<button>` with Bootstrap's own classes rather than Bootstrap's
- * `Button`: that component composes exactly these classes and nothing else, and
- * the markup it produces is what Stash's OrganizedButton renders — so this is
- * the same DOM without a second library to be missing.
- *
- * The write goes through Stash's `useGalleryUpdate`, which is the mutation its
- * own organized button uses, so the cache eviction that makes the rest of the
- * page notice is Stash's rather than something re-derived here.
- *
- * `useAfterMount` is what finds the mount point on a real page: this component
- * renders as part of the page's first pass, before the toolbar it portals into
- * has been committed.
- */
-function CensorshipToolbarButton(props: {
-  galleryId: string;
-  value: string;
-  fieldKey: string;
-}) {
+function CensorshipToolbarMark(props: { galleryId: string; value: string }) {
   useGlobalVersion();
   useAfterMount();
 
   const intl = PluginApi.libraries.Intl.useIntl();
-  const update = PluginApi.utils.StashService.useGalleryUpdate();
-
-  const busyState = React.useState(false);
-  const busy = busyState[0];
-  const setBusy = busyState[1];
-
   const host = ensureToolbarHost();
   if (!host) return null;
 
-  const mark = props.value;
-  const next = nextCensorship(mark);
-
-  const onClick = () => {
-    const input: Record<string, unknown> = { id: props.galleryId };
-    if (next) {
-      input.custom_fields = { partial: { [CENSORSHIP_FIELD_NAME]: next } };
-    } else {
-      // Cleared by removing the key rather than by writing an empty value: "not
-      // marked" is the absence of the field, which is what the language dropdown
-      // means by an empty value too. The key named here is the one this gallery
-      // actually carries, so one that drifted in case is removed rather than
-      // left behind holding the old mark.
-      input.custom_fields = { remove: [props.fieldKey] };
-    }
-
-    setBusy(true);
-    update[0]({ variables: { input } }).then(
-      () => {
-        setBusy(false);
-        setStoredCensorship(props.galleryId, next);
-      },
-      (e: unknown) => {
-        setBusy(false);
-        // The button keeps the mark it had, so the click can simply be repeated.
-        console.error("[mangaTools] failed to write the censorship mark:", e);
-      }
-    );
-  };
-
   return PluginApi.ReactDOM.createPortal(
-    <button
-      type="button"
-      title={censorshipAction(intl, mark)}
-      // The state is carried in the class for the tests and for anyone reading
-      // the DOM; only "not marked" has a rule of its own — see the CSS.
+    <span
       className={
-        "minimal manga-tools-censorship btn btn-secondary" +
-        (mark ? " is-" + mark : " is-unmarked")
+        "manga-tools-censorship-mark" +
+        (props.value ? " is-" + props.value : " is-unmarked")
       }
-      disabled={busy}
-      onClick={onClick}
+      title={censorshipLabel(intl, props.value)}
     >
-      <CensorshipIcon value={mark} />
-    </button>,
+      <CensorshipIcon value={props.value} />
+    </span>,
     host
   );
 }
@@ -1152,9 +1035,9 @@ function readNativeFieldClasses(
  * The structure mirrors Stash's renderField (utils/form.tsx) — see
  * readNativeFieldClasses for how the column widths are matched.
  */
-function LanguageRow(props: {
-  value: string;
-  onChange: (code: string) => void;
+function MangaFieldBlock(props: {
+  values?: CustomFieldsMap;
+  onChange?: (values: CustomFieldsMap) => void;
 }) {
   useGlobalVersion();
 
@@ -1193,7 +1076,16 @@ function LanguageRow(props: {
 
   if (!isGalleryContext() || !Select || !host) return null;
 
-  const current = NS.describe(props.value, intl.locale);
+  // One writer for both rows: Stash's form owns the values map, so each row
+  // hands it a new map rather than writing anything itself. That is what makes
+  // Save persist the language and the mark together, and Cancel discard both.
+  const write = (name: string, value: string) => {
+    if (props.onChange) {
+      props.onChange(NS.setField(props.values, name, value));
+    }
+  };
+
+  const current = NS.describe(pickLanguage(props.values), intl.locale);
   let options: MangaToolsOption[] = NS.languageOptions(intl.locale).filter(
     (o) => {
       // NS.enabledLanguages is null for "no restriction", otherwise the
@@ -1225,7 +1117,7 @@ function LanguageRow(props: {
     control: "col-sm-9",
   };
 
-  const field = (
+  const languageField = (
     // Plain div/label carrying the copied class names, rather than
     // Form.Group/Form.Label/Col: those components regenerate the width classes
     // from their own defaults, which is what broke the alignment before.
@@ -1255,7 +1147,48 @@ function LanguageRow(props: {
           // An empty value deletes the field, matching the native
           // onChange("", "") semantics.
           onChange={(opt: MangaToolsOption | null) => {
-            props.onChange(opt ? opt.value : "");
+            write(FIELD_NAME, opt ? opt.value : "");
+          }}
+        />
+      </div>
+    </div>
+  );
+
+  // The mark, as a two-option selector rather than the cycle the toolbar used to
+  // carry. Two options and a clear button cover the three states exactly, and the
+  // reason the old control needed a third icon — "not marked" — was that a cycle
+  // has to name every state it can reach. A selector does not: not marked *is*
+  // nothing selected.
+  const mark = censorshipOf(props.values);
+  const markOptions = [
+    { value: "censored", label: t(intl, "mangaTools.censorship.censored") },
+    {
+      value: "uncensored",
+      label: t(intl, "mangaTools.censorship.uncensored"),
+    },
+  ];
+  const markSelected = markOptions.find((o) => o.value === mark) || null;
+
+  const markField = (
+    <div className={cls.group} data-field="manga_tools_censorship">
+      <label className={cls.label} htmlFor="manga_tools_censorship">
+        {t(intl, "mangaTools.censorship.heading")}
+      </label>
+      <div className={cls.control}>
+        <Select
+          className="manga-tools-select"
+          classNamePrefix="react-select"
+          inputId="manga_tools_censorship"
+          isClearable
+          isSearchable={false}
+          // The placeholder is the third state's name, so it reads the same as
+          // the row in the details block: 未标注 rather than an empty box.
+          placeholder={t(intl, "mangaTools.censorship.unset")}
+          value={markSelected}
+          options={markOptions}
+          components={{ IndicatorSeparator: () => null }}
+          onChange={(opt: { value: string } | null) => {
+            write(CENSORSHIP_FIELD_NAME, opt ? opt.value : "");
           }}
         />
       </div>
@@ -1292,7 +1225,8 @@ function LanguageRow(props: {
           </div>
         </div>
       </div>
-      {open ? field : null}
+      {open ? languageField : null}
+      {open ? markField : null}
     </div>,
     host
   );
@@ -2014,14 +1948,7 @@ registerPatch("instead", "CustomFieldsInput", (...args: unknown[]) => {
 
   return (
     <>
-      <LanguageRow
-        value={pickLanguage(props.values)}
-        onChange={(code) => {
-          if (props.onChange) {
-            props.onChange(setLanguage(props.values, code));
-          }
-        }}
-      />
+      <MangaFieldBlock values={props.values} onChange={props.onChange} />
       <Original {...props} />
     </>
   );
@@ -2214,7 +2141,7 @@ registerPatch("instead", "CustomFields", (...args: unknown[]) => {
 
   // Empty on every entity's page but a gallery's, which is what keeps the
   // button off a scene's or a performer's detail page.
-  const galleryId = CAN_WRITE_CENSORSHIP ? currentGalleryId() : "";
+  const galleryId = currentGalleryId();
 
   // Nothing to lift out and no toolbar to put a button in: hand the original
   // component its own props object back, unwrapped. This is the common case on
@@ -2248,10 +2175,9 @@ registerPatch("instead", "CustomFields", (...args: unknown[]) => {
         click writes the canonical spelling.
       */}
       {galleryId ? (
-        <CensorshipToolbarButton
+        <CensorshipToolbarMark
           galleryId={galleryId}
           value={censorshipOf(values)}
-          fieldKey={censorshipKey || CENSORSHIP_FIELD_NAME}
         />
       ) : null}
     </>

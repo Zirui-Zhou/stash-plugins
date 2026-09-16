@@ -34,8 +34,6 @@ let galleryQueryCount = 0;
 const capturedQueries = [];
 const settingsEnabled = ""; // the stored enabledLanguages setting, mutated by tests
 let capturedConfigWrite = null; // last configurePlugin write, captured by the stub
-const galleryWrites = []; // every galleryUpdate input the censorship button sent
-let galleryWriteResult = null; // when set, the gallery update rejects with this
 let currentLocale = "zh-CN";
 
 const React = {
@@ -180,28 +178,6 @@ const galleryAnswer = (ids) =>
 
 const LANGUAGE_GALLERIES = galleryAnswer([1, 2, 3, 5, 6]);
 const CENSORSHIP_GALLERIES = galleryAnswer([1, 3, 4, 7]);
-
-/**
- * Stands in for the server applying a gallery update to its own copy.
- *
- * Without this the fake library would answer every query with the original
- * fixture, and a refresh landing after a write would undo it — which is a race
- * the plugin cannot have on a real install, since the server would answer with
- * what was just written. `GALLERY_FIELDS` is shared by both answers and by this,
- * so there is one copy of the truth.
- */
-const applyGalleryWrite = (input) => {
-  const fields = GALLERY_FIELDS[input.id];
-  if (!fields || !input.custom_fields) return;
-
-  const { partial, remove } = input.custom_fields;
-  if (remove) {
-    remove.forEach((key) => {
-      delete fields[key];
-    });
-  }
-  if (partial) Object.assign(fields, partial);
-};
 
 const fakeClient = {
   // Stands in for Stash's existing link chain, which setLink must pass through.
@@ -509,22 +485,6 @@ const PluginApi = {
       useConfigurePlugin: () => [
         (opts) => {
           capturedConfigWrite = opts.variables;
-          return Promise.resolve({});
-        },
-      ],
-      // Stash's own gallery-update mutation, which the censorship button writes
-      // through. Recorded rather than resolved on demand, so a test can assert
-      // the exact input — and answer it, to exercise the failure path too.
-      useGalleryUpdate: () => [
-        (opts) => {
-          galleryWrites.push(opts.variables);
-          if (galleryWriteResult) {
-            // A rejected write changes nothing on the server, so the fake
-            // library keeps the value it had — which is what the failure-path
-            // assertion below leans on.
-            return Promise.reject(galleryWriteResult);
-          }
-          applyGalleryWrite(opts.variables.input);
           return Promise.resolve({});
         },
       ],
@@ -4100,12 +4060,11 @@ setTimeout(() => {
     detail: { data: { location: { pathname: "/galleries/3" } } },
   });
 
-  /** The toolbar's button component, rendered with the given stored mark */
-  const toolbarButton = (fields) => {
+  /** The toolbar's mark, out of the same patch the panel comes from */
+  const toolbarMark = (fields) => {
     const rendered = call("CustomFields", { values: fields });
     const el = rendered.props.children[2];
-    const drawn = el.type(el.props);
-    return { rendered, el, drawn };
+    return { rendered, el, drawn: el.type(el.props) };
   };
 
   const detailValues = (mark, key = CF) => ({
@@ -4114,7 +4073,7 @@ setTimeout(() => {
     other: "x",
   });
 
-  const first = toolbarButton(detailValues("censored"));
+  const first = toolbarMark(detailValues("censored"));
   assert.deepStrictEqual(
     first.rendered.props.children[0].props.values,
     { other: "x" },
@@ -4122,19 +4081,9 @@ setTimeout(() => {
       "neither shows up as a raw custom-field row"
   );
   assert.strictEqual(
-    first.el.props.fieldKey,
-    CF,
-    "the button is told which key the gallery actually carries"
-  );
-  assert.strictEqual(
-    first.drawn.host.className,
-    "manga-tools-toolbar-host",
-    "the mount point is the plugin's own span"
-  );
-  assert.strictEqual(
     first.drawn.host.parentNode,
     toolbarGroup,
-    "and it joins the toolbar group"
+    "the mark mounts into the toolbar group"
   );
   assert.strictEqual(
     toolbarGroup.children[1],
@@ -4142,121 +4091,60 @@ setTimeout(() => {
     "directly after the span holding Stash's organized button, and before the " +
       "operation menu"
   );
+
+  // A mark, not a control. The field is edited on the edit page now, by a
+  // selector that has no third state to explain — see below.
+  assert.strictEqual(first.drawn.node.type, "span");
   assert.strictEqual(
     first.drawn.node.props.className,
-    "minimal manga-tools-censorship btn btn-secondary is-censored",
-    "the button says which state it is in through a class"
+    "manga-tools-censorship-mark is-censored",
+    "the mark carries its state in a class, as the details row's icon does not"
+  );
+  assert.strictEqual(first.drawn.node.props.title, "有修正");
+  assert.strictEqual(
+    first.drawn.node.props.onClick,
+    undefined,
+    "nothing to click: this is not the control any more"
   );
   assert.strictEqual(
-    first.drawn.node.props.title,
-    "标为无修正",
-    "and its tooltip names the state a click moves to, not the current one"
-  );
-  assert.strictEqual(
-    iconNameOf(first.drawn.node.props.children),
-    "faChessKnight",
-    "the icon is the current state's"
+    markPortal("3").node.props.title,
+    "无修正",
+    "gallery 3 is the other state, and its card mark is unchanged by any of this"
   );
 
-  // A gallery carrying nothing at all still gets the button, because the button
-  // is the only way to set a first mark — gating it on the field already
-  // existing would leave every gallery permanently unmarked. This is the bug
-  // that shipped in 0.5.0 and was caught on the first real page.
-  const bareValues = {};
-  const bare = call("CustomFields", { values: bareValues });
-  assert.strictEqual(
-    bare.props.children[2].props.value,
-    "",
-    "a gallery with no fields at all is offered the button, reading as unmarked"
+  // The write path is the edit form, through Stash's own values map — which is
+  // what makes Save persist the mark and Cancel discard it.
+  const edits = [];
+  const block = editField({ [NS.FIELD_NAME]: "ja", other: "x" }, (next) =>
+    edits.push(next)
   );
-  assert.strictEqual(
-    bare.props.children[2].props.fieldKey,
-    CF,
-    "and it writes the canonical spelling, since there is no key to match"
+  const markSelect = find(
+    block.node,
+    (n) => n.props?.inputId === "manga_tools_censorship"
   );
-  assert.strictEqual(
-    bare.props.children[0].props.values,
-    bareValues,
-    "with nothing lifted out, the props object is handed back as it was — the " +
-      "identity Stash's own memoisation compares"
-  );
-
-  const languageOnly = call("CustomFields", {
-    values: { [NS.FIELD_NAME]: "ja" },
-  });
-  assert.strictEqual(
-    languageOnly.props.children[2].props.fieldKey,
-    CF,
-    "a gallery carrying a language but no mark is offered it too"
-  );
-  assert.ok(
-    hasText(detail({ [NS.FIELD_NAME]: "ja" }).portal.node, "日语"),
-    "…and still gets its language, shown by the panel rather than a row of its own"
-  );
-
-  // Clicking cycles: censored → uncensored → not marked → censored.
-  const clicksBefore = galleryWrites.length;
-  first.drawn.node.props.onClick();
+  assert.ok(markSelect, "the edit page offers a selector for the mark");
   assert.deepStrictEqual(
-    galleryWrites[clicksBefore],
-    {
-      input: {
-        id: "3",
-        custom_fields: { partial: { [CF]: "uncensored" } },
-      },
-    },
-    "a click on a censored gallery writes uncensored, as a partial update"
+    markSelect.props.options.map((o) => o.value),
+    ["censored", "uncensored"],
+    "two options and nothing else — unset is the selector's own clear button, " +
+      "which is why the third state needs neither an icon nor a cycle"
   );
-
-  const clear = toolbarButton(
-    detailValues("uncensored", "plugin.mangaTools.Censorship")
+  assert.strictEqual(
+    markSelect.props.placeholder,
+    "未标注",
+    "and the empty box is named, so it reads like the row in the details tab"
   );
-  assert.strictEqual(clear.drawn.node.props.title, "清除修正标注");
-  clear.drawn.node.props.onClick();
+  markSelect.props.onChange({ value: "uncensored", label: "无修正" });
   assert.deepStrictEqual(
-    galleryWrites[galleryWrites.length - 1],
-    {
-      input: {
-        id: "3",
-        // The spelling the gallery actually carries, so a key that drifted in
-        // case is removed rather than left behind holding the old mark.
-        custom_fields: { remove: ["plugin.mangaTools.Censorship"] },
-      },
-    },
-    "clearing removes the key rather than writing an empty value"
+    edits[0],
+    { [NS.FIELD_NAME]: "ja", other: "x", [CF]: "uncensored" },
+    "picking one writes it into the map Stash's form owns"
   );
-
-  const unmarked = toolbarButton(detailValues(""));
-  assert.strictEqual(
-    unmarked.drawn.node.props.title,
-    "标为有修正",
-    "an unmarked gallery cycles back to censored"
-  );
-  assert.strictEqual(
-    unmarked.drawn.node.props.className,
-    "minimal manga-tools-censorship btn btn-secondary is-unmarked",
-    "and carries the one state class the CSS has a rule for, so an unmarked " +
-      "gallery's button reads as an offer rather than as a value"
-  );
-  assert.strictEqual(
-    iconNameOf(unmarked.drawn.node.props.children),
-    "faChessBoard",
-    "an empty board for a gallery with nothing on it — the third member of the " +
-      "same set, rather than a UI glyph the toolbar already uses for help"
-  );
-  assert.ok(
-    /\.manga-tools-censorship\.is-unmarked\s*\{/.test(css),
-    "…and that rule exists"
-  );
-  assert.ok(
-    !/#664c3f/.test(css.slice(css.indexOf("manga-tools-censorship"))),
-    "the marked states keep the button's own colour — no brown, which is " +
-      "Stash's accent for organized and means something else"
-  );
-  unmarked.drawn.node.props.onClick();
+  markSelect.props.onChange(null);
   assert.deepStrictEqual(
-    galleryWrites[galleryWrites.length - 1].input.custom_fields,
-    { partial: { [CF]: "censored" } }
+    edits[1],
+    { [NS.FIELD_NAME]: "ja", other: "x" },
+    "clearing removes the key rather than storing an empty value"
   );
 
   // Stash draws no toolbar on an entity that is not a gallery.
@@ -4267,39 +4155,16 @@ setTimeout(() => {
     call("CustomFields", { values: detailValues("censored") }).props
       .children[2],
     null,
-    "no censorship button on a scene's page — the fields are still lifted out, " +
-      "but there is no gallery toolbar to hang it on"
+    "no mark on a scene's page — the fields are still lifted out, but there is " +
+      "no gallery toolbar to hang it on"
   );
   globalListeners["stash:location"]({
     detail: { data: { location: { pathname: "/galleries/1" } } },
   });
 
-  // A failed write leaves the mark alone, so the click can simply be repeated.
-  // The button clicked here is the censored one, so a store that the error path
-  // wrote to anyway would end up uncensored and the assertion below would fail.
-  galleryWriteResult = new Error("nope");
-  toolbarButton(detailValues("censored")).drawn.node.props.onClick();
-  galleryWriteResult = null;
-
-  // What those writes did to the store can only be read once the mutation's own
-  // callback has run, which is a microtask away — so this last check waits, the
-  // way the bulk refetch check at the end of the file does.
-  setTimeout(() => {
-    // Three writes and a fourth that failed: the store ends where the third one
-    // left it, and no earlier. That it moved at all is what makes the card
-    // behind the detail page follow a write without waiting for the next poll —
-    // the store is this plugin's own Map, not an Apollo query, so Stash's cache
-    // eviction on the mutation never reaches it.
-    assert.strictEqual(
-      markPortal("3").node.props.title,
-      "有修正",
-      "the writes reached the store, and the one that failed did not"
-    );
-
-    console.log(
-      "✓ censorship (field rules / card mark in Stash's row / cycling toolbar button)"
-    );
-  }, 0);
+  console.log(
+    "✓ censorship (field rules / card mark in Stash's row / a mark not a control / the edit-page selector)"
+  );
 
   // ── 13c. The manga panel, and the tab it is rendered into as well ────
   //

@@ -17,8 +17,5 @@
 
   "mangaTools.censorship.censored": "有修正",
   "mangaTools.censorship.uncensored": "无修正",
-  "mangaTools.censorship.unset": "未标注",
-  "mangaTools.censorship.markCensored": "标为有修正",
-  "mangaTools.censorship.markUncensored": "标为无修正",
-  "mangaTools.censorship.clear": "清除修正标注"
+  "mangaTools.censorship.unset": "未标注"
 }

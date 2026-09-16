@@ -290,80 +290,18 @@
 }
 
 /*
- * ───────────────────────── Censorship button ─────────────────────────
+ * ────────────────────────── Censorship mark ──────────────────────────
  *
- * One rule, for the one state that is not a state: "not marked" is dimmed, so
- * the button reads as an offer rather than as a setting with a value. The two
- * marked states have no rule at all — they keep the button's own foreground
- * colour, and the icon is what says which of them you are in.
+ * One rule, for the one state that is not a state: "not marked" is dimmed, so the
+ * mark reads as an absent value rather than as a value. The two marked states keep
+ * the page's own foreground colour, and the icon says which of them the gallery
+ * is in.
  *
- * Stash's organized button next door takes the opposite approach, dimming one
- * state and colouring the other brown. That second colour is the one thing
- * deliberately not copied: it is Stash's accent for "organized", it has nothing
- * to do with censorship, and reusing it would say that being censored is a kind
- * of done-ness.
+ * Stash's organized button next door dims one state and colours the other brown.
+ * That second colour is the one thing deliberately not copied: it is Stash's
+ * accent for "organized", it has nothing to do with censorship, and borrowing it
+ * would say that being censored is a kind of done-ness.
  */
-.manga-tools-censorship.is-unmarked {
+.manga-tools-censorship-mark.is-unmarked {
   color: rgba(191, 204, 214, 0.5);
 }
-
-/*
- * ─────────────────────────── The manga panel ───────────────────────────
- *
- * Deliberately almost nothing: the collapse header copies Stash's own
- * `CollapseButton` markup and the rows are its own `<h6>` detail rows, so both
- * are styled by Stash's stylesheet and this block only has to place them.
- *
- * In particular there is no `color` rule. The header's colour comes from
- * `button.minimal` (styles/_theme.scss), which is the class that gives a button
- * the page's text colour — a bare <button> keeps the browser's own, which is
- * black in either theme.
- */
-.manga-tools-panel {
-  /*
-   * Padding, not margin, and that is the whole point of it being here.
-   *
-   * The same value as a row's margin — Bootstrap gives every heading 0.5rem, and
-   * that is what the <h6>s in this section are separated by — but expressed as
-   * padding so the two *add* rather than collapse. Adjacent vertical margins
-   * collapse to the larger of the two, so as a margin this one was invisible
-   * whenever the block was open: the last row's own bottom margin swallowed it
-   * and the block closed with exactly one row's spacing and no breathing room of
-   * its own.
-   */
-  padding-bottom: 0.5rem;
-}
-
-.manga-tools-panel-body {
-  margin-top: 0.25rem;
-}
-
-/*
- * No padding on the header. The button inside it already carries Bootstrap's
- * `.btn` padding — one layer is the block's height, two is a taller one for no
- * reason — and Stash's `button.collapse-button { padding-left: 0 }` already
- * pulls the label flush with the rows below it.
- */
-
-.manga-tools-panel .collapse-button {
-  text-align: left;
-  width: 100%;
-}
-
-/*
- * The left alignment above is not cosmetic tidying, it is the whole reason this
- * block has a rule at all.
- *
- * Bootstrap's `.btn` is `text-align: center`. Stash's own CollapseButton is left
- * aligned by `.sidebar-section .collapse-button { text-align: left }` — a rule
- * scoped to the sidebar, which this block is not in. The only other left-align
- * Stash writes is on `button.collapse-button.btn-primary:hover, :focus, :active`
- * (components/Shared/styles.scss), i.e. only *while* the button is hovered or
- * focused. So without this line the label sits in the middle until the pointer
- * touches it and snaps left, and back to the middle when focus moves on — which
- * is what it looked like: a label that would not stay put.
- *
- * `.manga-tools-panel .collapse-button` is two classes against `.btn`'s one, so
- * it wins without needing `!important`. Stash's hover rule is more specific
- * still, and says the same thing.
- */
