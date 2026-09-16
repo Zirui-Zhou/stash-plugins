@@ -1,0 +1,71 @@
+name: Publish the test build
+
+# A second, independent publishing target: this pushes dist/ to the
+# gh-pages-test branch, which no site serves. Stash reaches it through a
+# raw.githubusercontent.com URL configured as a *second* plugin source, so a
+# branch's work can be installed beside the real plugin instead of over it.
+#
+# A workflow file of its own, living on the branch it publishes, rather than a
+# second job in build.yml. main's publishing must not depend on a branch that
+# exists to be thrown away: if this fails, the only thing that stops updating is
+# the test source, where a shared job would stop the real one from publishing.
+#
+# The package it publishes is not the real plugin under a different version — it
+# is a different plugin. `--id-suffix` is what does that; see tools/build.mjs.
+#
+# There is no workflow_dispatch here on purpose: GitHub only offers the "Run
+# workflow" button for files on the default branch, so it would be a button that
+# never appears. Re-run a past run from the Actions tab instead.
+on:
+  push:
+    branches: [test]
+
+permissions:
+  contents: write # required to push the gh-pages-test branch
+
+concurrency:
+  # Its own group, so a test push never cancels a publish of the real plugin.
+  group: publish-test
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Type-checks, bundles, and runs both test suites — including the one that
+      # proves the variant below really is a separate plugin. A broken
+      # experiment should fail here rather than produce a package that
+      # overwrites the real plugin when someone installs it.
+      - name: Build and test
+        run: npm test
+
+      # `npm test` ends with an ordinary build in dist/. This replaces it with
+      # the suffixed one, which is what the test source installs.
+      - name: Build the variant
+        run: node tools/build.mjs --id-suffix=Test
+
+      - name: Show the manifest
+        run: cat dist/index.yml
+
+      - name: Publish to gh-pages-test
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: gh-pages-test
+          # Keep only the most recent publish, so the branch history stays clean
+          # — it holds build output and nothing worth keeping.
+          force_orphan: true
+          commit_message: "build: test package ${{ github.sha }}"
