@@ -716,6 +716,22 @@ function CensorshipIcon(props: { value: string }) {
   return icon ? <Icon icon={icon} /> : null;
 }
 
+/**
+ * One censorship option: the state's icon, then its name.
+ *
+ * react-select draws this for the menu item and for the value in the box, so the
+ * two always agree — which is the same arrangement as the language dropdown's
+ * flag. `.manga-tools-option` is the class that spaces the two apart.
+ */
+function formatCensorshipOption(option: { value: string; label: string }) {
+  return (
+    <span className="manga-tools-option">
+      <CensorshipIcon value={option.value} />
+      {option.label}
+    </span>
+  );
+}
+
 /** The plugin's own word for a state, for a tooltip or a label */
 function censorshipLabel(intl: MangaToolsIntl, value: string): string {
   if (value === "censored") return t(intl, "mangaTools.censorship.censored");
@@ -1191,6 +1207,9 @@ function MangaFieldBlock(props: {
           value={markSelected}
           options={markOptions}
           components={{ IndicatorSeparator: () => null }}
+          // The same treatment the language options get: an icon cannot live
+          // inside a plain-text label, so the option is drawn here.
+          formatOptionLabel={formatCensorshipOption}
           onChange={(opt: { value: string } | null) => {
             write(CENSORSHIP_FIELD_NAME, opt ? opt.value : "");
           }}
