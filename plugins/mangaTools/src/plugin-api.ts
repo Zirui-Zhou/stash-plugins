@@ -139,7 +139,7 @@ export interface MangaToolsNamespace {
 
   /**
    * The language part of Stash's filter model, as the sidebar section sees it.
-   * Populated by language-filter.tsx.
+   * Populated by filter-model.ts.
    */
   readLanguageFilter(
     filter: MangaToolsFilterModel
@@ -191,12 +191,12 @@ export interface MangaToolsNamespace {
   /**
    * Re-words Stash's tags for the language filter in the list's row, one label
    * per tag in the order Stash draws them. A DOM repair, not a render — see the
-   * note above it in language-filter.tsx for why it cannot be anything else.
+   * note above it in sidebar-filter.tsx for why it cannot be anything else.
    */
   relabelTags(labels: string[]): void;
   /**
    * Words the dialog's tags from the card, one label per tag, hiding the tags the
-   * card has nothing to say in — see the note above it in language-filter.tsx.
+   * card has nothing to say in — see the note above it in dialog-filter.tsx.
    */
   manageDialogTags(labels: string[]): void;
   /** The labels the card must draw itself, having found no tag of Stash's for them */

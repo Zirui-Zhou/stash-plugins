@@ -556,7 +556,7 @@ global.window = {
 };
 // The plugin watches the DOM for the filter dialog's card, because opening it is
 // Stash's state change and React never reports it — see the observer in
-// language-filter.tsx. There are no mutations to observe here, and the state
+// dialog-filter.tsx. There are no mutations to observe here, and the state
 // setters below are inert, so this records the wiring and nothing more: which
 // node is watched, and whether the callback survives being called.
 const observed = [];
@@ -2515,16 +2515,27 @@ const sidebarFooter = makeEl("div");
 sidebarFooter.className = "sidebar-footer";
 sidebar.appendChild(sidebarFooter);
 
-/** Renders the section and follows the portal it makes */
-const renderLanguageFilter = (conditions) => {
+/** Renders one sidebar section and follows the portal and shared shell it makes */
+const renderSidebarSection = (childIndex, conditions) => {
   const el = call("GalleryList", {
     filter: makeFilterModel(
       conditions === undefined ? [] : [customFieldsCriterion(conditions)]
     ),
     selectedIds: new Set(),
-  }).props.children[0];
-  return el.type(el.props);
+  }).props.children[childIndex];
+  // el.type(el.props) renders the section, which returns the portal. The portal's
+  // node is the <SidebarSection> element; its output is the actual <div>, so one
+  // more call reaches the markup the assertions navigate.
+  const portal = el.type(el.props);
+  const shell = portal.node;
+  return Object.assign({}, portal, { node: shell.type(shell.props), shell });
 };
+
+const renderLanguageFilter = (conditions) =>
+  renderSidebarSection(0, conditions);
+const renderCensorshipFilter = (conditions) =>
+  renderSidebarSection(1, conditions);
+const renderMangaFilter = (conditions) => renderSidebarSection(2, conditions);
 
 let section = renderLanguageFilter();
 assert.strictEqual(
@@ -3006,6 +3017,158 @@ assert.ok(
   "the clear button must be a secondary button, like Stash's — a primary one is a blue block"
 );
 console.log("✓ search box clear button (secondary, not the primary default)");
+
+// ── 10d2. The censorship and manga sections share the language section's shell ──
+// The three sections used to each write the shell markup out; now they render
+// through one SidebarSection. renderSidebarSection keeps a reference to that
+// shared element in `shell`, so the three can be shown to be the same component
+// rather than three hand-written divs.
+const langShell = renderLanguageFilter().shell;
+assert.strictEqual(
+  typeof langShell.type,
+  "function",
+  "the section's shell should be a component, not a hand-written div"
+);
+assert.strictEqual(
+  renderCensorshipFilter().shell.type,
+  langShell.type,
+  "the censorship section should render through the same shell as the language one"
+);
+assert.strictEqual(
+  renderMangaFilter().shell.type,
+  langShell.type,
+  "and so should the manga section"
+);
+
+// ── Censorship: the language section's shape on two fixed values ──
+const censSection = renderCensorshipFilter();
+assert.strictEqual(
+  find(censSection.node, (n) => n.type === "Button").props.children[1].props
+    .children,
+  "修正",
+  "the censorship section is headed by this plugin's own word for it"
+);
+
+const chessIcons = [];
+find(censSection.node, (n) => {
+  if (n.type === "Icon" && /^faChess/.test(n.props.icon || ""))
+    chessIcons.push(n);
+  return false;
+});
+assert.ok(
+  chessIcons.length >= 2,
+  "each censorship value should draw a chess piece where a flag would go"
+);
+
+const censCandidates = [];
+find(
+  find(
+    censSection.node,
+    (n) => n.props && n.props.className === "queryable-candidate-list"
+  ),
+  (n) => {
+    if (n.props && /^unselected-object\b/.test(n.props.className))
+      censCandidates.push(n);
+    return false;
+  }
+);
+assert.deepStrictEqual(
+  censCandidates.slice(0, 2).map(labelOf),
+  ["(任意)", "(无)"],
+  "censorship offers the same two modifier entries as the language section"
+);
+assert.deepStrictEqual(
+  censCandidates.slice(2).map(labelOf),
+  ["有修正", "无修正"],
+  "followed by its two values"
+);
+
+// Clicking a value rewrites the URL, on the censorship field
+const censoredRow = censCandidates.find((i) => labelOf(i) === "有修正");
+historyReplaces.length = 0;
+find(censoredRow, (n) => n.type === "a").props.onClick();
+assert.ok(
+  /"field":"plugin\.mangaTools\.censorship","modifier":"EQUALS","value":\["censored"\]/.test(
+    historyReplaces[0].search
+  ),
+  "clicking a censorship value should write its EQUALS condition"
+);
+
+// …and the chosen value moves above the fold-away list
+const censChosen = renderCensorshipFilter([
+  censorshipConditionsOf("EQUALS", ["censored"]),
+]);
+const censSelectedList = find(
+  censChosen.node,
+  (n) => n.props && n.props.className === "selected-list"
+);
+assert.ok(
+  censSelectedList,
+  "a chosen censorship value should sit above the fold"
+);
+assert.ok(hasText(censSelectedList, "有修正"), "with the value's own label");
+
+// ── Manga: a boolean, single-select, no modifiers ──
+const mangaSection = renderMangaFilter();
+assert.strictEqual(
+  find(mangaSection.node, (n) => n.type === "Button").props.children[1].props
+    .children,
+  "漫画",
+  "the manga section is headed by the mark's word"
+);
+
+const mangaCandidates = [];
+find(
+  find(
+    mangaSection.node,
+    (n) => n.props && n.props.className === "queryable-candidate-list"
+  ),
+  (n) => {
+    if (n.props && /^unselected-object\b/.test(n.props.className))
+      mangaCandidates.push(n);
+    return false;
+  }
+);
+assert.deepStrictEqual(
+  mangaCandidates.map(labelOf),
+  ["已标记", "未标记"],
+  "manga offers its two values and no modifier entries"
+);
+
+// Choosing a value writes the mark's presence; choosing it again clears it —
+// single-select, so there is no include/exclude and no (Any)/(None).
+const markedRow = mangaCandidates.find((i) => labelOf(i) === "已标记");
+historyReplaces.length = 0;
+find(markedRow, (n) => n.type === "a").props.onClick();
+assert.ok(
+  /"field":"plugin\.mangaTools\.manga","modifier":"NOT_NULL"/.test(
+    historyReplaces[0].search
+  ),
+  "choosing marked should write the manga mark's presence"
+);
+
+const mangaChosen = renderMangaFilter([mangaConditionsOf("NOT_NULL")]);
+const mangaSelectedList = find(
+  mangaChosen.node,
+  (n) => n.props && n.props.className === "selected-list"
+);
+assert.ok(mangaSelectedList, "a chosen manga state should sit above the fold");
+assert.ok(
+  hasText(mangaSelectedList, "已标记"),
+  "with the chosen value's label"
+);
+
+historyReplaces.length = 0;
+find(mangaSelectedList, (n) => n.type === "a").props.onClick();
+assert.strictEqual(
+  historyReplaces[0].search,
+  "ENCODED([])",
+  "clicking the chosen manga state should clear the filter"
+);
+
+console.log(
+  "✓ censorship & manga sections (shared shell, values, and URL writes)"
+);
 
 // ── 10e. The filter dialog's Language card ─────────────────────────
 // Stash's "edit filters" dialog builds its cards from a shared options array

@@ -78,7 +78,7 @@ NS.normalizeCensorship = (raw: unknown): string => {
  * nothing on it *is* "nothing marked yet". It looks a little like the mosaic the
  * other two are named after, which the dimmed grey helps along.
  *
- * No fallback name is needed, unlike `faXmark` in language-filter.tsx:
+ * No fallback name is needed, unlike `faXmark` in dialog-filter.tsx:
  * chess-board has been spelled that way in every FontAwesome since 5, so
  * whichever version Stash bundles answers to it.
  */

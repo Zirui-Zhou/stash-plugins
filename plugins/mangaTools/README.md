@@ -169,7 +169,7 @@ section applies on every click. The "edit filters" dialog also offers a
 which is reachable through the model even though `EditFilterDialog`,
 `CriterionEditor` and `CustomFieldsFilter` are all plain `React.FC` and cannot be
 patched. That card keeps its own selection and merges it into the URL when
-**Apply** is pressed, exactly as the sidebar does; `src/language-filter.tsx`
+**Apply** is pressed, exactly as the sidebar does; `src/filter-model.ts`
 holds the operations the two share, so a click cannot come to mean different
 things in the two places.
 
@@ -282,7 +282,7 @@ beside a UI glyph — and the circled question mark it replaced is the universal
 "help" mark, in a toolbar, which is a thing people click by mistake. A board with
 nothing on it is also just true: nothing has been marked. It looks a little like
 the mosaic the other two are named after, which the dimmed grey helps along. The
-name needs no fallback, unlike `faXmark` in `language-filter.tsx`: `chess-board`
+name needs no fallback, unlike `faXmark` in `dialog-filter.tsx`: `chess-board`
 has been spelled that way in every FontAwesome since 5.
 
 **Only "not marked" has a colour of its own** — it is dimmed, so the button reads
@@ -389,7 +389,10 @@ never filtered, while only the option *list* is filtered.
 mangaTools/
 ├── src/
 │   ├── mangaTools.tsx        Badge, dropdown, bulk row, censorship, settings, patches
-│   ├── language-filter.tsx   The gallery list's language filter section
+│   ├── filter-model.ts       Criterion read/write for all three fields (pure, no DOM)
+│   ├── filter-ui.tsx         The rows and tag DOM both filter surfaces share
+│   ├── sidebar-filter.tsx    The three sidebar filter sections
+│   ├── dialog-filter.tsx     The dialog's language card
 │   ├── languages.ts          Codes, flags, and the name lookup (pure, no DOM)
 │   ├── fields.ts             The custom fields this plugin owns, and how to
 │   │                         read and write one (pure, no DOM)
@@ -414,7 +417,10 @@ files talk to each other by importing, not through the window.
 well, because that is the handle `tests/smoke.js` uses to call the pure functions
 directly; the plugin itself never reads it. They share one namespace object, each
 adding its own members — which is why `fields.ts` holds the field *names* while
-`languages.ts` holds the table of language codes they can point at.
+`languages.ts` holds the table of language codes they can point at. The four
+filter modules do the same, each publishing the members it owns at the end of its
+own file; that is what keeps the sidebar and dialog from having to import each
+other.
 
 `tsc` plays no part in producing that file — it only type-checks, and esbuild
 strips types without reading them. That is why `npm test` runs both; see

@@ -15,7 +15,7 @@
  *     riding along with Apply
  *   - a collapsible block in the details tab, where the raw code would be — the
  *     language as its flag and localised name, the censorship mark beside it
- *   - a filter section in the gallery list's sidebar (language-filter.tsx),
+ *   - a filter section in the gallery list's sidebar (sidebar-filter.tsx),
  *     which narrows the list to one language
  *
  * A second attribute, the censorship mark, works the same way and lives in
@@ -36,8 +36,10 @@
  *
  * `languages.ts` holds the codes and their flags, `censorship.tsx` the
  * censorship vocabulary and its icons, `fields.ts` the field names and the
- * generic read/write helpers, `language-filter.tsx` the sidebar filter.
- * Everything else is below.
+ * generic read/write helpers. Filtering is spread across four modules —
+ * `filter-model.ts` the criterion read/write logic, `filter-ui.tsx` the rows
+ * both surfaces share, `sidebar-filter.tsx` the three sidebar sections, and
+ * `dialog-filter.tsx` the dialog's language card. Everything else is below.
  *
  * New features should keep the same shape: patches that hand anything they do
  * not own straight back to the original component, and shared data in a module
@@ -52,13 +54,13 @@ import { CensorshipIcon, formatCensorshipOption } from "./censorship";
 import { NS } from "./languages";
 import { t } from "./i18n";
 import { requirePluginApi } from "./plugin-api";
+import { DialogLanguageFilter } from "./dialog-filter";
+import { registerLanguageCriterionOption } from "./filter-model";
 import {
-  DialogLanguageFilter,
-  registerLanguageCriterionOption,
   SidebarCensorshipFilter,
   SidebarLanguageFilter,
   SidebarMangaFilter,
-} from "./language-filter";
+} from "./sidebar-filter";
 import type { ReactNode } from "react";
 import type { MangaToolsFilterModel } from "./plugin-api";
 import type {
@@ -2653,7 +2655,7 @@ registerPatch("before", "GalleryList", (...args: unknown[]) => {
 
 // 7. The gallery list's language filter, mounted from GalleryList for the same
 //    reason the bulk row is mounted from RatingSystem: nothing in the filter
-//    path itself is patchable (see language-filter.tsx), so a component that
+//    path itself is patchable (see sidebar-filter.tsx), so a component that
 //    renders on this page is used as a mount point. The section positions itself
 //    by a DOM anchor inside the sidebar and reads the filter it is handed.
 //

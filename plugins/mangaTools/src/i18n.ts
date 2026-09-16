@@ -10,7 +10,7 @@
  * is to wrap its components in a second `IntlProvider` holding these catalogs,
  * because Stash's provider only knows its own ids. This plugin does not need that:
  * every component here already has `intl` in hand, and the module already asks
- * Stash for its messages the same way (see `message` in language-filter.tsx), so
+ * Stash for its messages the same way (see `message` in filter-model.ts), so
  * one more lookup beside it is smaller than a provider — and it has one fewer way
  * to go wrong, since a component rendered outside such a wrapper would silently
  * show the fallback text instead of its translation.
