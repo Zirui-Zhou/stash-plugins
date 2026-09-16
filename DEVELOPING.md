@@ -69,6 +69,13 @@ When a second plugin's tests want the same stubs — the fake `PluginApi`, React
 DOM and Apollo client in mangaTools' spec are all generic — lift them into a
 shared file both can import. Don't move the specs back to the root to share them.
 
+One spec file is a fine place to start, but a suite grows. mangaTools' is the
+worked example of what that looks like: `tests/smoke.js` keeps the name `npm test`
+runs and does nothing but run the others in order, `tests/helpers.js` holds the
+stubs, the fixtures and the loaded bundle, and `tests/sections/` holds one file
+per area. Anything two section files both drive moves up to a shared module
+rather than being copied into both.
+
 A `tests/` directory inside a plugin is safe from packaging: only what
 `src/<id>.tsx` imports is bundled, and only `.yml`/`.css`/`.md` are copied in from
 the plugin root. That is **not** true of a plain-JS plugin (no `tsconfig.json`),

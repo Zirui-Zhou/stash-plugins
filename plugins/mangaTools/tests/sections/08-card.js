@@ -1,0 +1,1073 @@
+/**
+ * 11–13d: what the plugin puts on a gallery's card and on a gallery's page —
+ * the badges, the route scoping, the edit writes, the censorship mark and the
+ * manga panel.
+ *
+ * These wait for the plugin's first refresh rather than running with 01–07: the
+ * badges and the bulk rows are read out of the gallery map it fetches on load.
+ */
+
+const assert = require("node:assert");
+const {
+  MANGA,
+  NS,
+  PluginApi,
+  React,
+  asManga,
+  call,
+  callAfter,
+  documentRoot,
+  find,
+  galleryWrites,
+  globalListeners,
+  hasText,
+  makeEl,
+  state,
+} = require("../helpers.js");
+const { detail, editField } = require("../renders.js");
+
+module.exports = () => {
+  // ── 11. Badges (after the refresh promise settles) ───────────────
+  // Stands in for Stash's own Overlays — the studio overlay. An `after` patch is
+  // handed it and returns it, so handing back the *same object* is how "the
+  // plugin added nothing" reads below, with no shape to guess at.
+  const overlaysResult = { type: "StudioOverlay", props: {} };
+  const card = (id) =>
+    callAfter("GalleryCard.Overlays", { gallery: { id } }, overlaysResult);
+
+  // The badge wraps a Flag component, so one more render is needed to reach the span
+  const badgeOf = (id) => {
+    const el = card(id);
+    if (el.type !== React.Fragment) return null;
+    const b = el.props.children[1];
+    return b.type(b.props);
+  };
+  const flagOf = (id) => {
+    const badge = badgeOf(id);
+    if (badge?.type !== "div") return null;
+    const inner = badge.props.children;
+    // The unknown-value branch holds plain text, not a Flag element
+    if (!inner || typeof inner.type !== "function") return null;
+    return inner.type(inner.props);
+  };
+
+  assert.strictEqual(
+    card("1").type,
+    React.Fragment,
+    "gallery 1 should carry a badge"
+  );
+  assert.strictEqual(
+    flagOf("1").props.className,
+    "fi fi-cn",
+    "gallery 1 should show the China flag"
+  );
+  assert.strictEqual(
+    flagOf("2").props.className,
+    "fi fi-tw",
+    "gallery 2 holds a traditional value"
+  );
+  assert.strictEqual(
+    flagOf("5").props.className,
+    "fi fi-cn",
+    "gallery 5 holds ZH-HANS, which is non-canonical case and should still resolve"
+  );
+  assert.strictEqual(
+    badgeOf("1").props["aria-label"],
+    "简体中文",
+    "should carry an aria-label"
+  );
+  // Identity, not merely "a component": an `after` patch that has nothing to add
+  // returns the very object it was handed, so the original output is not merely
+  // equivalent, it is the same one.
+  assert.strictEqual(
+    card("4"),
+    overlaysResult,
+    "a gallery without a language must not be touched"
+  );
+  assert.strictEqual(
+    card("999"),
+    overlaysResult,
+    "an unknown id must not be touched"
+  );
+
+  // Unknown value: grey text chip, no flag
+  const unknown = badgeOf("3");
+  assert.strictEqual(unknown.props.className, "manga-tools-badge is-unknown");
+  assert.strictEqual(unknown.props.children, "klingon");
+  assert.strictEqual(
+    flagOf("3"),
+    null,
+    "an unknown value must not render a flag"
+  );
+
+  // Follows the UI language, which is Stash's setting rather than the browser's,
+  // so the name changes when that changes. (The locale list itself is pinned in
+  // section 2; here it is only the visible consequence that matters.)
+  state.currentLocale = "ja-JP";
+  assert.strictEqual(
+    badgeOf("1").props["aria-label"],
+    "簡体中国語",
+    "should follow the UI language"
+  );
+  state.currentLocale = "zh-CN";
+  console.log(
+    "✓ badges (flag / case tolerance / unknown / no field / UI language)"
+  );
+
+  // ── 12. Route scoping ────────────────────────────────────────────
+  assert.strictEqual(
+    typeof globalListeners["stash:location"],
+    "function",
+    "the route event was never subscribed"
+  );
+  const nav = (p) =>
+    globalListeners["stash:location"]({
+      detail: { data: { location: { pathname: p } } },
+    });
+
+  const renderRow = (values, onChange) => {
+    const el = call("CustomFieldsInput", {
+      // A manga gallery, so the only thing that can hide the row below is the
+      // route — which is what this section is about.
+      values: asManga(values),
+      onChange: onChange || (() => {}),
+    }).props.children[0];
+    return el.type(el.props);
+  };
+
+  nav("/scenes/5");
+  assert.strictEqual(
+    renderRow({ "plugin.mangaTools.language": "zh-Hans" }),
+    null,
+    "no language dropdown on a scene page"
+  );
+  nav("/performers/3");
+  assert.strictEqual(
+    renderRow({ "plugin.mangaTools.language": "zh-Hans" }),
+    null,
+    "no language dropdown on a performer page"
+  );
+  nav("/galleries/12");
+  assert.notStrictEqual(
+    renderRow({ "plugin.mangaTools.language": "zh-Hans" }),
+    null,
+    "the dropdown should appear on a gallery detail page"
+  );
+  nav("/galleries");
+  assert.notStrictEqual(
+    renderRow({ "plugin.mangaTools.language": "zh-Hans" }),
+    null,
+    "and on the gallery list page (bulk edit)"
+  );
+  console.log(
+    "✓ route scoping (hidden on scenes/performers, shown on galleries)"
+  );
+
+  // ── 13. Edit write semantics ─────────────────────────────────────
+  let captured = null;
+  const setter = (v) => {
+    captured = v;
+  };
+  const row = renderRow(
+    { author: "x", "plugin.mangaTools.Language": "ja" },
+    setter
+  );
+  const select = find(
+    row,
+    (n) => n.props && typeof n.props.onChange === "function" && n.props.options
+  );
+
+  select.props.onChange({ value: "zh-Hant" });
+  assert.deepStrictEqual(
+    captured,
+    {
+      author: "x",
+      [MANGA]: "true",
+      "plugin.mangaTools.language": "zh-Hant",
+    },
+    "writing should drop case variants and canonicalise the field name to lowercase"
+  );
+
+  select.props.onChange(null);
+  assert.deepStrictEqual(
+    captured,
+    { author: "x", [MANGA]: "true" },
+    "clearing should remove the field entirely"
+  );
+
+  // Options: flag + localised name. The order is asserted in 5b; what matters
+  // here is that each option carries both halves of the display.
+  const opts = select.props.options;
+  const jaOption = opts.find((o) => o.value === "ja");
+  assert.strictEqual(jaOption.label, "日语");
+  assert.strictEqual(jaOption.flag, "jp");
+  assert.strictEqual(
+    opts.some((o) => o.flag === "vn"),
+    true,
+    "the Vietnam flag should be vn"
+  );
+  assert.strictEqual(
+    opts.every((o) => o.flag && o.flag.length === 2),
+    true,
+    "every option should have a flag"
+  );
+
+  // Enabled-languages restriction: the dropdown is limited to the selected set,
+  // but the currently-selected value still echoes even if it is outside the set
+  // (display is unaffected — only the option list is filtered).
+  NS.enabledLanguages = new Set(["ja", "en"]);
+  const filtered = find(
+    renderRow({ "plugin.mangaTools.language": "vi" }),
+    (n) => n.props?.options
+  );
+  assert.deepStrictEqual(
+    filtered.props.options.map((o) => o.value),
+    ["ja", "en"],
+    "the dropdown should show only the enabled languages"
+  );
+  assert.strictEqual(
+    filtered.props.value.value,
+    "vi",
+    "a selected value outside the enabled set must still echo (display is unaffected)"
+  );
+  assert.strictEqual(filtered.props.value.flag, "vn");
+  NS.enabledLanguages = null; // restore
+
+  // Selected value echo: a canonical code in the wrong case echoes back canonical
+  const sel = find(
+    renderRow({ "plugin.mangaTools.language": "ZH-HANT" }),
+    (n) => n.props?.options
+  );
+  assert.strictEqual(
+    sel.props.value.label,
+    "繁体中文",
+    "should echo the canonical name"
+  );
+  assert.strictEqual(
+    sel.props.value.value,
+    "zh-Hant",
+    "should echo the canonical code"
+  );
+  assert.strictEqual(sel.props.value.flag, "tw");
+
+  // Non-canonical spellings (former aliases, other notations) are unknown values
+  // now: they appear in the list as-is, otherwise picking something else would
+  // make them unreachable.
+  const selUnknown = find(
+    renderRow({ "plugin.mangaTools.language": "chs" }),
+    (n) => n.props?.options
+  );
+  assert.strictEqual(selUnknown.props.options[0].value, "chs");
+  assert.strictEqual(
+    selUnknown.props.options[0].flag,
+    null,
+    "an unknown option has no flag"
+  );
+  assert.strictEqual(
+    selUnknown.props.value.label,
+    "chs",
+    "an unknown value echoes as-is"
+  );
+
+  // formatOptionLabel should render flag + name
+  const formatted = sel.props.formatOptionLabel({
+    value: "ja",
+    label: "日语",
+    flag: "jp",
+  });
+  assert.strictEqual(
+    find(formatted, (n) => /fi fi-jp/.test(n.props.className || "")).props
+      .className,
+    "fi fi-jp manga-tools-flag"
+  );
+  assert.strictEqual(
+    find(formatted, (n) => n.props.children === "日语") !== null,
+    true
+  );
+  const formattedUnknown = sel.props.formatOptionLabel({
+    value: "x",
+    label: "x",
+    flag: null,
+  });
+  assert.strictEqual(
+    find(formattedUnknown, (n) => /fi fi-/.test(n.props.className || "")),
+    null,
+    "an option with no flag must not render a flag"
+  );
+  console.log("✓ edit write / clear / option flags and names");
+
+  // ── 13b. The two display switches, and that they are independent ──
+  // The panel only renders on a gallery *page* now, so the route has to be one.
+  globalListeners["stash:location"]({
+    detail: { data: { location: { pathname: "/galleries/1" } } },
+  });
+  NS.showFlags = false;
+
+  const formattedFlat = sel.props.formatOptionLabel({
+    value: "ja",
+    label: "日语",
+    flag: "jp",
+  });
+  assert.strictEqual(
+    find(formattedFlat, (n) => /fi fi-/.test(n.props.className || "")),
+    null,
+    "the dropdown must not draw a flag when flags are off"
+  );
+  assert.ok(hasText(formattedFlat, "日语"), "the name must still be there");
+
+  // The space in the detail row belongs to the flag, so it has to go with it.
+  const flatDetail = detail({ "plugin.mangaTools.language": "zh-Hant" });
+  assert.strictEqual(
+    find(flatDetail.portal.node, (n) => /fi fi-/.test(n.props.className || "")),
+    null,
+    "the detail row must not draw a flag when flags are off"
+  );
+  const flatRow = find(
+    flatDetail.portal.node,
+    (n) => n.props?.className === "manga-tools-detail"
+  );
+  assert.deepStrictEqual(
+    flatRow.props.children.filter((c) => typeof c === "string"),
+    ["语言: ", "繁体中文"],
+    "without a flag there must not be a double space"
+  );
+
+  // The badge survives flags being off: it falls back to the name chip. That
+  // combination is exactly why the two switches are independent — the flag
+  // mapping is lossy, so a name can be preferable without losing the badge.
+  //
+  // The class matters as much as the text: an unrecognised value is bounded and
+  // ellipsised, while a recognised name is not clipped at all. Getting those the
+  // same way round is what stopped "印度尼西亚语" rendering as "印度尼…".
+  assert.strictEqual(
+    card("1").type,
+    React.Fragment,
+    "the badge should survive flags being off"
+  );
+  const flatBadge = badgeOf("1");
+  assert.strictEqual(
+    flatBadge.props.className,
+    "manga-tools-badge is-name",
+    "a recognised language falls back to the name chip, which is not truncated"
+  );
+  assert.strictEqual(
+    flatBadge.props.children,
+    "简体中文",
+    "showing the localised name"
+  );
+  assert.strictEqual(flagOf("1"), null, "and no flag element inside it");
+
+  // A long name is the case that motivated the split, so check one end to end:
+  // gallery 1 is zh-Hans, which is "Chinesisch (vereinfacht)" in German.
+  state.currentLocale = "de-DE";
+  assert.strictEqual(badgeOf("1").props.children, "Chinesisch (vereinfacht)");
+  assert.strictEqual(
+    badgeOf("1").props.className,
+    "manga-tools-badge is-name",
+    "a name long enough to be clipped keeps the chip that is allowed its full width"
+  );
+  state.currentLocale = "zh-CN";
+
+  // An unrecognised value keeps the bounded chip, whatever its length
+  assert.strictEqual(
+    badgeOf("3").props.className,
+    "manga-tools-badge is-unknown"
+  );
+
+  NS.showFlags = true;
+  assert.strictEqual(
+    flagOf("1").props.className,
+    "fi fi-cn",
+    "the flag comes back"
+  );
+
+  // The cover badge turns off on its own, whatever the flags setting says.
+  NS.showCoverBadge = false;
+  assert.strictEqual(
+    card("1"),
+    overlaysResult,
+    "no badge at all when the cover badge is off"
+  );
+  assert.strictEqual(
+    card("3"),
+    overlaysResult,
+    "and none for an unknown value either"
+  );
+
+  NS.showFlags = false;
+  assert.strictEqual(card("1"), overlaysResult, "nor with both switches off");
+
+  NS.showCoverBadge = true;
+  NS.showFlags = true;
+  assert.strictEqual(card("1").type, React.Fragment, "restored");
+  console.log(
+    "✓ display switches (flags off = names only / badge off / independent)"
+  );
+
+  // ── 13b. Censorship: the card mark and the toolbar button ─────────
+  //
+  // Two surfaces and two kinds of mount point. The card's mark is portalled
+  // into Stash's own popover row, which React does not own; the toolbar button
+  // is portalled into a span this plugin inserts beside Stash's organized
+  // button. Neither target is patchable, so both are reached through the DOM —
+  // and a test has to give the plugin the DOM it expects, the way Stash would.
+
+  // --- the field, on its own ---
+  assert.strictEqual(
+    NS.CENSORSHIP_FIELD_NAME,
+    "plugin.mangaTools.censorship",
+    "the censorship field names its owner, like the language one"
+  );
+  assert.deepStrictEqual(
+    NS.CENSORSHIP_VALUES,
+    ["censored", "uncensored"],
+    "two values, in the order the toolbar button cycles through them"
+  );
+
+  assert.strictEqual(NS.normalizeCensorship(null), "");
+  assert.strictEqual(NS.normalizeCensorship(undefined), "");
+  assert.strictEqual(NS.normalizeCensorship("   "), "");
+  assert.strictEqual(NS.normalizeCensorship("CENSORED"), "censored");
+  assert.strictEqual(NS.normalizeCensorship(" Uncensored "), "uncensored");
+  assert.strictEqual(
+    NS.normalizeCensorship("maybe"),
+    "",
+    "a value that is neither of the two reads as unmarked rather than as " +
+      "itself — unlike a language, which is shown unrecognised because there " +
+      "is no third state for it to fall back on"
+  );
+
+  const CF = NS.CENSORSHIP_FIELD_NAME;
+
+  assert.strictEqual(NS.pickField({ [CF]: "censored" }, CF), "censored");
+  assert.strictEqual(
+    NS.pickField({ "Plugin.MangaTools.Censorship": "censored" }, CF),
+    "censored",
+    "the key is matched case-insensitively"
+  );
+  assert.strictEqual(NS.pickField({ other: "x" }, CF), "");
+  assert.strictEqual(NS.pickField(null, CF), "");
+  assert.strictEqual(NS.pickField({ [CF]: null }, CF), "");
+
+  assert.deepStrictEqual(
+    NS.setField({ language: "ja", other: "x" }, CF, "censored"),
+    { language: "ja", other: "x", [CF]: "censored" },
+    "writing a field leaves every other field alone"
+  );
+  assert.deepStrictEqual(
+    NS.setField(
+      { "plugin.mangaTools.Censorship": "censored" },
+      CF,
+      "uncensored"
+    ),
+    { [CF]: "uncensored" },
+    "and rewrites the key in its canonical spelling, whatever case it had"
+  );
+  assert.deepStrictEqual(
+    NS.setField({ [CF]: "censored", other: "x" }, CF, ""),
+    { other: "x" },
+    "an empty value removes the field rather than storing an empty string"
+  );
+  // The input is never mutated — the language dropdown hands the result
+  // straight to Stash as the new form values.
+  const cfSource = { [CF]: "censored" };
+  NS.setField(cfSource, CF, "");
+  assert.deepStrictEqual(cfSource, { [CF]: "censored" });
+
+  // The one list of this plugin's fields. Everything that has to recognise a key
+  // of ours asks it, which is what stops a new field being known in some places
+  // and not others — the mistake that shipped a raw plugin.mangaTools.manga row
+  // into the edit form.
+  assert.strictEqual(NS.ownField(NS.FIELD_NAME), NS.FIELD_NAME);
+  assert.strictEqual(
+    NS.ownField("PLUGIN.MANGATOOLS.Language"),
+    NS.FIELD_NAME,
+    "in any spelling"
+  );
+  assert.strictEqual(
+    NS.ownField(NS.CENSORSHIP_FIELD_NAME),
+    NS.CENSORSHIP_FIELD_NAME
+  );
+  assert.strictEqual(
+    NS.ownField("plugin.mangaTools.Manga"),
+    NS.MANGA_FIELD_NAME
+  );
+  assert.strictEqual(
+    NS.ownField("plugin.mangaTools.languageNotes"),
+    "",
+    "a longer name that merely starts the same way is not ours"
+  );
+  assert.strictEqual(NS.ownField("other"), "");
+  assert.strictEqual(NS.ownField(null), "");
+  assert.strictEqual(NS.ownField(undefined), "");
+  assert.strictEqual(NS.isOwnField("  plugin.mangaTools.manga  "), true);
+  assert.strictEqual(NS.isOwnField("plugin.mangaTools.mangaX"), false);
+
+  // --- the card's popover row ---
+  //
+  // Stand in for what React commits: the element the plugin rendered, turned
+  // into a node in the fake DOM. Reading the class and the attribute off that
+  // element rather than writing them out here is what keeps this honest — if
+  // the plugin stopped rendering the anchor, the lookup below would find
+  // nothing and the assertions would fail.
+  const commit = (el) => {
+    const node = makeEl(el.type);
+    node.className = el.props.className || "";
+    if (el.props["data-gallery"] !== undefined) {
+      node.dataset.gallery = el.props["data-gallery"];
+    }
+    return node;
+  };
+
+  /**
+   * A card as Stash draws it, with the plugin's mark rendered and committed
+   * into it. Returns the row, what the patch returned, the rendered anchor
+   * element, and what the mark component draws once the anchor is in place.
+   *
+   * One card per gallery is in the fake document at a time. The mark finds its
+   * row by gallery id, so two cards for one gallery would make that lookup
+   * ambiguous — and on the real page a gallery appears in exactly one card, so
+   * that is the state worth testing against.
+   */
+  // Stash's own popover row, as an `after` patch is handed it.
+  const popoversResult = { type: "PopoverRow", props: {} };
+
+  let lastCard = null;
+  const cardMark = (id, { withRow = true } = {}) => {
+    if (lastCard?.parentNode) documentRoot.removeChild(lastCard);
+
+    const cardEl = makeEl("div");
+    cardEl.className = "card";
+    lastCard = cardEl;
+
+    let row = null;
+    if (withRow) {
+      row = makeEl("div");
+      row.className = "btn-group card-popovers";
+      const organized = makeEl("div");
+      organized.className = "organized";
+      row.appendChild(organized);
+      cardEl.appendChild(row);
+    }
+
+    const first = callAfter(
+      "GalleryCard.Popovers",
+      { gallery: { id } },
+      popoversResult
+    );
+    const markEl = first === popoversResult ? null : first.props.children[1];
+
+    // The anchor the mark draws, turned into a node the way React's commit
+    // would — read off the rendered element rather than written out here, so a
+    // change to the anchor's mark-up shows up as a failed lookup below.
+    const drawnOnce = markEl ? markEl.type(markEl.props) : null;
+    const anchorEl = drawnOnce ? drawnOnce.props.children[0] : null;
+    const anchor = anchorEl ? commit(anchorEl) : null;
+    if (anchor) cardEl.appendChild(anchor);
+    documentRoot.appendChild(cardEl);
+
+    // The second pass is the one that can see the committed anchor, which is
+    // exactly what useAfterMount asks a real React for.
+    const again = callAfter(
+      "GalleryCard.Popovers",
+      { gallery: { id } },
+      popoversResult
+    );
+    const el = again === popoversResult ? null : again.props.children[1];
+    const drawn = el ? el.type(el.props) : null;
+
+    return { cardEl, row, markEl, anchor, el, drawn };
+  };
+
+  /** The portal the mark drew, if any */
+  const markPortal = (id, options) => {
+    const { drawn } = cardMark(id, options);
+    if (!drawn || drawn.type !== React.Fragment) return null;
+    const children = drawn.props.children || [];
+    return children.find((c) => c?.__portal) || null;
+  };
+
+  const marked = markPortal("1");
+  assert.ok(marked, "gallery 1 is marked, so its card should draw the mark");
+  assert.strictEqual(
+    marked.host.className,
+    "manga-tools-popover-slot",
+    "the mark goes into a node made for it"
+  );
+  assert.strictEqual(
+    marked.host.parentNode.className,
+    "btn-group card-popovers",
+    "and that node is inside Stash's own popover row, not a row of our own"
+  );
+  assert.strictEqual(
+    marked.host.parentNode.lastElementChild,
+    marked.host,
+    "as its last child — after Stash's organized mark"
+  );
+  assert.strictEqual(
+    marked.node.type,
+    "button",
+    "what is drawn there is a button"
+  );
+  assert.strictEqual(
+    marked.node.props.className,
+    "minimal btn btn-primary manga-tools-mark",
+    "carrying the same Bootstrap classes Stash's own card buttons do"
+  );
+  assert.strictEqual(
+    marked.node.props.title,
+    "漫画",
+    "with this plugin's own word for what the gallery is, in the UI language"
+  );
+  // The icon is the same masked span the toolbar switch draws, so the same asset
+  // and the same two colours serve both.
+  const cardIcon = marked.node.props.children.type(
+    marked.node.props.children.props
+  );
+  assert.strictEqual(cardIcon.props.className, "manga-tools-manga-icon");
+
+  assert.strictEqual(
+    markPortal("3").node.props.title,
+    "漫画",
+    "gallery 3 is manga too, and the icon says nothing about its censorship"
+  );
+
+  assert.strictEqual(
+    cardMark("8").markEl,
+    null,
+    "gallery 8 carries a language but is not manga, so its card draws nothing"
+  );
+  assert.strictEqual(
+    card("8"),
+    overlaysResult,
+    "…neither a mark nor a badge: the plugin is not on that gallery at all"
+  );
+  assert.strictEqual(
+    card("7"),
+    overlaysResult,
+    "and gallery 7, which is manga but has no language, has no badge either"
+  );
+
+  // A card Stash draws no row for — no image count, no tags, no organized mark.
+  const ownRow = cardMark("1", { withRow: false });
+  assert.ok(
+    ownRow.row === null,
+    "the fixture really has no row of Stash's to start with"
+  );
+  assert.strictEqual(
+    ownRow.anchor.previousElementSibling.className,
+    "btn-group card-popovers manga-tools-popovers",
+    "so the plugin makes one, with the classes Stash would have used"
+  );
+  assert.strictEqual(
+    markPortal("1", { withRow: false }).host.parentNode.className,
+    "btn-group card-popovers manga-tools-popovers",
+    "and puts the mark in that"
+  );
+
+  // --- the detail page's toolbar ---
+  //
+  // Stash's toolbar: a group holding the span with the organized button, then
+  // the span with the operation menu.
+  const toolbarEl = makeEl("div");
+  toolbarEl.className = "gallery-toolbar";
+  const toolbarGroup = makeEl("span");
+  toolbarGroup.className = "gallery-toolbar-group";
+  const organizedSpan = makeEl("span");
+  const organizedButton = makeEl("button");
+  organizedButton.className =
+    "minimal organized-button organized btn btn-secondary";
+  organizedSpan.appendChild(organizedButton);
+  const menuSpan = makeEl("span");
+  toolbarGroup.appendChild(organizedSpan);
+  toolbarGroup.appendChild(menuSpan);
+  toolbarEl.appendChild(toolbarGroup);
+  documentRoot.appendChild(toolbarEl);
+
+  // Gallery 3 is the one the cycle below writes to: its fixture mark is
+  // "uncensored", and the cycle ends on "censored", so the store assertion at
+  // the end of this section is one that a store which never changed would fail.
+  globalListeners["stash:location"]({
+    detail: { data: { location: { pathname: "/galleries/3" } } },
+  });
+
+  /** The toolbar's mark, out of the same patch the panel comes from */
+  const toolbarMark = (fields) => {
+    // Not asManga: this section is about the switch's two states, so the mark is
+    // whatever the caller says. The switch is drawn either way — it is the only
+    // way to set the mark, so it cannot itself be gated on it.
+    const rendered = call("CustomFields", { values: fields });
+    const el = rendered.props.children[2];
+    return { rendered, el, drawn: el.type(el.props) };
+  };
+
+  const detailValues = (mark, key = CF) => ({
+    [NS.FIELD_NAME]: "ja",
+    [key]: mark,
+    other: "x",
+  });
+
+  const first = toolbarMark(detailValues("censored"));
+  assert.deepStrictEqual(
+    first.rendered.props.children[0].props.values,
+    { other: "x" },
+    "both of this plugin's fields are lifted out of what Stash renders, so " +
+      "neither shows up as a raw custom-field row"
+  );
+  assert.strictEqual(
+    first.drawn.host.parentNode,
+    toolbarGroup,
+    "the toolbar contents mount into the toolbar group"
+  );
+  assert.strictEqual(
+    toolbarGroup.children[1],
+    first.drawn.host,
+    "directly after the span holding Stash's organized button, and before the " +
+      "operation menu"
+  );
+
+  // What it draws: the switch, and — only while the question below is open — the
+  // dialog that asks it.
+  const drawn = first.drawn.node;
+  assert.strictEqual(drawn.type, React.Fragment);
+  const toggle = drawn.props.children[0];
+  assert.strictEqual(toggle.type, "button", "a button, like organized");
+  assert.strictEqual(
+    toggle.props.className,
+    "minimal manga-tools-manga-toggle btn btn-secondary",
+    "unmarked, and with no state class to say otherwise"
+  );
+  assert.strictEqual(toggle.props.title, "标记为漫画");
+  assert.strictEqual(toggle.props["aria-pressed"], false);
+  assert.strictEqual(
+    drawn.props.children[1],
+    null,
+    "and nothing else, until the reader asks to stop managing the gallery"
+  );
+
+  // The switch's icon is a masked span, not an svg: the artwork is a file, and a
+  // file cannot see `currentColor` — the mask reads its shape and CSS supplies
+  // the colour, which is what makes two states out of one image.
+  const icon = toggle.props.children.type(toggle.props.children.props);
+  assert.strictEqual(icon.type, "span");
+  assert.strictEqual(icon.props.className, "manga-tools-manga-icon");
+
+  // Marked: the switch says so.
+  const markedToolbar = toolbarMark({
+    ...detailValues("censored"),
+    [NS.MANGA_FIELD_NAME]: "true",
+  }).drawn.node;
+  const toggleOn = markedToolbar.props.children[0];
+  assert.strictEqual(
+    toggleOn.props.className,
+    "minimal manga-tools-manga-toggle btn btn-secondary is-manga",
+    "the state is a class, which is the one CSS colours differently"
+  );
+  assert.strictEqual(toggleOn.props.title, "漫画");
+  assert.strictEqual(toggleOn.props["aria-pressed"], true);
+
+  // Clicking writes through Stash's own gallery update. Marking is one click.
+  const writesBefore = galleryWrites.length;
+  toggle.props.onClick();
+  assert.deepStrictEqual(
+    galleryWrites[writesBefore],
+    {
+      input: {
+        id: "3",
+        custom_fields: { partial: { [NS.MANGA_FIELD_NAME]: "true" } },
+      },
+    },
+    "marking writes the canonical name"
+  );
+
+  // Unmarking asks first, because it takes this plugin's fields with it. The
+  // dialog itself cannot be driven from here — the test React's state setter is
+  // inert, so a click can open nothing — but what matters is assertable without
+  // it: the click writes nothing, and the list of what confirming would remove is
+  // its own function.
+  const writesAfterMarking = galleryWrites.length;
+  toggleOn.props.onClick();
+  assert.strictEqual(
+    galleryWrites.length,
+    writesAfterMarking,
+    "the click must not write: it asks a question, and this one takes data with it"
+  );
+
+  assert.deepStrictEqual(
+    NS.fieldsToClear({
+      [NS.FIELD_NAME]: "ja",
+      "plugin.mangaTools.Censorship": "uncensored",
+      "plugin.mangaTools.Manga": "true",
+      other: "x",
+    }),
+    [NS.FIELD_NAME, "plugin.mangaTools.Censorship", "plugin.mangaTools.Manga"],
+    "confirming removes every field of this plugin's, by the spelling it has — " +
+      "the API removes by exact key, so a drifted one would survive otherwise"
+  );
+  assert.deepStrictEqual(
+    NS.fieldsToClear({ other: "x" }),
+    [NS.MANGA_FIELD_NAME],
+    "and a gallery with none of them still has something to remove"
+  );
+  assert.deepStrictEqual(NS.fieldsToClear(null), [NS.MANGA_FIELD_NAME]);
+
+  // A rejected write leaves the switch as it was, so the click can be repeated.
+  state.galleryWriteResult = new Error("nope");
+  toolbarMark({
+    ...detailValues("censored"),
+    [NS.MANGA_FIELD_NAME]: "true",
+  }).drawn.node.props.children[0].props.onClick();
+  state.galleryWriteResult = null;
+
+  // The write path is the edit form, through Stash's own values map — which is
+  // what makes Save persist the mark and Cancel discard it.
+  const edits = [];
+  const block = editField({ [NS.FIELD_NAME]: "ja", other: "x" }, (next) =>
+    edits.push(next)
+  );
+  const markSelect = find(
+    block.node,
+    (n) => n.props?.inputId === "manga_tools_censorship"
+  );
+  assert.ok(markSelect, "the edit page offers a selector for the mark");
+  assert.deepStrictEqual(
+    markSelect.props.options.map((o) => o.value),
+    ["censored", "uncensored"],
+    "two options and nothing else — unset is the selector's own clear button, " +
+      "which is why the third state needs neither an icon nor a cycle"
+  );
+  assert.strictEqual(
+    markSelect.props.placeholder,
+    "未标注",
+    "and the empty box is named, so it reads like the row in the details tab"
+  );
+  markSelect.props.onChange({ value: "uncensored", label: "无修正" });
+  assert.deepStrictEqual(
+    edits[0],
+    { [MANGA]: "true", [NS.FIELD_NAME]: "ja", other: "x", [CF]: "uncensored" },
+    "picking one writes it into the map Stash's form owns"
+  );
+  markSelect.props.onChange(null);
+  assert.deepStrictEqual(
+    edits[1],
+    { [MANGA]: "true", [NS.FIELD_NAME]: "ja", other: "x" },
+    "clearing removes the key rather than storing an empty value"
+  );
+
+  // Stash draws no toolbar on an entity that is not a gallery.
+  globalListeners["stash:location"]({
+    detail: { data: { location: { pathname: "/scenes/1" } } },
+  });
+  assert.strictEqual(
+    call("CustomFields", { values: detailValues("censored") }).props
+      .children[2],
+    null,
+    "no mark on a scene's page — the fields are still lifted out, but there is " +
+      "no gallery toolbar to hang it on"
+  );
+  globalListeners["stash:location"]({
+    detail: { data: { location: { pathname: "/galleries/1" } } },
+  });
+
+  console.log(
+    "✓ censorship (field rules / card mark in Stash's row / a mark not a control / the edit-page selector)"
+  );
+
+  // ── 13c. The manga panel, and the tab it is rendered into as well ────
+  //
+  // EXPERIMENT, on the `test` branch. What is being judged is the *placement*,
+  // so what these hold down is the machinery: that the panel says the same thing
+  // in both places, and that the tab injection builds and switches Stash's own
+  // markup rather than a guess at it.
+  state.currentLocale = "zh-CN";
+  globalListeners["stash:location"]({
+    detail: { data: { location: { pathname: "/galleries/1" } } },
+  });
+
+  const panelValues = {
+    [NS.FIELD_NAME]: "zh-Hans",
+    [NS.CENSORSHIP_FIELD_NAME]: "censored",
+    alsoNotOurs: "x",
+  };
+  const customFieldsEl = (values) =>
+    call("CustomFields", { values: asManga(values) });
+
+  /**
+   * Renders one element the way React would, as far as a stub can: a function
+   * component by calling it, a class component by constructing it and reading
+   * what render() gives back. The experiment's error boundary is the only class.
+   */
+  const renderChild = (el) => {
+    if (!el || typeof el.type !== "function") return el;
+    return el.type.prototype instanceof PluginApi.React.Component
+      ? new el.type(el.props).render()
+      : el.type(el.props);
+  };
+  const panelOf = (values) =>
+    renderChild(customFieldsEl(values).props.children[1]);
+
+  const panel = panelOf(panelValues);
+  assert.ok(panel, "a gallery page should render the panel");
+  assert.ok(
+    hasText(panel, "漫画信息"),
+    "headed with this plugin's own words for it, since Stash has none"
+  );
+  assert.ok(
+    hasText(panel, "简体中文"),
+    "the language as its localised name, not the code"
+  );
+  assert.ok(hasText(panel, "有修正"), "and the censorship state");
+
+  // A row with no value is simply absent, and with neither value there is no
+  // panel at all — an unset value stays quiet, as the rest of the plugin keeps
+  // it.
+  // The icon lookup is by string at runtime, so a name the running Stash's
+  // FontAwesome does not have comes back undefined — and undefined handed to
+  // Stash's Icon *throws inside a render*, which takes the whole page down rather
+  // than one glyph. These names are checked against FontAwesome's documentation,
+  // which lists every version rather than the subset Stash happens to ship, so
+  // this is a real possibility and not a hypothetical one.
+  // find() calls function components as it walks, so this descends *through* the
+  // guard — which is the point: if the guard let an undefined icon through, the
+  // throw happens here rather than being invisible.
+  // Only the censorship icons: the panel's header has a chevron, which is also
+  // an Icon, so matching on the type alone would find the wrong one.
+  const iconOf = (node) =>
+    find(
+      node,
+      (n) => n.type === "Icon" && /^faChess/.test(String(n.props.icon))
+    );
+  assert.ok(iconOf(panel), "a name the bundled set has draws its icon");
+
+  const knight = PluginApi.libraries.FontAwesomeSolid.faChessKnight;
+  delete PluginApi.libraries.FontAwesomeSolid.faChessKnight;
+  let withoutKnight = null;
+  try {
+    withoutKnight = iconOf(panelOf({ [NS.CENSORSHIP_FIELD_NAME]: "censored" }));
+  } finally {
+    PluginApi.libraries.FontAwesomeSolid.faChessKnight = knight;
+  }
+  assert.strictEqual(
+    withoutKnight,
+    null,
+    "a name it does not have draws nothing at all, rather than throwing"
+  );
+
+  assert.strictEqual(
+    renderChild(panelOf({ alsoNotOurs: "x" })),
+    null,
+    "with neither value set there is no panel at all"
+  );
+
+  const languageOnly = renderChild(panelOf({ [NS.FIELD_NAME]: "zh-Hans" }));
+  assert.ok(
+    hasText(languageOnly, "简体中文"),
+    "a language on its own draws just the language row"
+  );
+  assert.ok(
+    !hasText(languageOnly, "未标注"),
+    "and not a censorship row with nothing in it"
+  );
+
+  const censoredOnly = renderChild(
+    panelOf({ [NS.CENSORSHIP_FIELD_NAME]: "censored" })
+  );
+  assert.ok(
+    hasText(censoredOnly, "有修正"),
+    "a mark on its own draws just the censorship row"
+  );
+  assert.ok(!hasText(censoredOnly, "简体中文"), "and not a language row");
+
+  // The two settings decide the state each block opens in — and only that, which
+  // is why a block already on screen keeps whatever the reader did to it.
+  NS.openDetailsBlock = true;
+  assert.strictEqual(
+    find(panelOf(panelValues), (n) => n.type === "Collapse").props.in,
+    true,
+    "the details block opens when the setting says so"
+  );
+  NS.openDetailsBlock = false;
+  assert.strictEqual(
+    find(panelOf(panelValues), (n) => n.type === "Collapse").props.in,
+    false,
+    "and starts folded by default"
+  );
+
+  // The edit block has no Collapse — it shows or hides the rows themselves, so
+  // that the field row's negative margins keep cancelling against the form's own
+  // column rather than a wrapper of ours.
+  NS.openEditBlock = false;
+  assert.strictEqual(
+    find(editField({ [NS.FIELD_NAME]: "ja" }).node, (n) => n.type === "label"),
+    null,
+    "a folded edit block draws no rows"
+  );
+  NS.openEditBlock = true;
+  assert.ok(
+    find(editField({ [NS.FIELD_NAME]: "ja" }).node, (n) => n.type === "label"),
+    "and an open one draws them"
+  );
+
+  console.log(
+    "✓ manga panel (a disclosure in the details tab: word / rows / icon guard / both defaults)"
+  );
+
+  // ── 13d. A gallery that is not manga is left alone ───────────────
+  //
+  // The mark is the plugin's entry point, so this is the other half of it: a
+  // gallery without the mark is an ordinary Stash gallery, and the switch on its
+  // toolbar is the only thing of this plugin's on it.
+  //
+  // The fields themselves are still *lifted out* of what Stash renders, because
+  // they are still this plugin's fields and a raw `plugin.mangaTools.language`
+  // row is not something a reader should ever see. The values stay in the
+  // gallery, unshown and unedited, so unmarking a gallery and marking it again
+  // brings them back rather than having destroyed them.
+  const plain = {
+    [NS.FIELD_NAME]: "ja",
+    [NS.CENSORSHIP_FIELD_NAME]: "censored",
+    other: "x",
+  };
+
+  // Cards: gallery 8 carries a language and is not in the map the plugin loaded.
+  assert.strictEqual(
+    card("8"),
+    overlaysResult,
+    "no badge on a gallery that is not manga, even though it has a language"
+  );
+  assert.strictEqual(
+    cardMark("8").markEl,
+    null,
+    "and no censorship mark in its popover row"
+  );
+
+  const unmarkedDetail = call("CustomFields", {
+    values: plain,
+    fullWidth: true,
+  });
+  assert.deepStrictEqual(
+    unmarkedDetail.props.children[0].props.values,
+    { other: "x" },
+    "our fields are still kept out of Stash's own rendering"
+  );
+  assert.strictEqual(
+    unmarkedDetail.props.children[1],
+    null,
+    "but the details block is not drawn"
+  );
+  assert.ok(
+    unmarkedDetail.props.children[2],
+    "while the switch is — it is the only way to make the gallery manga"
+  );
+
+  assert.strictEqual(
+    call("CustomFieldsInput", { values: plain, onChange: () => {} }).props
+      .children[0],
+    null,
+    "and its edit form is Stash's own, with no block of ours in it"
+  );
+
+  console.log(
+    "✓ not manga (no badge, no card mark, no blocks — only the switch)"
+  );
+};

@@ -400,7 +400,10 @@ mangaTools/
 │   ├── messages/             One JSON catalog per language
 │   └── plugin-api.ts         Types for PluginApi and the namespace above
 ├── tests/
-│   └── smoke.js              Smoke test, run by `npm test` from the repo root
+│   ├── smoke.js              The runner, and the entry point `npm test` names
+│   ├── helpers.js            The stubs, the fixtures, and the loaded bundle
+│   ├── renders.js            The two surfaces more than one section drives
+│   └── sections/             One file per area, in the order they run
 ├── mangaTools.yml            Plugin config (the file name is the plugin ID)
 ├── mangaTools.css            Styles
 ├── tsconfig.json             Extends the repo's tsconfig.base.json
@@ -414,13 +417,13 @@ plain `<script>` tag — hence `format: "iife"` in `tools/build.mjs`. The source
 files talk to each other by importing, not through the window.
 
 `languages.ts` and `fields.ts` still publish themselves at `window.MangaTools` as
-well, because that is the handle `tests/smoke.js` uses to call the pure functions
-directly; the plugin itself never reads it. They share one namespace object, each
-adding its own members — which is why `fields.ts` holds the field *names* while
-`languages.ts` holds the table of language codes they can point at. The four
-filter modules do the same, each publishing the members it owns at the end of its
-own file; that is what keeps the sidebar and dialog from having to import each
-other.
+well, because that is the handle `tests/helpers.js` uses to call the pure
+functions directly; the plugin itself never reads it. They share one namespace
+object, each adding its own members — which is why `fields.ts` holds the field
+*names* while `languages.ts` holds the table of language codes they can point at.
+The four filter modules do the same, each publishing the members it owns at the
+end of its own file; that is what keeps the sidebar and dialog from having to
+import each other.
 
 `tsc` plays no part in producing that file — it only type-checks, and esbuild
 strips types without reading them. That is why `npm test` runs both; see
@@ -474,6 +477,19 @@ cycle and mutation, settings parse/serialise and the settings UI's write path,
 the filter's read/merge/replace/clear rules and the sidebar section it renders,
 the shape of the bundle (one file, no module syntax, JSX really transformed), and
 the string/CSS surface of every patched component.
+
+They are split by area. `tests/smoke.js` is the runner — what runs, in what order,
+and what failed — and `tests/sections/` holds one file per area, in the order
+they run. What the sections share lives in `tests/helpers.js` (the stubs, the
+fixtures, and the loaded bundle) and `tests/renders.js` (the two surfaces more
+than one of them drives).
+
+Two things about that split are load-bearing. The sections that read the gallery
+map the plugin fetches as it loads run in a timer, so the ones that do not care
+whether it has settled go first. And what the tests *move* — the UI locale, the
+tags the DOM stub answers with — sits in one `state` object in `helpers.js`: a
+section file is its own module, so a test that set its own copy of a variable
+would leave the stub reading the original and go on passing.
 
 Against a real Stash:
 
