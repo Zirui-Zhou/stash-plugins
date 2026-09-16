@@ -82,6 +82,7 @@ const MANGA_FIELD_NAME = NS.MANGA_FIELD_NAME;
 // Derived rather than written out, so the two can never drift apart.
 const FIELD_KEY = FIELD_NAME.toLowerCase();
 const CENSORSHIP_KEY = CENSORSHIP_FIELD_NAME.toLowerCase();
+const MANGA_KEY = MANGA_FIELD_NAME.toLowerCase();
 
 const PLUGIN_ID = "mangaTools";
 
@@ -296,7 +297,7 @@ function storedCensorship(galleryId: string): string {
 /** Whether a custom-field key is one of ours, whatever its case */
 function isOwnField(key: string): boolean {
   const k = key.toLowerCase();
-  return k === FIELD_KEY || k === CENSORSHIP_KEY;
+  return k === FIELD_KEY || k === CENSORSHIP_KEY || k === MANGA_KEY;
 }
 
 // ───────────────────────────── Fetching ─────────────────────────────
@@ -369,7 +370,12 @@ type GalleriesPayload = {
 function refresh(): Promise<unknown> {
   if (inFlight) return inFlight;
 
-  const fields = [FIELD_NAME, CENSORSHIP_FIELD_NAME];
+  // One field, and deliberately not the two it used to be. What comes back is the
+  // gallery's *whole* custom_fields map, so a gallery found by the mark gives
+  // this plugin its language and its censorship value as well — and a gallery
+  // without the mark is in nobody's answer, which is what makes the store itself
+  // the gate: everything drawn from it appears only on galleries that are manga.
+  const fields = [MANGA_FIELD_NAME];
   const queries = fields.map(getQuery);
   if (queries.some((q) => !q)) return Promise.resolve();
 
@@ -404,13 +410,13 @@ function refresh(): Promise<unknown> {
       emit();
 
       // Only log when the count changes, so it does not spam every minute.
-      // This line is the first thing to check when a badge does not show up:
-      // if it says 0, the queries worked but no gallery carries either field,
-      // so the problem is the data rather than the plugin.
+      // This line is the first thing to check when a badge does not show up: if it
+      // says 0, the query worked but no gallery is marked as manga, so the problem
+      // is the data rather than the plugin.
       if (next.size !== lastLoggedSize) {
         lastLoggedSize = next.size;
         console.info(
-          "[mangaTools] loaded custom fields for " + next.size + " gallery(ies)"
+          "[mangaTools] loaded " + next.size + " gallery(ies) marked as manga"
         );
       }
     })
@@ -582,18 +588,19 @@ function start(): void {
   if (started) return;
   started = true;
 
-  // Worth a line. The switch's icon is a file this plugin serves rather than
-  // bundles, and finding it needs this plugin's own URL — which is the one thing
-  // a plugin cannot ask Stash for. When the lookup fails the page's own URLs are
-  // printed, because that is the only way to see what shape they actually are.
+  // Silent when it works, which it does on the Stash this was written against —
+  // the tag gives /plugin/<id>/ and the switch keeps its icon. It speaks only when
+  // the lookup fails, and then prints the page's own URLs, because that is the
+  // only way to see what shape they are on a Stash that answers differently.
   assetBase = ownBaseUrl();
-  console.info(
-    assetBase
-      ? "[mangaTools] my own files are served from " + assetBase
-      : "[mangaTools] could not tell where my own files are served from. " +
-          "Scripts and stylesheets on this page: " +
-          pageAssetUrls().join(", ")
-  );
+  if (!assetBase) {
+    console.error(
+      "[mangaTools] could not tell where my own files are served from, so the " +
+        "switch's icon falls back to the stylesheet's own relative URL. " +
+        "Scripts and stylesheets on this page: " +
+        pageAssetUrls().join(", ")
+    );
+  }
 
   refresh();
   refreshSettings();
@@ -2149,7 +2156,11 @@ registerPatch("instead", "CustomFieldsInput", (...args: unknown[]) => {
 
   return (
     <>
-      <MangaFieldBlock values={props.values} onChange={props.onChange} />
+      {/* Only on a gallery that is manga. An unmarked gallery's edit form is
+          Stash's own, unchanged — the plugin is not there at all. */}
+      {NS.isManga(props.values) ? (
+        <MangaFieldBlock values={props.values} onChange={props.onChange} />
+      ) : null}
       <Original {...props} />
     </>
   );
@@ -2363,7 +2374,7 @@ registerPatch("instead", "CustomFields", (...args: unknown[]) => {
         a place for these attributes and an empty one still answers "where would
         this go"; collapsed, it costs one line.
       */}
-      {galleryId ? (
+      {galleryId && NS.isManga(values) ? (
         <GuardedBlock name="manga panel">
           <MangaDetailsPanel values={values} />
         </GuardedBlock>

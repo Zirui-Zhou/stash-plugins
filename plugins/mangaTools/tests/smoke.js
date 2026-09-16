@@ -147,39 +147,56 @@ const customFieldsCriterion = (conditions) => ({
 // What each gallery carries, whole. Both map queries answer with the complete
 // map — the GraphQL Map scalar is all of it or none of it — so the field a query
 // filtered on decides only *which* galleries come back, never what they carry.
+const MANGA = "plugin.mangaTools.manga";
+
+/**
+ * The same map with the mark that makes a gallery manga.
+ *
+ * Every fixture below is a manga gallery unless it says otherwise, because that
+ * is the only kind the plugin draws anything on — the mark is its entry point.
+ * The cases that are *not* manga say so by not using this.
+ */
+const asManga = (fields) => ({ [MANGA]: "true", ...fields });
+
 const GALLERY_FIELDS = {
   1: {
+    [MANGA]: "true",
     "plugin.mangaTools.language": "zh-Hans",
     "plugin.mangaTools.censorship": "censored",
   },
-  2: { "plugin.mangaTools.Language": "zh-Hant" }, // capitalised key, canonical value
+  // capitalised key, canonical value
+  2: { [MANGA]: "true", "plugin.mangaTools.Language": "zh-Hant" },
   3: {
+    [MANGA]: "true",
     "plugin.mangaTools.language": "klingon", // unknown value
     "plugin.mangaTools.Censorship": "uncensored", // capitalised key again
   },
   4: {
+    [MANGA]: "true",
     other: "x", // not ours, must be left alone
     "plugin.mangaTools.censorship": "maybe", // neither value, so unmarked
   },
-  5: { "plugin.mangaTools.language": "ZH-HANS" }, // non-canonical case
-  6: { "plugin.mangaTools.language": "zh-Hans" }, // same as 1, for bulk aggregation
-  7: { "plugin.mangaTools.censorship": "uncensored" }, // carries no language
+  5: { [MANGA]: "true", "plugin.mangaTools.language": "ZH-HANS" },
+  6: { [MANGA]: "true", "plugin.mangaTools.language": "zh-Hans" },
+  7: { [MANGA]: "true", "plugin.mangaTools.censorship": "uncensored" },
+  // Carries a language and nothing else: not manga, so the plugin must leave it
+  // entirely alone — no badge, no card mark, no block on its detail page.
+  8: { "plugin.mangaTools.language": "ja" },
 };
 
 /**
- * One query's answer: the galleries that carry that field, with their whole map.
+ * The one query's answer: the galleries marked as manga, with their whole map.
  *
- * Two lists rather than one, because a gallery carrying only one of the two
- * fields is returned by only one query and merging the answers is the plugin's
- * job. Gallery 7 proves it — it is in the censorship answer and nowhere else —
- * as does gallery 4, which is in that answer but not in the other for the
- * reverse reason: it carries no language at all.
+ * One list now, and one query. The plugin asks for galleries carrying the mark and
+ * gets their entire custom_fields back — so a gallery found this way brings its
+ * language and its censorship value with it, and a gallery without the mark is in
+ * nobody's answer. Gallery 8 is the case that proves it: it has a language, and
+ * the plugin never sees it.
  */
 const galleryAnswer = (ids) =>
   ids.map((id) => ({ id: String(id), custom_fields: GALLERY_FIELDS[id] }));
 
-const LANGUAGE_GALLERIES = galleryAnswer([1, 2, 3, 5, 6]);
-const CENSORSHIP_GALLERIES = galleryAnswer([1, 3, 4, 7]);
+const MANGA_GALLERIES = galleryAnswer([1, 2, 3, 4, 5, 6, 7]);
 
 const fakeClient = {
   // Stands in for Stash's existing link chain, which setLink must pass through.
@@ -204,12 +221,14 @@ const fakeClient = {
     }
 
     galleryQueryCount += 1;
-    const galleries = /plugin\.mangaTools\.censorship/.test(String(query))
-      ? CENSORSHIP_GALLERIES
-      : LANGUAGE_GALLERIES;
 
     return Promise.resolve({
-      data: { findGalleries: { count: galleries.length, galleries } },
+      data: {
+        findGalleries: {
+          count: MANGA_GALLERIES.length,
+          galleries: MANGA_GALLERIES,
+        },
+      },
     });
   },
 };
@@ -1136,10 +1155,10 @@ assert.ok(
   "OR is singular in the schema; an array fails validation"
 );
 assert.ok(
-  /custom_fields:\s*\[\{\s*field:\s*"plugin\.mangaTools\.language",\s*modifier:\s*NOT_NULL\s*\}\]/.test(
+  /custom_fields:\s*\[\{\s*field:\s*"plugin\.mangaTools\.manga",\s*modifier:\s*NOT_NULL\s*\}\]/.test(
     galleryQuery
   ),
-  "the query should filter on language with NOT_NULL"
+  "the query should filter on the mark that makes a gallery manga"
 );
 console.log("✓ query shape (OR not misused as an array)");
 
@@ -1465,7 +1484,10 @@ const stockH6 = makeEl("h6");
 galleryPanel.appendChild(stockH6);
 
 const detail = (values) => {
-  const frag = call("CustomFields", { values, fullWidth: true });
+  const frag = call("CustomFields", {
+    values: asManga(values),
+    fullWidth: true,
+  });
   const rest = frag.props.children[0].props.values;
   // children[1] is the guard around the panel; the panel is what returns the
   // portal. The guard is a class, so it is instantiated rather than called.
@@ -1639,7 +1661,7 @@ editForm.appendChild(performerRow);
 
 const editField = (values, onChange) => {
   const el = call("CustomFieldsInput", {
-    values,
+    values: asManga(values),
     onChange: onChange || (() => {}),
   }).props.children[0];
   return el.type(el.props);
@@ -3526,7 +3548,9 @@ setTimeout(() => {
 
   const renderRow = (values, onChange) => {
     const el = call("CustomFieldsInput", {
-      values,
+      // A manga gallery, so the only thing that can hide the row below is the
+      // route — which is what this section is about.
+      values: asManga(values),
       onChange: onChange || (() => {}),
     }).props.children[0];
     return el.type(el.props);
@@ -3577,14 +3601,18 @@ setTimeout(() => {
   select.props.onChange({ value: "zh-Hant" });
   assert.deepStrictEqual(
     captured,
-    { author: "x", "plugin.mangaTools.language": "zh-Hant" },
+    {
+      author: "x",
+      [MANGA]: "true",
+      "plugin.mangaTools.language": "zh-Hant",
+    },
     "writing should drop case variants and canonicalise the field name to lowercase"
   );
 
   select.props.onChange(null);
   assert.deepStrictEqual(
     captured,
-    { author: "x" },
+    { author: "x", [MANGA]: "true" },
     "clearing should remove the field entirely"
   );
 
@@ -4075,6 +4103,9 @@ setTimeout(() => {
 
   /** The toolbar's mark, out of the same patch the panel comes from */
   const toolbarMark = (fields) => {
+    // Not asManga: this section is about the switch's two states, so the mark is
+    // whatever the caller says. The switch is drawn either way — it is the only
+    // way to set the mark, so it cannot itself be gated on it.
     const rendered = call("CustomFields", { values: fields });
     const el = rendered.props.children[2];
     return { rendered, el, drawn: el.type(el.props) };
@@ -4206,13 +4237,13 @@ setTimeout(() => {
   markSelect.props.onChange({ value: "uncensored", label: "无修正" });
   assert.deepStrictEqual(
     edits[0],
-    { [NS.FIELD_NAME]: "ja", other: "x", [CF]: "uncensored" },
+    { [MANGA]: "true", [NS.FIELD_NAME]: "ja", other: "x", [CF]: "uncensored" },
     "picking one writes it into the map Stash's form owns"
   );
   markSelect.props.onChange(null);
   assert.deepStrictEqual(
     edits[1],
-    { [NS.FIELD_NAME]: "ja", other: "x" },
+    { [MANGA]: "true", [NS.FIELD_NAME]: "ja", other: "x" },
     "clearing removes the key rather than storing an empty value"
   );
 
@@ -4251,7 +4282,8 @@ setTimeout(() => {
     [NS.CENSORSHIP_FIELD_NAME]: "censored",
     alsoNotOurs: "x",
   };
-  const customFieldsEl = (values) => call("CustomFields", { values });
+  const customFieldsEl = (values) =>
+    call("CustomFields", { values: asManga(values) });
 
   /**
    * Renders one element the way React would, as far as a stub can: a function
@@ -4321,6 +4353,65 @@ setTimeout(() => {
 
   console.log(
     "✓ manga panel (a disclosure in the details tab: word / rows / icon guard)"
+  );
+
+  // ── 13d. A gallery that is not manga is left alone ───────────────
+  //
+  // The mark is the plugin's entry point, so this is the other half of it: a
+  // gallery without the mark is an ordinary Stash gallery, and the switch on its
+  // toolbar is the only thing of this plugin's on it.
+  //
+  // The fields themselves are still *lifted out* of what Stash renders, because
+  // they are still this plugin's fields and a raw `plugin.mangaTools.language`
+  // row is not something a reader should ever see. The values stay in the
+  // gallery, unshown and unedited, so unmarking a gallery and marking it again
+  // brings them back rather than having destroyed them.
+  const plain = {
+    [NS.FIELD_NAME]: "ja",
+    [NS.CENSORSHIP_FIELD_NAME]: "censored",
+    other: "x",
+  };
+
+  // Cards: gallery 8 carries a language and is not in the map the plugin loaded.
+  assert.strictEqual(
+    card("8"),
+    overlaysResult,
+    "no badge on a gallery that is not manga, even though it has a language"
+  );
+  assert.strictEqual(
+    cardMark("8").markEl,
+    null,
+    "and no censorship mark in its popover row"
+  );
+
+  const unmarkedDetail = call("CustomFields", {
+    values: plain,
+    fullWidth: true,
+  });
+  assert.deepStrictEqual(
+    unmarkedDetail.props.children[0].props.values,
+    { other: "x" },
+    "our fields are still kept out of Stash's own rendering"
+  );
+  assert.strictEqual(
+    unmarkedDetail.props.children[1],
+    null,
+    "but the details block is not drawn"
+  );
+  assert.ok(
+    unmarkedDetail.props.children[2],
+    "while the switch is — it is the only way to make the gallery manga"
+  );
+
+  assert.strictEqual(
+    call("CustomFieldsInput", { values: plain, onChange: () => {} }).props
+      .children[0],
+    null,
+    "and its edit form is Stash's own, with no block of ours in it"
+  );
+
+  console.log(
+    "✓ not manga (no badge, no card mark, no blocks — only the switch)"
   );
 
   // ── 14. Bulk edit dialog: the language row rides along with Apply ──
@@ -4624,8 +4715,8 @@ setTimeout(() => {
   setTimeout(() => {
     assert.strictEqual(
       galleryQueryCount,
-      queriesBefore + 2,
-      "a successful bulk update should refetch both gallery maps, so the badges update"
+      queriesBefore + 1,
+      "a successful bulk update should refetch the gallery map, so the badges update"
     );
     console.log("✓ bulk edit refetch (deferred past the in-flight fetch)");
 
