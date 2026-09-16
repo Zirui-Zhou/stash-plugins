@@ -1160,6 +1160,12 @@ function LanguageRow(props: {
 
   const intl = PluginApi.libraries.Intl.useIntl();
   const Select = resolveSelect();
+  const state = React.useState(FIELD_OPEN_BY_DEFAULT);
+  const open = state[0];
+  const setOpen = state[1];
+  const Solid = PluginApi.libraries.FontAwesomeSolid || {};
+  const Icon = PluginApi.components.Icon;
+  const Button = PluginApi.libraries.Bootstrap?.Button;
 
   // The mount point is read during render (same approach as the detail page).
   // ensureFieldHost is idempotent and returns null when the anchor is absent.
@@ -1256,7 +1262,40 @@ function LanguageRow(props: {
     </div>
   );
 
-  return PluginApi.ReactDOM.createPortal(field, host);
+  // The field row is not wrapped in the disclosure, it is *shown or not shown* by
+  // it, and that is deliberate: wrapping it would put a box between the row and
+  // the padded column its negative margins cancel against, which is the whole
+  // reason the mount point above is `display: contents`. Folding this way costs
+  // the height animation — the fold is instant — and keeps the columns lined up
+  // with the native fields, which is the property that took the work.
+  //
+  // The header does need a row of its own, or it would sit outside the form's
+  // column grid; it borrows the same column classes as the rows around it.
+  return PluginApi.ReactDOM.createPortal(
+    <div className="manga-tools-panel">
+      <div className={cls.group}>
+        <div className="col-12">
+          <div className="collapse-header">
+            {Button ? (
+              <Button
+                className="minimal collapse-button"
+                aria-expanded={open}
+                onClick={() => setOpen(!open)}
+              >
+                <Icon
+                  icon={open ? Solid.faChevronDown : Solid.faChevronRight}
+                  fixedWidth
+                />
+                <span>{t(intl, "mangaTools.panel.heading")}</span>
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      {open ? field : null}
+    </div>,
+    host
+  );
 }
 
 // ─────────────────────────── Settings page ───────────────────────────
@@ -1813,6 +1852,15 @@ class GuardedBlock extends React.Component<
  * rather than tidy.
  */
 const PANEL_OPEN_BY_DEFAULT = false;
+
+/**
+ * The same block on the gallery edit page, and the opposite default.
+ *
+ * Open, because there it is not a section of a page full of sections — it is a
+ * field, and the dropdown inside it is the only way to set a language at all.
+ * A fold that starts closed would be a fold over the feature.
+ */
+const FIELD_OPEN_BY_DEFAULT = true;
 
 /**
  * The gallery's manga attributes, as labelled rows.

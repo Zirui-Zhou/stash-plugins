@@ -1693,12 +1693,28 @@ assert.strictEqual(
 );
 assert.strictEqual(fieldPortal.host, fieldHostEl);
 
+// What is portalled is the block — a header row and, below it, the field row.
+assert.strictEqual(fieldPortal.node.props.className, "manga-tools-panel");
+assert.ok(
+  hasText(fieldPortal.node, "漫画信息"),
+  "the block is headed like the one in the details tab"
+);
+assert.ok(
+  hasText(fieldPortal.node, "语言"),
+  "and the field row is in it, since that is what the header folds"
+);
+
 // Field structure: every class name is copied from the native field rather than
-// generated, so the column widths can never drift.
-const fg = fieldPortal.node;
+// generated, so the column widths can never drift. The row is not *wrapped* by
+// the fold — it is shown or not shown by it — so its parent is still the mount
+// point whose `display: contents` lets the row's negative margins cancel against
+// the form's column.
+const fg = find(
+  fieldPortal.node,
+  (n) => n.props?.["data-field"] === "manga_tools_language"
+);
 assert.strictEqual(fg.type, "div");
 assert.strictEqual(fg.props.className, "form-group row");
-assert.strictEqual(fg.props["data-field"], "manga_tools_language");
 
 // This is a bug this project hit: xl:2 / xl:7 used to be hard-coded, but the
 // Stash build actually running has no xl in its defaults, so the label column
@@ -1726,10 +1742,15 @@ assert.strictEqual(
   "the control classes should be copied verbatim (no extra col-xl-7)"
 );
 
-// When the native field changes width, follow it
+// When the native field changes width, follow it. The field row is looked up
+// inside the block rather than taken as its first child — the header row comes
+// first now.
+const fieldRowIn = (portal) =>
+  find(portal.node, (n) => n.props?.["data-field"] === "manga_tools_language");
+
 studioLabel.className = "form-label col-form-label col-xl-12 col-sm-3";
 studioControl.className = "col-xl-12 col-sm-9";
-const followed = editField({ "plugin.mangaTools.language": "ja" }).node;
+const followed = fieldRowIn(editField({ "plugin.mangaTools.language": "ja" }));
 assert.strictEqual(
   followed.props.children[0].props.className,
   "form-label col-form-label col-xl-12 col-sm-3",
@@ -1746,8 +1767,8 @@ studioControl.className = "col-sm-9";
 studioRow.detach(studioLabel);
 studioRow.detach(studioControl);
 assert.strictEqual(
-  editField({ "plugin.mangaTools.language": "ja" }).node.props.children[1].props
-    .className,
+  fieldRowIn(editField({ "plugin.mangaTools.language": "ja" })).props
+    .children[1].props.className,
   "col-sm-9",
   "should fall back to the default when the native classes cannot be read"
 );
