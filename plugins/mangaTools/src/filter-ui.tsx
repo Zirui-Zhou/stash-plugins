@@ -111,6 +111,15 @@ export function LanguageRow(props: {
   leading?: ReactElement | null;
   modifier?: boolean;
   canExclude?: boolean;
+  /**
+   * A row whose criterion holds one value at a time, so there is nothing for the
+   * plus to add. Stash hides it with a class rather than by not drawing it —
+   * `visibility: hidden` in its list styles — which is what keeps a single-value
+   * row's label lined up with a multi-value one's. Only ever passed for a
+   * *candidate*: Stash's own selected row has no such class, and neither should
+   * this one, or the tick would be hidden with the plus.
+   */
+  singleValue?: boolean;
   onClick: () => void;
   onExclude?: () => void;
 }) {
@@ -169,7 +178,9 @@ export function LanguageRow(props: {
         <div className={sidebar ? "label-group" : undefined}>
           <Icon
             className={
-              "fa-fw " + (excluded ? "exclude-icon" : "include-button")
+              "fa-fw " +
+              (excluded ? "exclude-icon" : "include-button") +
+              (props.singleValue ? " single-value" : "")
             }
             icon={icon}
           />

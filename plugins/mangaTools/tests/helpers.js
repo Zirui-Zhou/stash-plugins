@@ -430,10 +430,19 @@ const MESSAGES = {
     "criterion_modifier.not_equals": "不是",
     "criterion_modifier.is_null": "为空",
     "criterion_modifier.not_null": "不为空",
+    // A boolean criterion's two values, which the manga section takes from Stash
+    // rather than writing itself. English is deliberately left out below: Stash's
+    // own en-US.json has no such message either, which is why its organized
+    // section shows the bare id there — and why this plugin hands formatMessage a
+    // fallback.
+    true: "是",
+    false: "否",
   },
   "zh-TW": {
     "config.ui.language.heading": "語言",
     "actions.search": "搜尋",
+    true: "是",
+    false: "否",
     "actions.clear": "清除",
     "criterion_modifier_values.any": "任意",
     "criterion_modifier_values.none": "無",
@@ -832,6 +841,36 @@ const mangaConditionsOf = (modifier) => ({
   modifier,
 });
 
+/**
+ * A stand-in for one of Stash's tags: the text node holding the label, the
+ * attributes the tag helpers use, and `closest` answered from the list of
+ * selectors it sits inside. Set as what the document stub hands back from
+ * `querySelectorAll` — see `state.tagQuery` — and asserted on afterwards.
+ */
+const tagWithText = (value, ancestors = []) => {
+  const attributes = {};
+  const tag = {
+    firstChild:
+      value === null
+        ? { nodeType: 1, nodeValue: null }
+        : { nodeType: 3, nodeValue: value },
+    style: {},
+    // How many times the plugin wrote to this tag. The wording and the attribute
+    // recording it are written together, and only when the text actually changes,
+    // so this is what "left the DOM alone" can be asserted on.
+    writes: 0,
+    closest: (sel) => (ancestors.indexOf(sel) === -1 ? null : {}),
+    getAttribute: (name) => (name in attributes ? attributes[name] : null),
+    setAttribute: (name, v) => {
+      attributes[name] = v;
+      tag.writes += 1;
+    },
+    hasAttribute: (name) => name in attributes,
+    attributes,
+  };
+  return tag;
+};
+
 // ── The runner's bookkeeping ───────────────────────────────────────
 // What each section threw, if anything. One failing must not stop the ones
 // after it: the sections are independent, and a run that stops at the first
@@ -900,4 +939,5 @@ module.exports = {
   runSection,
   sel,
   state,
+  tagWithText,
 };

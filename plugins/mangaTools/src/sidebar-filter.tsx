@@ -20,17 +20,14 @@ import {
   applyCensorship,
   applyLanguage,
   applyManga,
-  censorshipCriterionOf,
   censorshipHeading,
   fieldLabel,
+  fieldTagLabels,
   isEmptySelection,
-  languageCriterionOf,
-  mangaCriterionOf,
   message,
   readCensorshipFilter,
   readLanguageFilter,
   readMangaFilter,
-  tagLabels,
   toggleExcluded,
   toggleIncluded,
   withModifier,
@@ -159,12 +156,13 @@ function writeTagLabels(tags: Element[], labels: string[], mark: string): void {
 /**
  * Re-words the tags in the list's row, which report the applied filter.
  *
- * Stash draws a tag per criterion out of `criterion.getLabel`, and this criterion
- * gets the generic custom-field sentence with the raw field name in it —
- * "plugin.mangaTools.language (custom field) is ja, en". Everything else about
- * the tag is right: it
- * opens our card, its ✗ removes the filter (see adoptLanguageCriterion). Only the
- * words are wrong, so only the words are replaced.
+ * Stash draws one tag per condition of the criterion, worded from the criterion's
+ * own `getLabel` — which for a custom field is the generic sentence with the raw
+ * field name in it, "plugin.mangaTools.language (custom field) is ja, en".
+ * Everything else about the tag is right: it opens our card, its ✗ removes the
+ * filter (see adoptLanguageCriterion). Only the words are wrong, so only the words
+ * are replaced, by fieldTagLabels — one tag per condition of that field, in the
+ * same order.
  *
  * In the DOM rather than through getLabel, because of *when* each is read. Stash
  * renders its tag row before this plugin is mounted — that row belongs to the
@@ -397,12 +395,11 @@ export function SidebarLanguageFilter(props: {
 
   const selection = readLanguageFilter(props.filter);
 
-  // Stash's tags for this criterion, re-worded as this plugin words them. Only
-  // for a criterion that is wholly ours: a hand-built one that carries another
-  // field as well keeps Stash's wording, which says everything it holds, rather
-  // than labels that would hide the rest.
-  const criterion = languageCriterionOf(props.filter);
-  const tagLabelsFor = criterion ? tagLabels(intl, criterion) : null;
+  // This field's tags, re-worded as this plugin words them. Its own conditions
+  // rather than the criterion as a whole: the three fields share one criterion,
+  // so a filter with a censorship in it too is the same criterion with another
+  // condition on it, and the two tags are worded independently.
+  const tagLabelsFor = fieldTagLabels(intl, props.filter, NS.FIELD_NAME);
 
   // Both of the repairs to the filter Stash owns live here, in the one surface
   // that is mounted for as long as the list is: the criterion is handed over to
@@ -657,8 +654,11 @@ export function SidebarCensorshipFilter(props: {
 
   const selection = readCensorshipFilter(props.filter);
 
-  const criterion = censorshipCriterionOf(props.filter);
-  const tagLabelsFor = criterion ? tagLabels(intl, criterion) : null;
+  const tagLabelsFor = fieldTagLabels(
+    intl,
+    props.filter,
+    NS.CENSORSHIP_FIELD_NAME
+  );
 
   React.useLayoutEffect(() => {
     if (tagLabelsFor) relabelCensorshipTags(tagLabelsFor);
@@ -699,7 +699,11 @@ export function SidebarCensorshipFilter(props: {
   const excludedChosen = options.filter(
     (o) => selection.excluded.indexOf(o.value) !== -1
   );
-  const candidates = options.filter(
+  // Nothing is selectable while (Any) or (None) is set — there is no particular
+  // value to pick in those states — so the two values step aside the moment a
+  // modifier is chosen. The same rule the language section follows, from the same
+  // place: see selectableOptions.
+  const candidates = selectableOptions(selection, options).filter(
     (o) =>
       selection.included.indexOf(o.value) === -1 &&
       selection.excluded.indexOf(o.value) === -1
@@ -833,8 +837,7 @@ export function SidebarMangaFilter(props: { filter: MangaToolsFilterModel }) {
 
   const state = readMangaFilter(props.filter);
 
-  const criterion = mangaCriterionOf(props.filter);
-  const tagLabelsFor = criterion ? tagLabels(intl, criterion) : null;
+  const tagLabelsFor = fieldTagLabels(intl, props.filter, NS.MANGA_FIELD_NAME);
 
   React.useLayoutEffect(() => {
     if (tagLabelsFor) relabelMangaTags(tagLabelsFor);
@@ -846,9 +849,12 @@ export function SidebarMangaFilter(props: { filter: MangaToolsFilterModel }) {
 
   if (!host) return null;
 
+  // Stash's own two words for a boolean criterion, so this reads exactly like its
+  // own "organized" section — 是/否 in Chinese, 有効/無効 in Japanese. English has
+  // no such message in Stash's catalogs, so the fallback is what shows there.
   const options: { value: MangaToolsMangaState; label: string }[] = [
-    { value: "marked", label: t(intl, "mangaTools.filter.manga.marked") },
-    { value: "unmarked", label: t(intl, "mangaTools.filter.manga.unmarked") },
+    { value: "marked", label: message(intl, "true", "Yes") },
+    { value: "unmarked", label: message(intl, "false", "No") },
   ];
 
   // Choosing the chosen value clears it; choosing the other moves the mark.
@@ -876,7 +882,7 @@ export function SidebarMangaFilter(props: { filter: MangaToolsFilterModel }) {
 
   return PluginApi.ReactDOM.createPortal(
     <SidebarSection
-      heading={t(intl, "mangaTools.manga.marked")}
+      heading={t(intl, "mangaTools.manga.isManga")}
       open={open}
       onToggle={toggleOpen}
       chosenItems={chosenItems}
@@ -891,6 +897,7 @@ export function SidebarMangaFilter(props: { filter: MangaToolsFilterModel }) {
             label={o.label}
             state="candidate"
             canExclude={false}
+            singleValue
             onClick={() => {
               choose(o.value);
             }}

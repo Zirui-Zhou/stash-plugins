@@ -18,6 +18,7 @@
 
   "mangaTools.manga.mark": "Mark as manga",
   "mangaTools.manga.marked": "Manga",
+  "mangaTools.manga.isManga": "Is manga",
 
   "mangaTools.filter.manga.marked": "Marked",
   "mangaTools.filter.manga.unmarked": "Unmarked",

@@ -183,7 +183,11 @@ Stash's Language option, so its tag opens our card and its ✗ clears the filter
 and the tag's wording is replaced in the DOM with the same sentence the sidebar
 would use. The repair is in the DOM because Stash draws its tag row *before* this
 plugin is mounted, so nothing attached at render time can reach it (see
-`relabelTags`).
+`relabelTags`). All three of this plugin's fields share that one criterion, so a
+filter with two of them set is one criterion carrying a condition for each: what a
+tag is worded from is the field's own conditions, never the criterion as a whole,
+or a filter with two fields in it leaves both tags in Stash's raw wording (see
+`fieldTagLabels`).
 
 **The two tag rows say different things, so they are worded differently.** The row
 above the list reports the filter the list is *applied* to. The row inside the

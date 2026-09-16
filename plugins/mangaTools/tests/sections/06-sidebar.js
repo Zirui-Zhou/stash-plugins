@@ -21,6 +21,8 @@ const {
   makeEl,
   makeFilterModel,
   mangaConditionsOf,
+  state,
+  tagWithText,
 } = require("../helpers.js");
 
 module.exports = () => {
@@ -585,6 +587,43 @@ module.exports = () => {
     "and so should the manga section"
   );
 
+  /**
+   * The rows a section offers below the fold, in the order it draws them.
+   *
+   * The same shape walks both remaining sections: a candidate list holding one
+   * row per value, each row an `unselected-object`.
+   */
+  const candidateRows = (node) => {
+    const items = [];
+    find(
+      find(
+        node,
+        (n) => n.props && n.props.className === "queryable-candidate-list"
+      ),
+      (n) => {
+        if (n.props && /^unselected-object\b/.test(n.props.className))
+          items.push(n);
+        return false;
+      }
+    );
+    return items;
+  };
+  const candidateRowLabels = (node) => candidateRows(node).map(labelOf);
+
+  /** The add/remove icons of every row under a node, as class strings */
+  const rowIcons = (node) => {
+    const icons = [];
+    find(node, (n) => {
+      if (
+        n.type === "Icon" &&
+        /^fa-fw (include-button|exclude-icon)/.test(String(n.props.className))
+      )
+        icons.push(n.props.className);
+      return false;
+    });
+    return icons;
+  };
+
   // ── Censorship: the language section's shape on two fixed values ──
   const censSection = renderCensorshipFilter();
   assert.strictEqual(
@@ -605,18 +644,7 @@ module.exports = () => {
     "each censorship value should draw a chess piece where a flag would go"
   );
 
-  const censCandidates = [];
-  find(
-    find(
-      censSection.node,
-      (n) => n.props && n.props.className === "queryable-candidate-list"
-    ),
-    (n) => {
-      if (n.props && /^unselected-object\b/.test(n.props.className))
-        censCandidates.push(n);
-      return false;
-    }
-  );
+  const censCandidates = candidateRows(censSection.node);
   assert.deepStrictEqual(
     censCandidates.slice(0, 2).map(labelOf),
     ["(任意)", "(无)"],
@@ -653,36 +681,126 @@ module.exports = () => {
   );
   assert.ok(hasText(censSelectedList, "有修正"), "with the value's own label");
 
+  // (Any) and (None) leave nothing to pick — there is no particular value to
+  // choose in those states — so the two values step aside, exactly as they do in
+  // the language section.
+  const censAny = renderCensorshipFilter([censorshipConditionsOf("NOT_NULL")]);
+  assert.deepStrictEqual(
+    candidateRowLabels(censAny.node),
+    [],
+    "choosing (Any) should take the two values off the list"
+  );
+  assert.ok(
+    hasText(
+      find(
+        censAny.node,
+        (n) => n.props && n.props.className === "selected-list"
+      ),
+      "(任意)"
+    ),
+    "…leaving the modifier it chose above the fold"
+  );
+
+  // The criterion Stash draws the tags from is one criterion for all three
+  // fields, so a filter with a language and a censorship in it is one criterion
+  // with two conditions. Each section words the tags of its own field and no
+  // other — by the conditions it owns, not by the criterion as a whole, which is
+  // what left both tags in Stash's own raw wording when two fields were set.
+  const langTag = tagWithText(
+    "plugin.mangaTools.language (custom field) is ja"
+  );
+  const censTag = tagWithText(
+    "plugin.mangaTools.censorship (custom field) is censored"
+  );
+  state.tagQuery = () => [langTag, censTag];
+  renderCensorshipFilter([
+    censorshipConditionsOf("EQUALS", ["censored"]),
+    conditionsOf("EQUALS", ["ja"]),
+  ]);
+  state.tagQuery = () => [];
+  assert.strictEqual(
+    censTag.firstChild.nodeValue,
+    "修正 是 有修正",
+    "the censorship section words its own tag even when the criterion also " +
+      "holds a condition for another field"
+  );
+  assert.strictEqual(
+    langTag.firstChild.nodeValue,
+    "plugin.mangaTools.language (custom field) is ja",
+    "…and leaves the other field's tag for the section that owns it"
+  );
+
+  // The same for the language section, so neither call site can drift into
+  // wording the other field's tags.
+  const jaTag = tagWithText("plugin.mangaTools.language (custom field) is ja");
+  const otherCensTag = tagWithText(
+    "plugin.mangaTools.censorship (custom field) is censored"
+  );
+  state.tagQuery = () => [jaTag, otherCensTag];
+  renderLanguageFilter([
+    censorshipConditionsOf("EQUALS", ["censored"]),
+    conditionsOf("EQUALS", ["ja"]),
+  ]);
+  state.tagQuery = () => [];
+  assert.strictEqual(
+    jaTag.firstChild.nodeValue,
+    "语言 是 日语",
+    "the language section words its own tag out of the shared criterion"
+  );
+  assert.strictEqual(
+    otherCensTag.firstChild.nodeValue,
+    "plugin.mangaTools.censorship (custom field) is censored",
+    "…and not the censorship one"
+  );
+
   // ── Manga: a boolean, single-select, no modifiers ──
   const mangaSection = renderMangaFilter();
   assert.strictEqual(
     find(mangaSection.node, (n) => n.type === "Button").props.children[1].props
       .children,
-    "漫画",
-    "the manga section is headed by the mark's word"
+    "是否为漫画",
+    "the manga section is headed by the question the mark asks about a gallery"
   );
 
-  const mangaCandidates = [];
-  find(
-    find(
-      mangaSection.node,
-      (n) => n.props && n.props.className === "queryable-candidate-list"
-    ),
-    (n) => {
-      if (n.props && /^unselected-object\b/.test(n.props.className))
-        mangaCandidates.push(n);
-      return false;
-    }
-  );
   assert.deepStrictEqual(
-    mangaCandidates.map(labelOf),
-    ["已标记", "未标记"],
-    "manga offers its two values and no modifier entries"
+    candidateRowLabels(mangaSection.node),
+    ["是", "否"],
+    "manga offers its two values and no modifier entries, in Stash's own words " +
+      "for a boolean — the ones its organized section uses"
+  );
+
+  // English has no such message in Stash's catalogs — its own organized section
+  // shows the bare id "true" there — so this plugin's fallback is what shows.
+  state.currentLocale = "en-US";
+  assert.deepStrictEqual(
+    candidateRowLabels(renderMangaFilter().node),
+    ["Yes", "No"],
+    "a locale Stash has not translated the two words for falls back to this " +
+      "plugin's own"
+  );
+  state.currentLocale = "zh-CN";
+
+  // The plus has nothing to add on a value that is the only one a criterion
+  // takes, so Stash hides it with a class rather than by not drawing it, which is
+  // what keeps the label where it is on a multi-value row. Only the candidate
+  // carries it: the chosen row's tick has to stay visible.
+  assert.deepStrictEqual(
+    rowIcons(mangaSection.node),
+    ["fa-fw include-button single-value", "fa-fw include-button single-value"],
+    "neither manga value draws a plus while neither is chosen"
+  );
+
+  const mangaMarked = renderMangaFilter([mangaConditionsOf("NOT_NULL")]);
+  assert.deepStrictEqual(
+    rowIcons(mangaMarked.node),
+    ["fa-fw include-button", "fa-fw include-button single-value"],
+    "the chosen value keeps its tick, and only the candidate's plus is hidden"
   );
 
   // Choosing a value writes the mark's presence; choosing it again clears it —
   // single-select, so there is no include/exclude and no (Any)/(None).
-  const markedRow = mangaCandidates.find((i) => labelOf(i) === "已标记");
+  const mangaCandidates = candidateRows(mangaSection.node);
+  const markedRow = mangaCandidates.find((i) => labelOf(i) === "是");
   historyReplaces.length = 0;
   find(markedRow, (n) => n.type === "a").props.onClick();
   assert.ok(
@@ -692,19 +810,15 @@ module.exports = () => {
     "choosing marked should write the manga mark's presence"
   );
 
-  const mangaChosen = renderMangaFilter([mangaConditionsOf("NOT_NULL")]);
   const mangaSelectedList = find(
-    mangaChosen.node,
+    mangaMarked.node,
     (n) => n.props && n.props.className === "selected-list"
   );
   assert.ok(
     mangaSelectedList,
     "a chosen manga state should sit above the fold"
   );
-  assert.ok(
-    hasText(mangaSelectedList, "已标记"),
-    "with the chosen value's label"
-  );
+  assert.ok(hasText(mangaSelectedList, "是"), "with the chosen value's label");
 
   historyReplaces.length = 0;
   find(mangaSelectedList, (n) => n.type === "a").props.onClick();

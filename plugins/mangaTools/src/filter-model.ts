@@ -563,6 +563,40 @@ export function tagLabels(
   return labels.length ? labels : null;
 }
 
+/**
+ * One field's tag wordings, in the order Stash draws them — or null when the
+ * filter says nothing about that field, or when one of its conditions is one this
+ * plugin has no wording for.
+ *
+ * Per field rather than per criterion, because the three fields share one
+ * custom-fields criterion: a filter with a language and a censorship holds both
+ * as conditions of the *same* criterion, and Stash draws a tag for each. A
+ * section words the tags of its own field, so what it passes here has to be that
+ * field's conditions — handing over the whole criterion would put another field's
+ * wording on its tag, and requiring the criterion to hold nothing but this field
+ * (isLanguageCriterion and its siblings, which adoption needs) would leave every
+ * tag as Stash drew it the moment two fields were set at once.
+ */
+export function fieldTagLabels(
+  intl: MangaToolsIntl,
+  filter: MangaToolsFilterModel,
+  fieldName: string
+): string[] | null {
+  const criterion = customFieldsCriterion(filter);
+  const conditions = criterion?.value || [];
+  const labels: string[] = [];
+
+  for (let i = 0; i < conditions.length; i++) {
+    if (NS.ownField(conditions[i].field) !== fieldName) continue;
+
+    const label = conditionLabel(intl, conditions[i]);
+    if (label === null) return null;
+    labels.push(label);
+  }
+
+  return labels.length ? labels : null;
+}
+
 /** The conditions our selection turns into */
 export function selectionConditions(
   selection: MangaToolsLanguageSelection
@@ -695,28 +729,6 @@ function isCensorshipCondition(
   );
 }
 
-/** Is this criterion, as a whole, the censorship filter? See isLanguageCriterion. */
-function isCensorshipCriterion(
-  criterion: MangaToolsFilterCriterion | null
-): boolean {
-  const conditions = criterion?.value || [];
-  if (!conditions.length) return false;
-
-  for (let i = 0; i < conditions.length; i++) {
-    if (!isCensorshipCondition(conditions[i])) return false;
-  }
-
-  return true;
-}
-
-/** The filter's criterion, if it is ours and nothing else's */
-export function censorshipCriterionOf(
-  filter: MangaToolsFilterModel
-): MangaToolsFilterCriterion | null {
-  const criterion = customFieldsCriterion(filter);
-  return criterion && isCensorshipCriterion(criterion) ? criterion : null;
-}
-
 /** Reads the censorship part of the filter, ignoring whatever else it holds. */
 export function readCensorshipFilter(
   filter: MangaToolsFilterModel
@@ -846,28 +858,6 @@ function isMangaCondition(condition: MangaToolsCustomFieldCondition): boolean {
   return !!condition && NS.ownField(condition.field) === NS.MANGA_FIELD_NAME;
 }
 
-/** Is this criterion, as a whole, the manga filter? See isLanguageCriterion. */
-function isMangaCriterion(
-  criterion: MangaToolsFilterCriterion | null
-): boolean {
-  const conditions = criterion?.value || [];
-  if (!conditions.length) return false;
-
-  for (let i = 0; i < conditions.length; i++) {
-    if (!isMangaCondition(conditions[i])) return false;
-  }
-
-  return true;
-}
-
-/** The filter's criterion, if it is ours and nothing else's */
-export function mangaCriterionOf(
-  filter: MangaToolsFilterModel
-): MangaToolsFilterCriterion | null {
-  const criterion = customFieldsCriterion(filter);
-  return criterion && isMangaCriterion(criterion) ? criterion : null;
-}
-
 /** Reads the manga mark's state from the filter. */
 export function readMangaFilter(
   filter: MangaToolsFilterModel
@@ -991,6 +981,7 @@ NS.isEmptySelection = isEmptySelection;
 NS.sameSelection = sameSelection;
 NS.conditionLabel = conditionLabel;
 NS.tagLabels = tagLabels;
+NS.fieldTagLabels = fieldTagLabels;
 NS.readLanguageFilter = readLanguageFilter;
 NS.languageFilterQuery = languageFilterQuery;
 NS.readCensorshipFilter = readCensorshipFilter;

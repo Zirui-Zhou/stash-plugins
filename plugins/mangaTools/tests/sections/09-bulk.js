@@ -125,7 +125,11 @@ module.exports = () => {
     "form-check-label",
     "with the label after the checkbox"
   );
-  assert.strictEqual(markLabel.props.children, "漫画");
+  assert.strictEqual(
+    markLabel.props.children,
+    "是否为漫画",
+    "named as the question it asks about the galleries, not as the field"
+  );
 
   // ── The mark is the gate ──
   // Nothing selected reads as "not manga", so only the mark is drawn — no fields,

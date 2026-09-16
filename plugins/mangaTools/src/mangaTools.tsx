@@ -1990,7 +1990,7 @@ function BulkFieldsRow() {
           onChange={cycleManga}
         />
         <label className="form-check-label" htmlFor="manga_tools_manga">
-          {t(intl, "mangaTools.manga.marked")}
+          {t(intl, "mangaTools.manga.isManga")}
         </label>
       </div>
     </div>

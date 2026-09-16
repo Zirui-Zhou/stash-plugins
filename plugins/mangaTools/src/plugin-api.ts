@@ -244,6 +244,16 @@ export interface MangaToolsNamespace {
     intl: MangaToolsIntl,
     criterion: MangaToolsFilterCriterion
   ): string[] | null;
+  /**
+   * One field's tag wordings, in the order Stash draws them, or null when the
+   * filter says nothing about that field. What a sidebar section writes into the
+   * tags of its own field.
+   */
+  fieldTagLabels(
+    intl: MangaToolsIntl,
+    filter: MangaToolsFilterModel,
+    fieldName: string
+  ): string[] | null;
 
   /** One of this plugin's own strings, in the reader's Stash language. */
   t(intl: MangaToolsIntl, id: string): string;

@@ -19,6 +19,7 @@ const {
   observed,
   sel,
   state,
+  tagWithText,
 } = require("../helpers.js");
 
 module.exports = () => {
@@ -296,31 +297,8 @@ module.exports = () => {
   // raw field name in it. The tag itself is Stash's — its click and its ✗ already
   // do the right thing — so only the text node is replaced.
   //
-  // A stand-in for a tag: the text node holding the label, the attributes the tag
-  // helpers use, and `closest` answered from the list of selectors it sits inside.
-  const tagWithText = (value, ancestors = []) => {
-    const attributes = {};
-    const tag = {
-      firstChild:
-        value === null
-          ? { nodeType: 1, nodeValue: null }
-          : { nodeType: 3, nodeValue: value },
-      style: {},
-      // How many times the plugin wrote to this tag. The wording and the attribute
-      // recording it are written together, and only when the text actually changes,
-      // so this is what "left the DOM alone" can be asserted on.
-      writes: 0,
-      closest: (sel) => (ancestors.indexOf(sel) === -1 ? null : {}),
-      getAttribute: (name) => (name in attributes ? attributes[name] : null),
-      setAttribute: (name, v) => {
-        attributes[name] = v;
-        tag.writes += 1;
-      },
-      hasAttribute: (name) => name in attributes,
-      attributes,
-    };
-    return tag;
-  };
+  // A stand-in for a tag is `tagWithText`, from helpers.js — the same fixture the
+  // sidebar sections' own tag tests use.
   const ourTag = tagWithText(
     "plugin.mangaTools.language (custom field) is ja, en"
   );
@@ -732,6 +710,72 @@ module.exports = () => {
     NS.tagLabels(intl, { value: [] }),
     null,
     "and a criterion with nothing in it has no tags to word"
+  );
+
+  // What the sidebar sections actually ask for: one field's tags, out of the
+  // criterion the filter holds. The three fields share a criterion, so a filter
+  // with a language and a censorship in it is *one* criterion with two
+  // conditions — and each field's tag takes its own wording, in the order Stash
+  // draws them.
+  const mixedFieldCriterion = makeFilterModel([
+    customFieldsCriterion([
+      { field: NS.MANGA_FIELD_NAME, modifier: "NOT_NULL" },
+      condition("EQUALS", ["ja"]),
+      {
+        field: NS.CENSORSHIP_FIELD_NAME,
+        modifier: "EQUALS",
+        value: ["censored"],
+      },
+    ]),
+  ]);
+  assert.deepStrictEqual(
+    NS.fieldTagLabels(intl, mixedFieldCriterion, NS.FIELD_NAME),
+    ["语言 是 日语"],
+    "the language tag is worded from the language conditions alone"
+  );
+  assert.deepStrictEqual(
+    NS.fieldTagLabels(intl, mixedFieldCriterion, NS.CENSORSHIP_FIELD_NAME),
+    ["修正 是 有修正"],
+    "and the censorship tag from its own — not with the other field's wording, " +
+      "which is what taking the criterion as a whole would put there"
+  );
+  assert.deepStrictEqual(
+    NS.fieldTagLabels(intl, mixedFieldCriterion, NS.MANGA_FIELD_NAME),
+    ["漫画 是 已标记"]
+  );
+
+  // Two conditions of one field are two tags, as Stash draws them
+  assert.deepStrictEqual(
+    NS.fieldTagLabels(
+      intl,
+      makeFilterModel([
+        customFieldsCriterion([
+          condition("EQUALS", ["ja"]),
+          condition("NOT_EQUALS", ["ko"]),
+        ]),
+      ]),
+      NS.FIELD_NAME
+    ),
+    ["语言 是 日语", "语言 不是 韩语"]
+  );
+
+  // Nothing to word, or nothing this plugin can word: both leave Stash's own
+  // wording alone rather than writing a sentence of its own.
+  assert.strictEqual(
+    NS.fieldTagLabels(intl, makeFilterModel(), NS.FIELD_NAME),
+    null,
+    "a field the filter says nothing about has no wording of this plugin's"
+  );
+  assert.strictEqual(
+    NS.fieldTagLabels(
+      intl,
+      makeFilterModel([
+        customFieldsCriterion([condition("GREATER_THAN", ["1"])]),
+      ]),
+      NS.FIELD_NAME
+    ),
+    null,
+    "one condition without wording is enough to leave that field's tags to Stash"
   );
   console.log(
     "✓ tag wording (per condition, built from Stash's messages not a table of ours)"

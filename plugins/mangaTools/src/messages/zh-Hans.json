@@ -18,6 +18,7 @@
 
   "mangaTools.manga.mark": "标记为漫画",
   "mangaTools.manga.marked": "漫画",
+  "mangaTools.manga.isManga": "是否为漫画",
 
   "mangaTools.filter.manga.marked": "已标记",
   "mangaTools.filter.manga.unmarked": "未标记",
