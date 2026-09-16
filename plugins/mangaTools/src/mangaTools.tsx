@@ -1796,6 +1796,40 @@ function BulkLanguageRow() {
 // Adding write controls would mean a second way to edit a field that already has
 // one, and would answer nothing the two placements disagree about.
 
+/**
+ * Renders nothing rather than taking the page with it, and says so.
+ *
+ * For the experiment only. React 17 answers a throw inside a render by unmounting
+ * the tree, and this experiment has twice left the app sitting on "Loading" —
+ * the worst possible failure for something whose whole purpose is to be looked
+ * at. A boundary turns that into a log line naming the block that failed, with
+ * the rest of the page intact.
+ */
+class ExperimentBoundary extends React.Component<
+  { name: string; children?: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error(
+      "[mangaTools] the " +
+        this.props.name +
+        " threw while rendering, so it is " +
+        "not on the page. Everything else the plugin does is unaffected.",
+      error
+    );
+  }
+
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
 /** One label and one value. Stash's own detail rows are a label and a value. */
 function PanelRow(props: { label: string; children: ReactNode }) {
   return (
@@ -2159,12 +2193,26 @@ function watchTabNav(nav: Element): void {
 }
 
 /** The panel, rendered into the tab this plugin added */
+/**
+ * Whether the tab is mounted. **Off**, deliberately, while the two placements are
+ * being bisected: the tab's injection is the only thing in this plugin that
+ * touches markup React is reconciling, and the page twice failed to load with it
+ * in. Turning it back on is the next step and this is the one word it takes.
+ */
+const TAB_EXPERIMENT = false;
+
 function MangaTab(props: { values: CustomFieldsMap }) {
   useGlobalVersion();
   useAfterMount();
 
+  // Before the early return below, because it is a hook and the order it is
+  // called in is the whole contract.
   const intl = PluginApi.libraries.Intl.useIntl();
-  const slot = ensureTabHost(t(intl, "mangaTools.panel.heading"));
+  const label = t(intl, "mangaTools.panel.heading");
+
+  if (!TAB_EXPERIMENT) return null;
+
+  const slot = ensureTabHost(label);
 
   // This is the experiment's one observable, and the only way to tell a tab that
   // was not injected from one that was injected and then hidden: a log saying
@@ -2541,8 +2589,16 @@ registerPatch("instead", "CustomFields", (...args: unknown[]) => {
         leaving the existing children where they were keeps the tests that index
         into them meaningful.
       */}
-      {galleryId ? <MangaDetailsPanel values={values} /> : null}
-      {galleryId ? <MangaTab values={values} /> : null}
+      {galleryId ? (
+        <ExperimentBoundary name="manga panel">
+          <MangaDetailsPanel values={values} />
+        </ExperimentBoundary>
+      ) : null}
+      {galleryId ? (
+        <ExperimentBoundary name="manga tab">
+          <MangaTab values={values} />
+        </ExperimentBoundary>
+      ) : null}
     </>
   );
 });

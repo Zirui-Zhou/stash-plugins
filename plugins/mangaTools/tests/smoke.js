@@ -52,6 +52,15 @@ const React = {
   // lazy initialiser and gets called, not stored. The setter is inert — nothing
   // in these tests can change state and read the result back.
   useState: (init) => [typeof init === "function" ? init() : init, () => {}],
+  // Only the experiment's error boundary derives from this. The stub renders
+  // nothing, so the lifecycle is never exercised — what matters is only that
+  // `class X extends React.Component` is legal when the bundle loads.
+  Component: class {
+    constructor(props) {
+      this.props = props || {};
+      this.state = {};
+    }
+  },
   // Effects are run immediately. The plugin uses them for mount-time work (the
   // bulk dialog's link hook-up), so an inert stub would never exercise it.
   // Cleanups are discarded: nothing in these tests unmounts a component.
@@ -4257,10 +4266,20 @@ setTimeout(() => {
     alsoNotOurs: "x",
   };
   const customFieldsEl = (values) => call("CustomFields", { values });
-  const panelOf = (values) => {
-    const el = customFieldsEl(values).props.children[3];
-    return el ? el.type(el.props) : null;
+
+  /**
+   * Renders one element the way React would, as far as a stub can: a function
+   * component by calling it, a class component by constructing it and reading
+   * what render() gives back. The experiment's error boundary is the only class.
+   */
+  const renderChild = (el) => {
+    if (!el || typeof el.type !== "function") return el;
+    return el.type.prototype instanceof PluginApi.React.Component
+      ? new el.type(el.props).render()
+      : el.type(el.props);
   };
+  const panelOf = (values) =>
+    renderChild(customFieldsEl(values).props.children[3]);
 
   const panel = panelOf(panelValues);
   assert.ok(panel, "a gallery page should render the panel");
@@ -4308,119 +4327,22 @@ setTimeout(() => {
   assert.ok(hasText(empty, "—"), "an unset value reads as a dash");
   assert.ok(hasText(empty, "未标注"), "and an unmarked gallery says so");
 
-  // ── the injected tab ──
-  // A gallery page's tab bar as Stash draws it, and the content beside it. The
-  // plugin is looking for a particular anchor — the tab links carry
-  // data-rb-event-key — so the fixture uses the same markup the browser shows.
-  const tabRoot = makeEl("div");
-  const tabNav = makeEl("div");
-  tabNav.className = "mr-auto nav nav-tabs";
-  const detailsItem = makeEl("div");
-  detailsItem.className = "nav-item";
-  const detailsLink = makeEl("a");
-  detailsLink.className = "nav-link active";
-  detailsLink.setAttribute("role", "tab");
-  detailsLink.setAttribute("data-rb-event-key", "gallery-details-panel");
-  detailsLink.setAttribute("aria-selected", "true");
-  detailsItem.appendChild(detailsLink);
-  tabNav.appendChild(detailsItem);
-
-  const tabContent = makeEl("div");
-  tabContent.className = "tab-content";
-  const detailsPane = makeEl("div");
-  detailsPane.className = "tab-pane fade active show";
-  tabContent.appendChild(detailsPane);
-
-  tabRoot.appendChild(tabNav);
-  tabRoot.appendChild(tabContent);
-  documentRoot.appendChild(tabRoot);
-
-  const tabEl = customFieldsEl(panelValues).props.children[4];
-  assert.ok(tabEl, "a gallery page should mount the tab");
-  const tabPortal = tabEl.type(tabEl.props);
-  assert.ok(tabPortal?.__portal, "the panel is portalled into it");
-
-  const ourItem = tabNav.children[1];
-  const ourLink = ourItem.children[0];
-  const ourPane = tabContent.children[1];
-  assert.strictEqual(tabNav.children.length, 2, "one tab was added");
+  // The tab's own checks are not here while TAB_EXPERIMENT is off — the two
+  // placements are being bisected, and a test for a tab that is deliberately not
+  // mounted would be testing the flag rather than the tab. The block that
+  // asserts the injection, the activation and the keyboard switch is in
+  // `git show 1ee679d:plugins/mangaTools/tests/smoke.js`, to be restored with the
+  // flag.
   assert.strictEqual(
-    ourItem.className,
-    "nav-item",
-    "the nav item copies the class off Stash's own item rather than naming it"
+    // Two levels: the boundary, then the component inside it.
+    renderChild(renderChild(customFieldsEl(panelValues).props.children[4])),
+    null,
+    "with the experiment off, the tab is not mounted at all — so nothing about " +
+      "it can be what keeps the page from loading"
   );
-  assert.strictEqual(
-    ourLink.className,
-    "nav-link",
-    "…and the link off Stash's own link, with active stripped — an added tab " +
-      "must not look selected before it is"
-  );
-  assert.strictEqual(ourLink.dataset.rbEventKey, "manga-tools-panel");
-  assert.strictEqual(
-    ourLink.textContent,
-    "漫画",
-    "labelled from the catalogs — Stash's own tab labels come from its locale " +
-      "files, and this one has no entry there"
-  );
-  assert.strictEqual(
-    ourPane.className,
-    "tab-pane fade",
-    "the pane copies a live pane's classes, without the parts that show it"
-  );
-  assert.strictEqual(
-    tabPortal.host,
-    ourPane.children[0],
-    "and the panel is portalled into a slot of its own inside the pane"
-  );
-
-  // Switching to it has to hide Stash's pane as well as showing this one: both
-  // are in the document, and Bootstrap decides which is visible from the classes.
-  ourLink.click();
-  assert.ok(
-    ourPane.className.split(/\s+/).includes("active"),
-    "clicking the tab shows the pane"
-  );
-  assert.ok(ourPane.className.split(/\s+/).includes("show"));
-  assert.ok(
-    !detailsPane.className.split(/\s+/).includes("active"),
-    "and hides Stash's, which is active in the fixture"
-  );
-  assert.ok(!detailsLink.className.split(/\s+/).includes("active"));
-
-  // The case a click listener cannot see, and the reason for the observer: four
-  // of Stash's tabs are reachable by keyboard, and those call the state setter
-  // directly, so nothing is clicked.
-  //
-  // Two observers are registered by this point — the filter dialog's and this
-  // one — and they are told apart by what they watch.
-  const tabObserver = observed.find((o) => o.options.attributeFilter);
-  assert.ok(tabObserver, "the tab state is watched for attribute changes");
-  assert.strictEqual(
-    tabObserver.target,
-    tabNav,
-    "and watched on the tab bar itself. A document-wide observer was tried " +
-      "first and is the wrong scope twice over: it fires on every mutation " +
-      "anywhere in Stash, and it makes this plugin's writes part of what every " +
-      "other observer on the page sees."
-  );
-  assert.ok(
-    observed.some(
-      (o) => o.target === documentRoot && !o.options.attributeFilter
-    ),
-    "…leaving the filter dialog's own observer where it was"
-  );
-  detailsLink.className = "nav-link active";
-  detailsLink.setAttribute("aria-selected", "true");
-  tabObserver.callback();
-  assert.ok(
-    !ourPane.className.split(/\s+/).includes("active"),
-    "a tab switched by keyboard must take the pane back off the screen — a " +
-      "click listener cannot see that switch at all"
-  );
-  assert.ok(!ourLink.className.split(/\s+/).includes("active"));
-
   console.log(
-    "✓ manga panel + injected tab (both placements / classes read off Stash's own / keyboard switch)"
+    "✓ manga panel (both placements are built; the tab is off while the page " +
+      "load failure is bisected)"
   );
 
   // ── 14. Bulk edit dialog: the language row rides along with Apply ──
