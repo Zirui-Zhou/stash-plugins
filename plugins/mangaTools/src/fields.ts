@@ -35,40 +35,14 @@ NS.FIELD_NAME = "plugin.mangaTools.language";
  * A separate field rather than a flag on the language one, because the two are
  * independent: an uncensored Japanese volume is a perfectly ordinary thing.
  *
- * Its value is one of CENSORSHIP_VALUES below. Absence is the third state —
- * "not marked" — which is why the two values are not a boolean: a key that is
- * absent, a key set to "false", and a key with junk in it would then all have to
- * be told apart, and only the first is a state the reader chose.
+ * Its value is one of the two censorship.tsx defines — the vocabulary and the
+ * icons live there, as languages.ts holds them for the language field. Absence
+ * is the third state — "not marked" — which is why the two values are not a
+ * boolean: a key that is absent, a key set to "false", and a key with junk in
+ * it would then all have to be told apart, and only the first is a state the
+ * reader chose.
  */
 NS.CENSORSHIP_FIELD_NAME = "plugin.mangaTools.censorship";
-
-/**
- * The values the field takes, in the order the toolbar button cycles through
- * them. Both are lower case; matching is case-insensitive like everything else.
- */
-NS.CENSORSHIP_VALUES = ["censored", "uncensored"];
-
-/**
- * Normalises a stored censorship value to one of CENSORSHIP_VALUES, or "" when
- * it is not one of them.
- *
- * Unlike NS.normalize for languages, an unrecognised value is *not* echoed
- * back: with exactly two values and no aliases, there is nothing it could mean,
- * and the button has no way to draw it. It reads as "not marked" instead, and
- * stays in the gallery until something writes over it — the plugin never
- * rewrites data it did not put there.
- */
-NS.normalizeCensorship = (raw: unknown): string => {
-  if (raw === null || raw === undefined) return "";
-  const s = String(raw).trim().toLowerCase();
-  if (s === "") return "";
-
-  const values = NS.CENSORSHIP_VALUES;
-  for (let i = 0; i < values.length; i++) {
-    if (values[i] === s) return values[i];
-  }
-  return "";
-};
 
 /**
  * The field that makes a gallery manga: this plugin's entry point.

@@ -32,8 +32,9 @@
  * that same mark's icon at the end of its popover row, which is what says which
  * kind a card is without opening anything.
  *
- * `languages.ts` holds the codes and their flags, `fields.ts` the field names
- * and the generic read/write helpers, `language-filter.tsx` the sidebar filter.
+ * `languages.ts` holds the codes and their flags, `censorship.tsx` the
+ * censorship vocabulary and its icons, `fields.ts` the field names and the
+ * generic read/write helpers, `language-filter.tsx` the sidebar filter.
  * Everything else is below.
  *
  * New features should keep the same shape: patches that hand anything they do
@@ -45,6 +46,7 @@
  * and there is no load order left to get wrong.
  */
 import "./fields";
+import { CensorshipIcon, formatCensorshipOption } from "./censorship";
 import { NS } from "./languages";
 import { t } from "./i18n";
 import { requirePluginApi } from "./plugin-api";
@@ -705,103 +707,6 @@ function LanguageBadge(props: { galleryId: string }) {
       <Flag flag={info.flag as string} />
     </div>
   );
-}
-
-// ─────────────────────────── Censorship mark ───────────────────────────
-
-/**
- * The icon for a censorship state.
- *
- * The pairing is a Chinese pun rather than anything to do with chess: 步兵,
- * "infantry", is what a censored release is *not*, and 骑兵, "cavalry", is what
- * it is — by way of the mosaic a censor lays over the page. A pawn and a knight
- * say the same thing in one glyph each. The joke is deliberately explained
- * nowhere on screen: the icons carry it, and a tooltip that spelled it out would
- * be a tooltip about a word rather than about the gallery.
- *
- * `faChessBoard` is the unmarked state, and it earns its place twice over — it is
- * the third member of the same set, so the button reads as one control with three
- * states rather than as a chess piece beside a UI glyph, and a board with nothing
- * on it *is* "nothing marked yet". It even looks a little like the mosaic the
- * other two are named after, which the dimmed grey helps along.
- *
- * No fallback name is needed, unlike `faXmark` in language-filter.tsx: chess-board
- * has been spelled that way in every FontAwesome since 5, so whichever version
- * Stash bundles answers to it.
- */
-function censorshipIcon(value: string): unknown {
-  const Solid = PluginApi.libraries.FontAwesomeSolid || {};
-  const name = CENSORSHIP_ICONS[value] || CENSORSHIP_ICONS[""];
-  const icon = Solid[name];
-  if (!icon) {
-    // The lookup is by string, at runtime, so a name the bundled set does not
-    // have comes back undefined — and undefined handed to Stash's Icon *throws
-    // inside a render*, which takes the whole page down rather than one glyph.
-    // The names below are checked against the wrong source by nature:
-    // FontAwesome's docs list every version, not the subset this Stash ships.
-    noteMissingIcon(name);
-    return null;
-  }
-  return icon;
-}
-
-/** The one place the three icon names are written down, so the log can name them */
-const CENSORSHIP_ICONS: { [value: string]: string } = {
-  censored: "faChessKnight",
-  uncensored: "faChessPawn",
-  "": "faChessBoard",
-};
-
-/** Names already reported, so a page of galleries does not print a page of logs */
-const missingIcons: { [name: string]: boolean } = {};
-
-function noteMissingIcon(name: string): void {
-  if (missingIcons[name]) return;
-  missingIcons[name] = true;
-  console.error(
-    "[mangaTools] this Stash's FontAwesome has no " +
-      name +
-      ", so that icon is drawn as nothing. Run this in the console to see which " +
-      "names it does have: window.PluginApi.libraries.FontAwesomeSolid." +
-      name
-  );
-}
-
-/**
- * The state's icon, or nothing at all when this Stash has no such name.
- *
- * A component rather than a bare `<Icon icon={censorshipIcon(...)} />`, so that a
- * name the bundled icon set does not have costs one glyph instead of throwing
- * through a render — which on a detail page means the page, not the icon.
- */
-function CensorshipIcon(props: { value: string }) {
-  const Icon = PluginApi.components.Icon;
-  const icon = censorshipIcon(props.value);
-  return icon ? <Icon icon={icon} /> : null;
-}
-
-/**
- * One censorship option: the state's icon, then its name.
- *
- * react-select draws this for the menu item and for the value in the box, so the
- * two always agree — which is the same arrangement as the language dropdown's
- * flag. `.manga-tools-option` is the class that spaces the two apart.
- */
-function formatCensorshipOption(option: { value: string; label: string }) {
-  return (
-    <span className="manga-tools-option">
-      <CensorshipIcon value={option.value} />
-      {option.label}
-    </span>
-  );
-}
-
-/** The plugin's own word for a state, for a tooltip or a label */
-function censorshipLabel(intl: MangaToolsIntl, value: string): string {
-  if (value === "censored") return t(intl, "mangaTools.censorship.censored");
-  if (value === "uncensored")
-    return t(intl, "mangaTools.censorship.uncensored");
-  return t(intl, "mangaTools.censorship.unset");
 }
 
 /** Class of the empty span kept beside Stash's popover row, one per card */
@@ -2117,7 +2022,7 @@ function MangaDetailsPanel(props: { values: CustomFieldsMap }) {
         {t(intl, "mangaTools.censorship.heading") + ": "}
         <CensorshipIcon value={mark} />
         {mark ? " " : null}
-        {censorshipLabel(intl, mark)}
+        {NS.censorshipLabel(intl, mark)}
       </h6>
     </div>
   );

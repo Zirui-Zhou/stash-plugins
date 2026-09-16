@@ -93,10 +93,17 @@ export interface MangaToolsNamespace {
   isOwnField(key: unknown): boolean;
   /** The keys to remove when a gallery stops being manga, by their own spelling. */
   fieldsToClear(customFields: unknown): string[];
-  /** The values the censorship field takes, in cycle order. See fields.ts. */
+  /** The values the censorship field takes, in cycle order. See censorship.tsx. */
   CENSORSHIP_VALUES: string[];
   /** A stored censorship value as one of CENSORSHIP_VALUES, or "" for anything else. */
   normalizeCensorship(raw: unknown): string;
+  /**
+   * The icon definition for a censorship state, or null when this Stash's
+   * FontAwesome has no such name. See censorship.tsx.
+   */
+  censorshipIcon(value: string): unknown;
+  /** The plugin's own word for a censorship state, for a tooltip or a label. */
+  censorshipLabel(intl: MangaToolsIntl, value: string): string;
 
   /** Reads a named field out of a custom_fields map, case-insensitively. */
   pickField(customFields: unknown, name: string): string;
