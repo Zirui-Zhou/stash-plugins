@@ -78,6 +78,12 @@ export interface MangaToolsNamespace {
   FIELD_NAME: string;
   /** The censorship field's name. See fields.ts. */
   CENSORSHIP_FIELD_NAME: string;
+  /** The field that makes a gallery manga — this plugin's entry point. */
+  MANGA_FIELD_NAME: string;
+  /** The value written when a gallery is marked. Presence is what is read. */
+  MANGA_VALUE: string;
+  /** Whether a gallery's custom fields mark it as manga. */
+  isManga(customFields: unknown): boolean;
   /** The values the censorship field takes, in cycle order. See fields.ts. */
   CENSORSHIP_VALUES: string[];
   /** A stored censorship value as one of CENSORSHIP_VALUES, or "" for anything else. */
@@ -346,14 +352,14 @@ export interface MangaToolsHistory {
   }): void;
 }
 
-/** The mutation StashService.useConfigurePlugin() returns */
-export type MangaToolsConfigurePluginFn = (options: {
-  variables: { plugin_id: string; input: Record<string, unknown> };
-}) => Promise<unknown>;
-
 /** The mutation StashService.useGalleryUpdate() returns */
 export type MangaToolsGalleryUpdateFn = (options: {
   variables: { input: Record<string, unknown> };
+}) => Promise<unknown>;
+
+/** The mutation StashService.useConfigurePlugin() returns */
+export type MangaToolsConfigurePluginFn = (options: {
+  variables: { plugin_id: string; input: Record<string, unknown> };
 }) => Promise<unknown>;
 
 export type MangaToolsGql = (source: string) => unknown;
@@ -418,8 +424,9 @@ export interface IPluginApi {
       useConfigurePlugin(): [MangaToolsConfigurePluginFn];
       /**
        * Stash's own gallery-update mutation, cache eviction included. The same
-       * one its organized button uses, so a write from this plugin is
-       * indistinguishable from one of Stash's.
+       * one its organized button uses, which is what a single click on a gallery
+       * needs — the edit form's Save is no use for a switch meant to be flipped
+       * from the toolbar without opening anything.
        */
       useGalleryUpdate(): [MangaToolsGalleryUpdateFn];
     };

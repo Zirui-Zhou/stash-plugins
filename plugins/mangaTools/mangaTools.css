@@ -382,3 +382,53 @@
  * already pulls the label flush with the rows below it, which is why there is
  * nothing here to set.
  */
+
+/*
+ * ─────────────────────── The manga switch ───────────────────────
+ *
+ * The switch that makes a gallery manga — this plugin's entry point, and the only
+ * thing it shows on a gallery that has not been marked.
+ *
+ * The two states are Stash's own organized pair: dimmed when off, in the page's
+ * own colour when on. That second colour is `inherit` rather than a value, so it
+ * follows whatever theme is in use instead of naming a colour that only looks
+ * right in one of them. The classes carry two each so they outrank
+ * `button.minimal` (styles/_theme.scss), which also sets a colour.
+ */
+button.minimal.manga-tools-manga-toggle {
+  color: rgba(191, 204, 214, 0.5);
+}
+
+button.minimal.manga-tools-manga-toggle.is-manga {
+  color: inherit;
+}
+
+/*
+ * The icon: an asset masked into shape, so the file supplies the outline and this
+ * supplies the colour.
+ *
+ * Not an <svg> and not an <img>. Inlining the markup would let `currentColor`
+ * work — that is what every other icon here does — but the artwork is somebody
+ * else's file, worth keeping byte for byte with its attribution comment in it. A
+ * served image cannot be recoloured at all, and a mask can: it reads the alpha
+ * channel and ignores the paint, so the two states above are enough.
+ *
+ * The height is 1em to match the FontAwesome icons beside it, which are sized in
+ * em, and the vertical-align is FontAwesome's own — the toolbar holds both kinds
+ * and they have to sit on the same line.
+ *
+ * The URL is absolute. A relative one would resolve against this stylesheet's own
+ * address, which is not the same directory as the assets; the cost is that a
+ * Stash served under a base path would need this line changed.
+ */
+.manga-tools-manga-icon {
+  --manga-tools-icon: url("/plugin/mangaTools/assets/icons/naruto-119-svgrepo-com.svg");
+
+  background-color: currentColor;
+  display: inline-block;
+  height: 1em;
+  vertical-align: -0.125em;
+  width: 1em;
+  -webkit-mask: var(--manga-tools-icon) center / contain no-repeat;
+  mask: var(--manga-tools-icon) center / contain no-repeat;
+}

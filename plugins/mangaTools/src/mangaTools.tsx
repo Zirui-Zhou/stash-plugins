@@ -72,6 +72,7 @@ const React = PluginApi.React;
 
 const FIELD_NAME = NS.FIELD_NAME;
 const CENSORSHIP_FIELD_NAME = NS.CENSORSHIP_FIELD_NAME;
+const MANGA_FIELD_NAME = NS.MANGA_FIELD_NAME;
 
 // The field names lowercased. Every read compares case-insensitively, so the
 // left-hand side is lowercased and these are what it is compared against.
@@ -889,10 +890,30 @@ function CensorshipPopoverMark(props: { galleryId: string }) {
   );
 }
 
-// ─────────────────────── Censorship toolbar mark ───────────────────────
+// ────────────────────────── Gallery toolbar ──────────────────────────
 
 /** Class of the mount point in the gallery toolbar */
 const TOOLBAR_HOST_CLASS = "manga-tools-toolbar-host";
+
+/**
+ * Whether this Stash has the mutation the switch writes through.
+ *
+ * Asked once, at load, because `useGalleryUpdate` is a hook and hooks cannot be
+ * called conditionally — so the decision has to be made before the component that
+ * calls it is rendered. Stash injects StashService itself (it is a namespace
+ * import of `src/core/StashService`), so a version without this function is the
+ * only way the lookup fails, and on such a version the toolbar gets nothing
+ * rather than a switch that cannot work.
+ */
+const CAN_WRITE =
+  typeof PluginApi.utils.StashService.useGalleryUpdate === "function";
+
+if (!CAN_WRITE) {
+  console.error(
+    "[mangaTools] this Stash has no useGalleryUpdate, so the toolbar switch " +
+      "cannot be shown. The rest of the plugin is unaffected."
+  );
+}
 
 /** As with the other mount points, held at module scope so a re-render reuses
  *  the same node rather than making a new one every time. */
@@ -949,24 +970,119 @@ function ensureToolbarHost(): HTMLElement | null {
  * later. It is a `<span>`, not a button, so that a mark does not look like
  * something to click.
  */
-function CensorshipToolbarMark(props: { galleryId: string; value: string }) {
+/**
+ * The mark's icon.
+ *
+ * A span with a mask rather than an `<svg>`: the artwork is a file, shipped as
+ * downloaded with its attribution comment intact, and a file cannot see the
+ * page's `currentColor` — that only works for markup inlined into the page. A CSS
+ * mask reads the shape and ignores the colour, so the file supplies one and
+ * `background-color` supplies the other, and the two states are a colour rule
+ * each. See .manga-tools-manga-icon in mangaTools.css.
+ */
+function MangaIcon() {
+  return <span className="manga-tools-manga-icon" aria-hidden="true" />;
+}
+
+/**
+ * The spelling of a key a gallery actually carries, or the canonical name.
+ *
+ * The click below removes a key rather than writing an empty value, and removing
+ * it by name only works for the spelling the gallery really has — a key that
+ * drifted in case would otherwise survive the click and the mark would appear not
+ * to clear.
+ */
+function storedKey(customFields: unknown, name: string): string {
+  const map = (customFields || {}) as CustomFieldsMap;
+  if (typeof map !== "object") return name;
+
+  const key = name.toLowerCase();
+  const keys = Object.keys(map);
+  for (let i = 0; i < keys.length; i++) {
+    if (keys[i].toLowerCase() === key) return keys[i];
+  }
+  return name;
+}
+
+/**
+ * What this plugin puts in the gallery toolbar.
+ *
+ * The switch first, because it is the entry point: a gallery that does not carry
+ * the mark is a plain Stash gallery as far as this plugin is concerned, and the
+ * switch is the only thing it shows there. Everything else it does appears once
+ * the mark is on — which is why the censorship mark beside it is conditional and
+ * the switch is not.
+ *
+ * One click, like the organized button next to it, and for the same reason:
+ * saying "this one is manga" is not editing the gallery, so it should not mean
+ * opening the edit tab and saving a form. That does mean it writes immediately
+ * rather than riding Save — the one place this plugin writes on its own, and the
+ * reason it reaches for Stash's own gallery-update mutation.
+ */
+function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
   useGlobalVersion();
   useAfterMount();
 
   const intl = PluginApi.libraries.Intl.useIntl();
+  const update = PluginApi.utils.StashService.useGalleryUpdate();
+  const state = React.useState(false);
+  const busy = state[0];
+  const setBusy = state[1];
+
   const host = ensureToolbarHost();
   if (!host) return null;
 
-  return PluginApi.ReactDOM.createPortal(
-    <span
-      className={
-        "manga-tools-censorship-mark" +
-        (props.value ? " is-" + props.value : " is-unmarked")
+  const marked = NS.isManga(props.values);
+
+  const onToggle = () => {
+    const input: Record<string, unknown> = { id: props.galleryId };
+    input.custom_fields = marked
+      ? { remove: [storedKey(props.values, MANGA_FIELD_NAME)] }
+      : { partial: { [MANGA_FIELD_NAME]: NS.MANGA_VALUE } };
+
+    setBusy(true);
+    update[0]({ variables: { input } }).then(
+      () => setBusy(false),
+      (e: unknown) => {
+        setBusy(false);
+        console.error("[mangaTools] could not write the manga mark:", e);
       }
-      title={censorshipLabel(intl, props.value)}
-    >
-      <CensorshipIcon value={props.value} />
-    </span>,
+    );
+  };
+
+  return PluginApi.ReactDOM.createPortal(
+    <>
+      <button
+        type="button"
+        className={
+          "minimal manga-tools-manga-toggle btn btn-secondary" +
+          (marked ? " is-manga" : "")
+        }
+        title={t(
+          intl,
+          marked ? "mangaTools.manga.marked" : "mangaTools.manga.mark"
+        )}
+        aria-pressed={marked}
+        disabled={busy}
+        onClick={onToggle}
+      >
+        <MangaIcon />
+      </button>
+
+      {marked ? (
+        <span
+          className={
+            "manga-tools-censorship-mark" +
+            (censorshipOf(props.values)
+              ? " is-" + censorshipOf(props.values)
+              : " is-unmarked")
+          }
+          title={censorshipLabel(intl, censorshipOf(props.values))}
+        >
+          <CensorshipIcon value={censorshipOf(props.values)} />
+        </span>
+      ) : null}
+    </>,
     host
   );
 }
@@ -2197,11 +2313,8 @@ registerPatch("instead", "CustomFields", (...args: unknown[]) => {
         unmarked. An absent key is simply the "not marked" state, and the first
         click writes the canonical spelling.
       */}
-      {galleryId ? (
-        <CensorshipToolbarMark
-          galleryId={galleryId}
-          value={censorshipOf(values)}
-        />
+      {galleryId && CAN_WRITE ? (
+        <GalleryToolbar galleryId={galleryId} values={values} />
       ) : null}
     </>
   );

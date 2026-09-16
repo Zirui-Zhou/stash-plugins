@@ -135,6 +135,48 @@ function listUnderKey(text, key) {
 }
 
 /**
+ * Reads an indented `key: value` map under a `<key>:` line — used for ui.assets,
+ * which maps a served URL prefix to a directory in the plugin.
+ *
+ * Same approach as the list reader above: anchored to the key, one line per
+ * entry, no dependency. A value that is empty ("/" with nothing after it) is
+ * skipped rather than treated as a directory named "".
+ */
+function mapUnderKey(text, key) {
+  // A key line, then the lines below it that are indented further and are
+  // `something: value` pairs. The character class excludes the leading `-` of a
+  // list item, so a list under the same parent is not read as a map — and spells
+  // whitespace out as " \t" rather than \s, because this is a *string* before it
+  // is a regex: in a template literal an unknown escape is the character itself,
+  // so \s would quietly mean the letter s.
+  const m = new RegExp(
+    `^[ \t]+${key}:[ \t]*\n((?:[ \t]+[^- \t#][^:\n]*:.*\n?)*)`,
+    "m"
+  ).exec(text);
+  if (!m) return {};
+
+  const out = {};
+  for (const line of m[1].split("\n")) {
+    const kv = /^[ \t]+([^:]+):[ \t]*(.*)$/.exec(line);
+    const name = kv?.[1].trim();
+    const value = kv?.[2].trim();
+    if (name && value) out[name] = value;
+  }
+  return out;
+}
+
+/** Copies a directory tree. The zip holds a tree, not a flat set of files. */
+function copyDir(from, to) {
+  fs.mkdirSync(to, { recursive: true });
+  for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+    const src = path.join(from, entry.name);
+    const dest = path.join(to, entry.name);
+    if (entry.isDirectory()) copyDir(src, dest);
+    else fs.copyFileSync(src, dest);
+  }
+}
+
+/**
  * Checks that every file the yml references actually made it into the package.
  *
  * This is the step that catches a build configuration mistake — a source file
@@ -293,7 +335,7 @@ function findEntry(dir, id) {
  * A plugin without a tsconfig.json is packaged as-is, so plain-JS plugins keep
  * working.
  */
-function compilePlugin(dir, id, files) {
+function compilePlugin(dir, id, files, assets) {
   const tsconfig = tsconfigOf(dir);
   if (!fs.existsSync(tsconfig)) return dir;
 
@@ -317,6 +359,22 @@ function compilePlugin(dir, id, files) {
     if (f.endsWith(".yml") || f.endsWith(".css") || f.endsWith(".md")) {
       fs.copyFileSync(path.join(dir, f), path.join(outDir, f));
     }
+  }
+
+  // The directories the yml's `ui.assets` maps. Copied because the yml is the
+  // statement of what this plugin serves at runtime: a directory named there is
+  // a directory that has to be in the package. Naming one that is not there is a
+  // build failure here, where it is legible, rather than a 404 in a browser that
+  // draws an empty box.
+  for (const rel of Object.values(assets)) {
+    const from = path.join(dir, rel);
+    if (!fs.existsSync(from) || !fs.statSync(from).isDirectory()) {
+      throw new Error(
+        `plugins/${path.basename(dir)}: ui.assets maps to "${rel}", which is not ` +
+          `a directory`
+      );
+    }
+    copyDir(from, path.join(outDir, rel));
   }
 
   return outDir;
@@ -358,6 +416,9 @@ function buildPlugin(dirName, sha, suffix, outDir) {
 
   const ymlText = fs.readFileSync(path.join(dir, ymlName), "utf8");
 
+  // What the yml exposes to the browser beyond its own script and stylesheet.
+  const assets = mapUnderKey(ymlText, "assets");
+
   const baseVersion = topLevel(ymlText, "version");
   if (!baseVersion) {
     throw new Error(`plugins/${dirName}/${ymlName}: missing top-level version`);
@@ -383,7 +444,7 @@ function buildPlugin(dirName, sha, suffix, outDir) {
 
   // What actually gets packaged: the bundled output for a TypeScript plugin,
   // or the plugin directory itself for a plain-JS one.
-  const packageDir = compilePlugin(dir, baseId, files);
+  const packageDir = compilePlugin(dir, baseId, files, assets);
   const packagedFiles = fs
     .readdirSync(packageDir)
     .filter((f) => !f.startsWith("."))
@@ -400,6 +461,9 @@ function buildPlugin(dirName, sha, suffix, outDir) {
     for (const f of packagedFiles) {
       if (f === ymlName) {
         fs.writeFileSync(path.join(stage, ymlOutName), patchedYml);
+      } else if (fs.statSync(path.join(packageDir, f)).isDirectory()) {
+        // An asset directory. The zip is built with -r, so the tree comes along.
+        copyDir(path.join(packageDir, f), path.join(stage, f));
       } else {
         fs.copyFileSync(path.join(packageDir, f), path.join(stage, f));
       }

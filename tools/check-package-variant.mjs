@@ -28,6 +28,9 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SUFFIX = "Test";
 
+/** A file the plugin serves rather than bundles — see mangaTools.yml's ui.assets */
+const ASSET = "assets/icons/naruto-119-svgrepo-com.svg";
+
 /**
  * The entries of an index.yml, as far as this script looks at them.
  *
@@ -142,6 +145,13 @@ try {
   assert.ok(
     !names.includes("mangaTools.yml"),
     "and must not carry the original name as well"
+  );
+  // The plugin's one non-code file. Stash serves what `ui.assets` maps rather
+  // than bundling it, so a build that stopped copying the directory would leave
+  // the toolbar switch with no icon and nothing on screen to say why.
+  assert.ok(
+    names.includes(ASSET),
+    `the plugin's asset must be in the package. Entries: ${names.join(", ")}`
   );
   assert.ok(
     names.includes("mangaTools.js"),

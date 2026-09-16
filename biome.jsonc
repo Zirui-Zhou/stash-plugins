@@ -22,6 +22,13 @@
       "allowComments": true
     }
   },
+  // The plugin assets: images, and whatever else a plugin serves rather than
+  // bundles. Nothing here is source — the files are somebody else's artwork,
+  // kept exactly as downloaded so their attribution stays intact, and Biome
+  // would otherwise read an SVG as markup and object to its XML declaration.
+  "files": {
+    "includes": ["**", "!**/assets"]
+  },
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "formatter": {
     "enabled": true,

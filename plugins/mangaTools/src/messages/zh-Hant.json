@@ -11,6 +11,9 @@
   "mangaTools.settings.showCoverBadge.heading": "在封面顯示語言",
   "mangaTools.settings.showCoverBadge.description": "畫廊封面右下角的徽章。關掉國旗時顯示語言名稱而不是國旗。",
 
+  "mangaTools.manga.mark": "標記為漫畫",
+  "mangaTools.manga.marked": "漫畫",
+
   "mangaTools.panel.heading": "漫畫資訊",
 
   "mangaTools.censorship.heading": "修正",

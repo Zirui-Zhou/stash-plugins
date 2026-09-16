@@ -34,6 +34,8 @@ let galleryQueryCount = 0;
 const capturedQueries = [];
 const settingsEnabled = ""; // the stored enabledLanguages setting, mutated by tests
 let capturedConfigWrite = null; // last configurePlugin write, captured by the stub
+const galleryWrites = []; // every galleryUpdate input the toolbar switch sent
+let galleryWriteResult = null; // when set, the gallery update rejects with this
 let currentLocale = "zh-CN";
 
 const React = {
@@ -482,6 +484,17 @@ const PluginApi = {
   utils: {
     StashService: {
       getClient: () => fakeClient,
+      // Stash's own gallery-update mutation, which the toolbar switch writes
+      // through. Recorded so a test can assert the exact input — and answerable,
+      // so the failure path can be exercised too.
+      useGalleryUpdate: () => [
+        (opts) => {
+          galleryWrites.push(opts.variables);
+          return galleryWriteResult
+            ? Promise.reject(galleryWriteResult)
+            : Promise.resolve({});
+        },
+      ],
       useConfigurePlugin: () => [
         (opts) => {
           capturedConfigWrite = opts.variables;
@@ -4083,7 +4096,7 @@ setTimeout(() => {
   assert.strictEqual(
     first.drawn.host.parentNode,
     toolbarGroup,
-    "the mark mounts into the toolbar group"
+    "the toolbar contents mount into the toolbar group"
   );
   assert.strictEqual(
     toolbarGroup.children[1],
@@ -4092,25 +4105,99 @@ setTimeout(() => {
       "operation menu"
   );
 
-  // A mark, not a control. The field is edited on the edit page now, by a
-  // selector that has no third state to explain — see below.
-  assert.strictEqual(first.drawn.node.type, "span");
+  // What it draws: the switch, and — only once the gallery is manga — the
+  // censorship mark beside it. The switch is the entry point, so it is the one
+  // thing this plugin shows on a gallery it has not been given.
+  const drawn = first.drawn.node;
+  assert.strictEqual(drawn.type, React.Fragment);
+  const toggle = drawn.props.children[0];
+  const mark = drawn.props.children[1];
   assert.strictEqual(
-    first.drawn.node.props.className,
+    toggle.type,
+    "button",
+    "the switch is a button, like organized"
+  );
+  assert.strictEqual(
+    toggle.props.className,
+    "minimal manga-tools-manga-toggle btn btn-secondary",
+    "unmarked, and with no state class to say otherwise"
+  );
+  assert.strictEqual(toggle.props.title, "标记为漫画");
+  assert.strictEqual(toggle.props["aria-pressed"], false);
+  assert.strictEqual(
+    mark,
+    null,
+    "an unmarked gallery carries no censorship mark either: the switch is the " +
+      "only thing this plugin shows there"
+  );
+
+  // The switch's icon is a masked span, not an svg: the artwork is a file, and a
+  // file cannot see `currentColor` — the mask reads its shape and CSS supplies
+  // the colour, which is what makes two states out of one image.
+  const icon = toggle.props.children.type(toggle.props.children.props);
+  assert.strictEqual(icon.type, "span");
+  assert.strictEqual(icon.props.className, "manga-tools-manga-icon");
+
+  // Marked: the switch says so and the censorship mark appears.
+  const asManga = toolbarMark({
+    ...detailValues("censored"),
+    [NS.MANGA_FIELD_NAME]: "true",
+  });
+  const markedChildren = asManga.drawn.node.props.children;
+  assert.strictEqual(
+    markedChildren[0].props.className,
+    "minimal manga-tools-manga-toggle btn btn-secondary is-manga",
+    "the state is a class, which is the one CSS colours differently"
+  );
+  assert.strictEqual(markedChildren[0].props.title, "漫画");
+  assert.strictEqual(markedChildren[0].props["aria-pressed"], true);
+  assert.strictEqual(
+    markedChildren[1].props.className,
     "manga-tools-censorship-mark is-censored",
-    "the mark carries its state in a class, as the details row's icon does not"
+    "and the mark it was gating is now drawn"
   );
-  assert.strictEqual(first.drawn.node.props.title, "有修正");
-  assert.strictEqual(
-    first.drawn.node.props.onClick,
-    undefined,
-    "nothing to click: this is not the control any more"
+
+  // Clicking writes through Stash's own gallery update: present means marked,
+  // and clearing removes the key rather than writing an empty value.
+  const writesBefore = galleryWrites.length;
+  toggle.props.onClick();
+  assert.deepStrictEqual(
+    galleryWrites[writesBefore],
+    {
+      input: {
+        id: "3",
+        custom_fields: { partial: { [NS.MANGA_FIELD_NAME]: "true" } },
+      },
+    },
+    "flipping it on writes the canonical name"
   );
-  assert.strictEqual(
-    markPortal("3").node.props.title,
-    "无修正",
-    "gallery 3 is the other state, and its card mark is unchanged by any of this"
+  markedChildren[0].props.onClick();
+  assert.deepStrictEqual(
+    galleryWrites[galleryWrites.length - 1],
+    {
+      input: { id: "3", custom_fields: { remove: [NS.MANGA_FIELD_NAME] } },
+    },
+    "and flipping it off removes the key"
   );
+
+  // A gallery whose key drifted in case is cleared by the spelling it has, or the
+  // click would look like it did nothing.
+  toolbarMark({
+    [NS.FIELD_NAME]: "ja",
+    "plugin.mangaTools.Manga": "true",
+  }).drawn.node.props.children[0].props.onClick();
+  assert.deepStrictEqual(
+    galleryWrites[galleryWrites.length - 1].input.custom_fields,
+    { remove: ["plugin.mangaTools.Manga"] }
+  );
+
+  // A rejected write leaves the switch as it was, so the click can be repeated.
+  galleryWriteResult = new Error("nope");
+  toolbarMark({
+    ...detailValues("censored"),
+    [NS.MANGA_FIELD_NAME]: "true",
+  }).drawn.node.props.children[0].props.onClick();
+  galleryWriteResult = null;
 
   // The write path is the edit form, through Stash's own values map — which is
   // what makes Save persist the mark and Cancel discard it.

@@ -15,6 +15,20 @@ ui:
     - mangaTools.js
   css:
     - mangaTools.css
+  # The one thing this plugin ships that is not code: the icon for the mark that
+  # makes a gallery manga. Stash serves a mapped directory at
+  # /plugin/{pluginId}/assets/<path>, so `assets/icons/x.svg` is fetched from
+  # /plugin/mangaTools/assets/icons/x.svg.
+  #
+  # It is a file rather than a string in the bundle because it is somebody else's
+  # artwork and is kept exactly as it was downloaded, attribution comment and all.
+  # Colouring it is done with a CSS mask, which reads the shape rather than the
+  # colour — see .manga-tools-manga-icon in mangaTools.css.
+  #
+  # `tools/build.mjs` copies whatever this maps, so a directory named here is a
+  # directory that ships; naming one that does not exist fails the build.
+  assets:
+    /: assets
 
 # Plugin settings, editable under Settings → Plugins. Stash renders one plain
 # input per entry below (STRING/NUMBER/BOOLEAN only); the plugin patches that UI

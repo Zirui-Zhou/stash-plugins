@@ -71,6 +71,34 @@ NS.normalizeCensorship = (raw: unknown): string => {
 };
 
 /**
+ * The field that makes a gallery manga: this plugin's entry point.
+ *
+ * Everything else this plugin does appears only on a gallery that carries it. A
+ * gallery without it is a plain Stash gallery as far as the plugin is concerned —
+ * the only thing it shows there is the switch that sets this.
+ *
+ * It is not a boolean value so much as a presence: the key being there *is* the
+ * mark, and clearing it removes the key. That is the same "absent means not set"
+ * shape the other two fields use for their unset state, so there is one rule
+ * about absence rather than two.
+ */
+NS.MANGA_FIELD_NAME = "plugin.mangaTools.manga";
+
+/** The value written when a gallery is marked. Presence is what is read. */
+NS.MANGA_VALUE = "true";
+
+/**
+ * Whether a gallery's custom fields mark it as manga.
+ *
+ * Any non-empty value counts. The alternative — only the exact string "true" —
+ * would mean a key someone set by hand to "yes" leaves the gallery looking
+ * unflagged while its custom fields plainly show otherwise, and the mark is
+ * meant to be readable at a glance rather than parsed.
+ */
+NS.isManga = (customFields: unknown): boolean =>
+  NS.pickField(customFields, NS.MANGA_FIELD_NAME) !== "";
+
+/**
  * Reads a named field out of a custom_fields map. The name is matched
  * case-insensitively, and the stored spelling is what comes back out of the map.
  * @returns "" when there is no such field, or it holds nothing
