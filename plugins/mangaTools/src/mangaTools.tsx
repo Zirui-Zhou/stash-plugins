@@ -1830,6 +1830,15 @@ class ExperimentBoundary extends React.Component<
   }
 }
 
+/**
+ * Whether the block starts open.
+ *
+ * Collapsed, because the details tab already has a lot on it and the header is
+ * what says this section exists. One word to change if that reads as hidden
+ * rather than tidy.
+ */
+const PANEL_OPEN_BY_DEFAULT = false;
+
 /** One label and one value. Stash's own detail rows are a label and a value. */
 function PanelRow(props: { label: string; children: ReactNode }) {
   return (
@@ -1853,15 +1862,18 @@ function MangaDetailsPanel(props: { values: CustomFieldsMap }) {
   useGlobalVersion();
 
   const intl = PluginApi.libraries.Intl.useIntl();
+  const state = React.useState(PANEL_OPEN_BY_DEFAULT);
+  const open = state[0];
+  const setOpen = state[1];
+
   const language = NS.describe(pickLanguage(props.values), intl.locale);
   const mark = censorshipOf(props.values);
+  const Solid = PluginApi.libraries.FontAwesomeSolid || {};
+  const Icon = PluginApi.components.Icon;
+  const Collapse = PluginApi.libraries.Bootstrap?.Collapse;
 
-  return (
-    <div className="manga-tools-panel">
-      <h5 className="manga-tools-panel-title">
-        {t(intl, "mangaTools.panel.heading")}
-      </h5>
-
+  const body = (
+    <div className="manga-tools-panel-body">
       <PanelRow label={fieldLabel(intl)}>
         {!language ? (
           <span className="manga-tools-panel-unset">—</span>
@@ -1884,6 +1896,33 @@ function MangaDetailsPanel(props: { values: CustomFieldsMap }) {
         {mark ? " " : null}
         {censorshipLabel(intl, mark)}
       </PanelRow>
+    </div>
+  );
+
+  return (
+    <div className="manga-tools-panel">
+      {/*
+        A disclosure rather than a heading. The details tab is already dense and
+        these two attributes are supplementary to it, so what the page needs from
+        this block is a line saying it exists; the values are one click away.
+
+        `<button>` and `aria-expanded` take care of the keyboard and of what a
+        screen reader announces — no tab, no pane, no state anybody else owns.
+      */}
+      <button
+        type="button"
+        className="manga-tools-panel-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <Icon
+          className="fa-fw"
+          icon={open ? Solid.faChevronDown : Solid.faChevronRight}
+        />
+        {t(intl, "mangaTools.panel.heading")}
+      </button>
+
+      {Collapse ? <Collapse in={open}>{body}</Collapse> : body}
     </div>
   );
 }

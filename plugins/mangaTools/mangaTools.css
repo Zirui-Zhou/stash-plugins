@@ -339,3 +339,23 @@
 .manga-tools-tab-slot > .manga-tools-panel:first-child {
   margin-top: 0;
 }
+
+/*
+ * The disclosure header. Sized and weighted like the headings Stash draws in its
+ * own panels, but it is a button because it opens something.
+ */
+.manga-tools-panel-toggle {
+  align-items: center;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  display: flex;
+  font-size: 1rem;
+  font-weight: 600;
+  gap: 0.25rem;
+  padding: 0;
+}
+
+.manga-tools-panel-body {
+  margin-top: 0.5rem;
+}

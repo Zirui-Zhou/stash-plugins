@@ -4306,7 +4306,13 @@ setTimeout(() => {
   // find() calls function components as it walks, so this descends *through* the
   // guard — which is the point: if the guard let an undefined icon through, the
   // throw happens here rather than being invisible.
-  const iconOf = (node) => find(node, (n) => n.type === "Icon");
+  // Only the censorship icons: the panel's header has a chevron, which is also
+  // an Icon, so matching on the type alone would find the wrong one.
+  const iconOf = (node) =>
+    find(
+      node,
+      (n) => n.type === "Icon" && /^faChess/.test(String(n.props.icon))
+    );
   assert.ok(iconOf(panel), "a name the bundled set has draws its icon");
 
   const board = PluginApi.libraries.FontAwesomeSolid.faChessBoard;
