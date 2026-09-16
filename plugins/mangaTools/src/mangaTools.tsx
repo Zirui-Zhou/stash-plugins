@@ -20,14 +20,17 @@
  * A second attribute, the censorship mark, works the same way and lives in
  * `plugin.mangaTools.censorship`. It is a two-valued field rather than a boolean:
  * "not marked" is the absence of the key, which is what the selector's own clear
- * button produces. It surfaces in four places:
+ * button produces. It surfaces in three places:
  *
  *   - a selector on the gallery edit page, beside the language one
- *   - a mark on the gallery detail page's toolbar, beside Stash's organized
- *     button — the same icons, but a mark rather than a control
  *   - a row in the details tab's block, as icon and word
  *   - an icon at the end of the gallery card's popover row, for the two marked
  *     states only — an unmarked gallery shows nothing, since most are unmarked
+ *
+ * A third field is the one that decides whether any of this applies. A gallery
+ * carrying `plugin.mangaTools.manga` is manga; one that does not is an ordinary
+ * Stash gallery with a single switch on its toolbar and nothing else of ours.
+ * Everything above is drawn only on the first kind.
  *
  * `languages.ts` holds the codes and their flags, `fields.ts` the field names
  * and the generic read/write helpers, `language-filter.tsx` the sidebar filter.
@@ -526,35 +529,70 @@ type LocationEvent = {
 };
 
 /**
- * The URL Stash loaded this plugin's script from, or "" when it cannot be found.
+ * The URL this plugin's own files are served under, or "" when it cannot be found.
  *
- * A plugin cannot ask where its own files are served from, and it cannot work it
- * out either: the plugin ID is decided by the yml's file name, not by anything in
- * the source, so the installed copy may be `mangaToolsTest` while the code says
- * `mangaTools`. The script tag is the one self-reference on the page, which is
- * what makes it the only way to find out.
+ * A plugin cannot ask. `PluginApi` never says where its files live, and the ID is
+ * not knowable from the source either — the yml file's name decides it, so the
+ * installed copy may be `mangaToolsTest` while the code says `mangaTools`. The
+ * tags Stash injects are the only self-reference on the page: `hooks/useScript`
+ * appends a `<script src>` and `useCSS` a `<link>`, both pointing at this plugin.
+ *
+ * Both are checked, and neither by file name alone: what the backend puts in
+ * those URLs is its own business. The last path segment is dropped and what is
+ * left is the directory the plugin is served from, whatever it is called.
  */
-function ownScriptUrl(): string {
+function ownBaseUrl(): string {
+  const tags: Element[] = [];
   const scripts = document.querySelectorAll("script[src]");
-  for (let i = 0; i < scripts.length; i++) {
-    const src = (scripts[i] as HTMLScriptElement).src || "";
-    // The bundle keeps its own file name whatever the plugin is installed as.
-    if (/\/mangaTools\.js(\?|$)/.test(src)) return src;
+  for (let i = 0; i < scripts.length; i++) tags.push(scripts[i]);
+  const links = document.querySelectorAll('link[rel="stylesheet"]');
+  for (let i = 0; i < links.length; i++) tags.push(links[i]);
+
+  for (const tag of tags) {
+    const url =
+      (tag as HTMLScriptElement).src || (tag as HTMLLinkElement).href || "";
+    if (/mangaTools/.test(url)) return url.replace(/[^/]*$/, "");
   }
   return "";
 }
+
+/** Every script and stylesheet URL on the page, for the log below */
+function pageAssetUrls(): string[] {
+  const urls: string[] = [];
+  const tags = document.querySelectorAll("script[src], link[rel=stylesheet]");
+  for (let i = 0; i < tags.length; i++) {
+    const tag = tags[i];
+    urls.push(
+      (tag as HTMLScriptElement).src || (tag as HTMLLinkElement).href || ""
+    );
+  }
+  return urls;
+}
+
+/**
+ * Where this plugin's files are served from, learned once at load.
+ *
+ * Empty when it could not be worked out, and the switch's icon then falls back to
+ * the stylesheet's own relative URL — which is the same answer arrived at
+ * differently, and is what the CSS carries by default.
+ */
+let assetBase = "";
 
 function start(): void {
   if (started) return;
   started = true;
 
-  // Worth a line: mangaTools.css reaches the switch's icon through a URL relative
-  // to the stylesheet, which is only right while plugin files are served from
-  // under /plugin/<id>/. This says what that actually is, so a missing icon can be
-  // diagnosed from the console rather than by guessing at URLs.
+  // Worth a line. The switch's icon is a file this plugin serves rather than
+  // bundles, and finding it needs this plugin's own URL — which is the one thing
+  // a plugin cannot ask Stash for. When the lookup fails the page's own URLs are
+  // printed, because that is the only way to see what shape they actually are.
+  assetBase = ownBaseUrl();
   console.info(
-    "[mangaTools] my own script is served from " +
-      (ownScriptUrl() || "(not found among the page's script tags)")
+    assetBase
+      ? "[mangaTools] my own files are served from " + assetBase
+      : "[mangaTools] could not tell where my own files are served from. " +
+          "Scripts and stylesheets on this page: " +
+          pageAssetUrls().join(", ")
   );
 
   refresh();
@@ -1009,7 +1047,19 @@ function ensureToolbarHost(): HTMLElement | null {
  * each. See .manga-tools-manga-icon in mangaTools.css.
  */
 function MangaIcon() {
-  return <span className="manga-tools-manga-icon" aria-hidden="true" />;
+  // The stylesheet carries a relative URL for this, and it is right whenever
+  // plugin files sit under one path. This is the same answer reached from the
+  // plugin's own tag instead, which does not depend on that being true — and it is
+  // only known after start() has run.
+  const style = assetBase
+    ? ({
+        "--manga-tools-icon": `url("${assetBase}assets/icons/manga.svg")`,
+      } as React.CSSProperties)
+    : undefined;
+
+  return (
+    <span className="manga-tools-manga-icon" aria-hidden="true" style={style} />
+  );
 }
 
 /**
@@ -1079,38 +1129,22 @@ function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
   };
 
   return PluginApi.ReactDOM.createPortal(
-    <>
-      <button
-        type="button"
-        className={
-          "minimal manga-tools-manga-toggle btn btn-secondary" +
-          (marked ? " is-manga" : "")
-        }
-        title={t(
-          intl,
-          marked ? "mangaTools.manga.marked" : "mangaTools.manga.mark"
-        )}
-        aria-pressed={marked}
-        disabled={busy}
-        onClick={onToggle}
-      >
-        <MangaIcon />
-      </button>
-
-      {marked ? (
-        <span
-          className={
-            "manga-tools-censorship-mark" +
-            (censorshipOf(props.values)
-              ? " is-" + censorshipOf(props.values)
-              : " is-unmarked")
-          }
-          title={censorshipLabel(intl, censorshipOf(props.values))}
-        >
-          <CensorshipIcon value={censorshipOf(props.values)} />
-        </span>
-      ) : null}
-    </>,
+    <button
+      type="button"
+      className={
+        "minimal manga-tools-manga-toggle btn btn-secondary" +
+        (marked ? " is-manga" : "")
+      }
+      title={t(
+        intl,
+        marked ? "mangaTools.manga.marked" : "mangaTools.manga.mark"
+      )}
+      aria-pressed={marked}
+      disabled={busy}
+      onClick={onToggle}
+    >
+      <MangaIcon />
+    </button>,
     host
   );
 }
