@@ -84,6 +84,13 @@ export interface MangaToolsNamespace {
   MANGA_VALUE: string;
   /** Whether a gallery's custom fields mark it as manga. */
   isManga(customFields: unknown): boolean;
+  /**
+   * Which of this plugin's fields a key names — the canonical name, or "" for a
+   * key that is not ours. The one list every recogniser asks.
+   */
+  ownField(key: unknown): string;
+  /** Whether a key names one of this plugin's fields, in any spelling. */
+  isOwnField(key: unknown): boolean;
   /** The keys to remove when a gallery stops being manga, by their own spelling. */
   fieldsToClear(customFields: unknown): string[];
   /** The values the censorship field takes, in cycle order. See fields.ts. */

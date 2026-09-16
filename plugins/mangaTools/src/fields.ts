@@ -99,6 +99,36 @@ NS.isManga = (customFields: unknown): boolean =>
   NS.pickField(customFields, NS.MANGA_FIELD_NAME) !== "";
 
 /**
+ * Which of this plugin's fields a custom-field key names, or "" for any other.
+ *
+ * One list, asked by everything that has to recognise a key of ours. It exists
+ * because that list has to *agree*: when the third field was added, two of the
+ * places that recognise keys were not updated, and the symptoms were a raw
+ * `plugin.mangaTools.manga` row in the edit form and a value the plugin could not
+ * see. A field added to the three names below is a field every one of those
+ * places knows about, because the list they ask is this one.
+ *
+ * The canonical name comes back rather than the key, so a caller can compare
+ * against the name it already has instead of inventing a second vocabulary for
+ * the same three things.
+ */
+NS.ownField = (key: unknown): string => {
+  const k = String(key ?? "")
+    .trim()
+    .toLowerCase();
+  if (k === "") return "";
+
+  const names = [NS.FIELD_NAME, NS.CENSORSHIP_FIELD_NAME, NS.MANGA_FIELD_NAME];
+  for (let i = 0; i < names.length; i++) {
+    if (names[i].toLowerCase() === k) return names[i];
+  }
+  return "";
+};
+
+/** Whether a key names one of this plugin's fields, in any spelling */
+NS.isOwnField = (key: unknown): boolean => NS.ownField(key) !== "";
+
+/**
  * The keys to remove when a gallery stops being manga.
  *
  * Unmarking takes this plugin's fields with it, because a gallery it no longer
@@ -113,13 +143,10 @@ NS.isManga = (customFields: unknown): boolean =>
  * which is the state an unmark can still be issued from.
  */
 NS.fieldsToClear = (customFields: unknown): string[] => {
-  const names = [NS.MANGA_FIELD_NAME, NS.FIELD_NAME, NS.CENSORSHIP_FIELD_NAME];
   const map = (customFields || {}) as MangaToolsCustomFields;
   if (!map || typeof map !== "object") return [NS.MANGA_FIELD_NAME];
 
-  const keys = Object.keys(map).filter((key) =>
-    names.some((name) => name.toLowerCase() === key.toLowerCase())
-  );
+  const keys = Object.keys(map).filter((key) => NS.isOwnField(key));
 
   return keys.length ? keys : [NS.MANGA_FIELD_NAME];
 };

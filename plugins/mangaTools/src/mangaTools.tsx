@@ -77,13 +77,6 @@ const FIELD_NAME = NS.FIELD_NAME;
 const CENSORSHIP_FIELD_NAME = NS.CENSORSHIP_FIELD_NAME;
 const MANGA_FIELD_NAME = NS.MANGA_FIELD_NAME;
 
-// The field names lowercased. Every read compares case-insensitively, so the
-// left-hand side is lowercased and these are what it is compared against.
-// Derived rather than written out, so the two can never drift apart.
-const FIELD_KEY = FIELD_NAME.toLowerCase();
-const CENSORSHIP_KEY = CENSORSHIP_FIELD_NAME.toLowerCase();
-const MANGA_KEY = MANGA_FIELD_NAME.toLowerCase();
-
 const PLUGIN_ID = "mangaTools";
 
 /**
@@ -287,12 +280,6 @@ function censorshipOf(customFields: unknown): string {
   return NS.normalizeCensorship(
     NS.pickField(customFields, CENSORSHIP_FIELD_NAME)
   );
-}
-
-/** Whether a custom-field key is one of ours, whatever its case */
-function isOwnField(key: string): boolean {
-  const k = key.toLowerCase();
-  return k === FIELD_KEY || k === CENSORSHIP_KEY || k === MANGA_KEY;
 }
 
 // ───────────────────────────── Fetching ─────────────────────────────
@@ -2261,7 +2248,7 @@ registerPatch("instead", "CustomFieldInput", (...args: unknown[]) => {
   const Original = originalFrom(args);
   noteFired("CustomFieldInput");
 
-  const isOwnRow = !!props.field && isOwnField(String(props.field));
+  const isOwnRow = NS.isOwnField(props.field);
 
   if (!props.isNew && isOwnRow) {
     return null;
@@ -2421,17 +2408,13 @@ registerPatch("instead", "CustomFields", (...args: unknown[]) => {
   if (!values || typeof values !== "object") return <Original {...props} />;
 
   const rest = Object.assign({}, values) as CustomFieldsMap;
-  let languageKey: string | null = null;
-  let censorshipKey: string | null = null;
+  let lifted = false;
 
   Object.keys(values).forEach((k) => {
-    if (!isOwnField(k)) return;
-    if (k.toLowerCase() === FIELD_KEY) languageKey = k;
-    else censorshipKey = k;
+    if (!NS.isOwnField(k)) return;
+    lifted = true;
     delete rest[k];
   });
-
-  const lifted = languageKey !== null || censorshipKey !== null;
 
   // Empty on every entity's page but a gallery's, which is what keeps the
   // button off a scene's or a performer's detail page.

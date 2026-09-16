@@ -190,10 +190,7 @@ function customFieldsCriterion(
 function isLanguageCondition(
   condition: MangaToolsCustomFieldCondition
 ): boolean {
-  return (
-    !!condition &&
-    String(condition.field).toLowerCase() === NS.FIELD_NAME.toLowerCase()
-  );
+  return !!condition && NS.ownField(condition.field) === NS.FIELD_NAME;
 }
 
 /** The values of a condition, as codes */

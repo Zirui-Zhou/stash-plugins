@@ -3941,6 +3941,35 @@ setTimeout(() => {
   NS.setField(cfSource, CF, "");
   assert.deepStrictEqual(cfSource, { [CF]: "censored" });
 
+  // The one list of this plugin's fields. Everything that has to recognise a key
+  // of ours asks it, which is what stops a new field being known in some places
+  // and not others — the mistake that shipped a raw plugin.mangaTools.manga row
+  // into the edit form.
+  assert.strictEqual(NS.ownField(NS.FIELD_NAME), NS.FIELD_NAME);
+  assert.strictEqual(
+    NS.ownField("PLUGIN.MANGATOOLS.Language"),
+    NS.FIELD_NAME,
+    "in any spelling"
+  );
+  assert.strictEqual(
+    NS.ownField(NS.CENSORSHIP_FIELD_NAME),
+    NS.CENSORSHIP_FIELD_NAME
+  );
+  assert.strictEqual(
+    NS.ownField("plugin.mangaTools.Manga"),
+    NS.MANGA_FIELD_NAME
+  );
+  assert.strictEqual(
+    NS.ownField("plugin.mangaTools.languageNotes"),
+    "",
+    "a longer name that merely starts the same way is not ours"
+  );
+  assert.strictEqual(NS.ownField("other"), "");
+  assert.strictEqual(NS.ownField(null), "");
+  assert.strictEqual(NS.ownField(undefined), "");
+  assert.strictEqual(NS.isOwnField("  plugin.mangaTools.manga  "), true);
+  assert.strictEqual(NS.isOwnField("plugin.mangaTools.mangaX"), false);
+
   // --- the card's popover row ---
   //
   // Stand in for what React commits: the element the plugin rendered, turned
