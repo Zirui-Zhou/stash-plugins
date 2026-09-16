@@ -19,6 +19,9 @@
   "mangaTools.manga.mark": "標記為漫畫",
   "mangaTools.manga.marked": "漫畫",
 
+  "mangaTools.filter.manga.marked": "已標記",
+  "mangaTools.filter.manga.unmarked": "未標記",
+
   "mangaTools.manga.confirm": "確定不再把這個畫廊作為漫畫管理嗎？它的語言和修正的值會被刪除。",
   "mangaTools.manga.confirmCancel": "取消",
   "mangaTools.manga.confirmOk": "取消標記",

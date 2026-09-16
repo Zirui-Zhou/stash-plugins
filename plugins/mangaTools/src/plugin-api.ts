@@ -152,6 +152,32 @@ export interface MangaToolsNamespace {
     filter: MangaToolsFilterModel,
     selection: MangaToolsLanguageSelection
   ): string | null;
+  /** The censorship part of the filter, read the way readLanguageFilter does. */
+  readCensorshipFilter(
+    filter: MangaToolsFilterModel
+  ): MangaToolsLanguageSelection;
+  /**
+   * Query parameters for the filter with this censorship selection applied, or
+   * null when the list offers no custom-fields criterion to attach it to.
+   */
+  censorshipFilterQuery(
+    filter: MangaToolsFilterModel,
+    selection: MangaToolsLanguageSelection
+  ): string | null;
+  /** The manga mark's filter state: marked, unmarked, or neither. */
+  readMangaFilter(filter: MangaToolsFilterModel): MangaToolsMangaState;
+  /**
+   * Query parameters for the filter with this manga state applied, or null when
+   * the list offers no custom-fields criterion to attach it to.
+   */
+  mangaFilterQuery(
+    filter: MangaToolsFilterModel,
+    state: MangaToolsMangaState
+  ): string | null;
+  /** Re-words Stash's tags for the censorship filter, one label per tag. */
+  relabelCensorshipTags(labels: string[]): void;
+  /** Re-words Stash's tags for the manga filter, one label per tag. */
+  relabelMangaTags(labels: string[]): void;
   /**
    * Adds the Language criterion to a list's filter options, so Stash's "edit
    * filters" dialog offers a card for it. Idempotent.
@@ -245,6 +271,16 @@ export interface MangaToolsLanguageSelection {
   included: string[];
   excluded: string[];
 }
+
+/**
+ * What the manga filter is asking for: whether a gallery is marked as manga,
+ * not marked, or neither is asked.
+ *
+ * The mark is a presence, so the two states are the field's NOT_NULL ("marked")
+ * and IS_NULL ("unmarked") — the same pair the organised filter maps its
+ * true/false onto.
+ */
+export type MangaToolsMangaState = "" | "marked" | "unmarked";
 
 /** What react-intl's useIntl() gives us — only the fields this plugin touches */
 export interface MangaToolsIntl {

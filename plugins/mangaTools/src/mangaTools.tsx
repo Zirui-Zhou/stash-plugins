@@ -55,7 +55,9 @@ import { requirePluginApi } from "./plugin-api";
 import {
   DialogLanguageFilter,
   registerLanguageCriterionOption,
+  SidebarCensorshipFilter,
   SidebarLanguageFilter,
+  SidebarMangaFilter,
 } from "./language-filter";
 import type { ReactNode } from "react";
 import type { MangaToolsFilterModel } from "./plugin-api";
@@ -2681,6 +2683,8 @@ registerPatch("instead", "GalleryList", (...args: unknown[]) => {
   return (
     <>
       <SidebarLanguageFilter filter={props.filter as MangaToolsFilterModel} />
+      <SidebarCensorshipFilter filter={props.filter as MangaToolsFilterModel} />
+      <SidebarMangaFilter filter={props.filter as MangaToolsFilterModel} />
       <DialogLanguageFilter filter={props.filter as MangaToolsFilterModel} />
       <Original {...props} />
     </>

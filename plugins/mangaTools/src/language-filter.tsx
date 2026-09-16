@@ -44,6 +44,7 @@
  * AND not-equals Y" is exactly "included X, excluded Y".
  */
 import { NS } from "./languages";
+import { t } from "./i18n";
 import { requirePluginApi } from "./plugin-api";
 import type { ReactElement } from "react";
 import type {
@@ -54,6 +55,7 @@ import type {
   MangaToolsHistory,
   MangaToolsIntl,
   MangaToolsLanguageSelection,
+  MangaToolsMangaState,
   MangaToolsOption,
 } from "./plugin-api";
 
@@ -464,7 +466,7 @@ function modifierWord(intl: MangaToolsIntl, modifier: string): string | null {
  * plugin does not understand keeps Stash's wording rather than being given one
  * that would say something else.
  */
-export function conditionLabel(
+function languageConditionLabel(
   intl: MangaToolsIntl,
   condition: MangaToolsCustomFieldCondition
 ): string | null {
@@ -481,6 +483,83 @@ export function conditionLabel(
         .join(", "),
     }
   );
+}
+
+/**
+ * The censorship field's own wording for a condition, in the same shape as the
+ * language one — the criterion's name, the modifier's word, the values joined —
+ * with the value names taken from censorship.tsx rather than from the language
+ * table.
+ */
+function censorshipConditionLabel(
+  intl: MangaToolsIntl,
+  condition: MangaToolsCustomFieldCondition
+): string | null {
+  const word = modifierWord(intl, condition.modifier);
+  if (word === null) return null;
+
+  return intl.formatMessage(
+    { id: "criterion_modifier.format_string" },
+    {
+      criterion: censorshipHeading(intl),
+      modifierString: word,
+      valueString: conditionValues(condition)
+        .map((value) => NS.censorshipLabel(intl, value))
+        .join(", "),
+    }
+  );
+}
+
+/**
+ * The manga mark's wording for a condition.
+ *
+ * The mark is a presence, so its only two conditions are NOT_NULL and IS_NULL,
+ * and the tag should say "marked" / "unmarked" rather than "is (not) null" — the
+ * latter is the *mechanism*, and a reader filtering a shelf wants the meaning.
+ * Anything else is a condition this plugin does not write, and is left to Stash.
+ */
+function mangaConditionLabel(
+  intl: MangaToolsIntl,
+  condition: MangaToolsCustomFieldCondition
+): string | null {
+  const state =
+    condition.modifier === "NOT_NULL"
+      ? t(intl, "mangaTools.filter.manga.marked")
+      : condition.modifier === "IS_NULL"
+        ? t(intl, "mangaTools.filter.manga.unmarked")
+        : null;
+  if (state === null) return null;
+
+  return intl.formatMessage(
+    { id: "criterion_modifier.format_string" },
+    {
+      criterion: t(intl, "mangaTools.manga.marked"),
+      modifierString: message(intl, "criterion_modifier.equals", "is"),
+      valueString: state,
+    }
+  );
+}
+
+/**
+ * One condition's tag sentence, for whichever of this plugin's fields it names.
+ *
+ * Dispatches on the field, because the three fields share one criterion and so
+ * one criterion can carry conditions for all three. Null for a condition naming
+ * a field this plugin does not own, or a modifier it has no wording for, so a
+ * hand-built condition keeps Stash's wording rather than being given one that
+ * would say something else.
+ */
+export function conditionLabel(
+  intl: MangaToolsIntl,
+  condition: MangaToolsCustomFieldCondition
+): string | null {
+  const field = NS.ownField(condition.field);
+  if (field === NS.FIELD_NAME) return languageConditionLabel(intl, condition);
+  if (field === NS.CENSORSHIP_FIELD_NAME)
+    return censorshipConditionLabel(intl, condition);
+  if (field === NS.MANGA_FIELD_NAME)
+    return mangaConditionLabel(intl, condition);
+  return null;
 }
 
 /**
@@ -620,6 +699,281 @@ function applyLanguage(
   history.replace(Object.assign({}, history.location, { search: search }));
 }
 
+// ── Censorship: the language filter's shape, on the censorship field ──────
+// The censorship filter is the language filter exactly — (Any)/(None) modifiers
+// plus include/exclude lists of its two values — so its helpers mirror the
+// language ones above, swapping the field and the value names. The operations on
+// a selection (toggleIncluded and the rest) are shared verbatim, because they
+// never ask which field the codes belong to.
+
+/** Is this condition about the censorship field? */
+function isCensorshipCondition(
+  condition: MangaToolsCustomFieldCondition
+): boolean {
+  return (
+    !!condition && NS.ownField(condition.field) === NS.CENSORSHIP_FIELD_NAME
+  );
+}
+
+/** Is this criterion, as a whole, the censorship filter? See isLanguageCriterion. */
+function isCensorshipCriterion(
+  criterion: MangaToolsFilterCriterion | null
+): boolean {
+  const conditions = criterion?.value || [];
+  if (!conditions.length) return false;
+
+  for (let i = 0; i < conditions.length; i++) {
+    if (!isCensorshipCondition(conditions[i])) return false;
+  }
+
+  return true;
+}
+
+/** The filter's criterion, if it is ours and nothing else's */
+function censorshipCriterionOf(
+  filter: MangaToolsFilterModel
+): MangaToolsFilterCriterion | null {
+  const criterion = customFieldsCriterion(filter);
+  return criterion && isCensorshipCriterion(criterion) ? criterion : null;
+}
+
+/** Reads the censorship part of the filter, ignoring whatever else it holds. */
+function readCensorshipFilter(
+  filter: MangaToolsFilterModel
+): MangaToolsLanguageSelection {
+  const criterion = customFieldsCriterion(filter);
+  if (!criterion?.value) return EMPTY_SELECTION;
+
+  const selection: MangaToolsLanguageSelection = {
+    modifier: "",
+    included: [],
+    excluded: [],
+  };
+
+  criterion.value.forEach((condition) => {
+    if (!isCensorshipCondition(condition)) return;
+
+    if (condition.modifier === "NOT_NULL") selection.modifier = "any";
+    else if (condition.modifier === "IS_NULL") selection.modifier = "none";
+    else if (condition.modifier === "EQUALS") {
+      selection.included = conditionValues(condition);
+    } else if (condition.modifier === "NOT_EQUALS") {
+      selection.excluded = conditionValues(condition);
+    }
+  });
+
+  return selection;
+}
+
+/** The conditions a censorship selection turns into. See selectionConditions. */
+function censorshipSelectionConditions(
+  selection: MangaToolsLanguageSelection
+): MangaToolsCustomFieldCondition[] {
+  if (selection.modifier === "any") {
+    return [{ field: NS.CENSORSHIP_FIELD_NAME, modifier: "NOT_NULL" }];
+  }
+  if (selection.modifier === "none") {
+    return [{ field: NS.CENSORSHIP_FIELD_NAME, modifier: "IS_NULL" }];
+  }
+
+  const conditions: MangaToolsCustomFieldCondition[] = [];
+  if (selection.included.length) {
+    conditions.push({
+      field: NS.CENSORSHIP_FIELD_NAME,
+      modifier: "EQUALS",
+      value: selection.included.slice(),
+    });
+  }
+  if (selection.excluded.length) {
+    conditions.push({
+      field: NS.CENSORSHIP_FIELD_NAME,
+      modifier: "NOT_EQUALS",
+      value: selection.excluded.slice(),
+    });
+  }
+  return conditions;
+}
+
+/** The query parameters for the filter with this censorship selection applied. */
+function censorshipFilterQuery(
+  filter: MangaToolsFilterModel,
+  selection: MangaToolsLanguageSelection
+): string | null {
+  if (!filter || typeof filter.clone !== "function") return null;
+
+  // Attached to the same custom-fields criterion the language filter uses — there
+  // is one criterion per field, not one per type, so the censorship conditions are
+  // merged into whichever criterion is already there (or created) rather than a
+  // second.
+  const options = filter.options?.criterionOptions || [];
+  let option: MangaToolsCriterionOption | null = null;
+  for (let i = 0; i < options.length; i++) {
+    if (options[i].type === CUSTOM_FIELDS_TYPE) option = options[i];
+  }
+  if (!option) return null;
+  const criterionOption = option;
+
+  const next = filter.clone();
+  let criterion = customFieldsCriterion(next);
+
+  const kept: MangaToolsCustomFieldCondition[] = [];
+  if (criterion?.value) {
+    for (let j = 0; j < criterion.value.length; j++) {
+      if (!isCensorshipCondition(criterion.value[j]))
+        kept.push(criterion.value[j]);
+    }
+  }
+
+  const conditions = kept.concat(censorshipSelectionConditions(selection));
+
+  if (!conditions.length) {
+    next.criteria = (next.criteria || []).filter((c) => c !== criterion);
+  } else {
+    if (!criterion) {
+      criterion = criterionOption.makeCriterion();
+      next.criteria = (next.criteria || []).concat([criterion]);
+    }
+    criterion.value = conditions;
+  }
+
+  return next.makeQueryParameters();
+}
+
+/** Reports a censorship change the way applyLanguage does, by replacing the URL. */
+function applyCensorship(
+  filter: MangaToolsFilterModel,
+  history: MangaToolsHistory,
+  selection: MangaToolsLanguageSelection
+): void {
+  const search = censorshipFilterQuery(filter, selection);
+  if (search === null) {
+    console.error(
+      "[mangaTools] this list has no custom-fields filter, so the censorship filter is unavailable"
+    );
+    return;
+  }
+
+  history.replace(Object.assign({}, history.location, { search: search }));
+}
+
+// ── Manga mark: a boolean filter, like Stash's organised ──────────────────
+// The mark is a presence, so the filter is one choice among two — marked or
+// unmarked — plus "neither asked for". No include/exclude, no search box: two
+// values need neither.
+
+/** Is this condition about the manga mark? */
+function isMangaCondition(condition: MangaToolsCustomFieldCondition): boolean {
+  return !!condition && NS.ownField(condition.field) === NS.MANGA_FIELD_NAME;
+}
+
+/** Is this criterion, as a whole, the manga filter? See isLanguageCriterion. */
+function isMangaCriterion(
+  criterion: MangaToolsFilterCriterion | null
+): boolean {
+  const conditions = criterion?.value || [];
+  if (!conditions.length) return false;
+
+  for (let i = 0; i < conditions.length; i++) {
+    if (!isMangaCondition(conditions[i])) return false;
+  }
+
+  return true;
+}
+
+/** The filter's criterion, if it is ours and nothing else's */
+function mangaCriterionOf(
+  filter: MangaToolsFilterModel
+): MangaToolsFilterCriterion | null {
+  const criterion = customFieldsCriterion(filter);
+  return criterion && isMangaCriterion(criterion) ? criterion : null;
+}
+
+/** Reads the manga mark's state from the filter. */
+function readMangaFilter(filter: MangaToolsFilterModel): MangaToolsMangaState {
+  const criterion = customFieldsCriterion(filter);
+  if (!criterion?.value) return "";
+
+  let state: MangaToolsMangaState = "";
+  criterion.value.forEach((condition) => {
+    if (!isMangaCondition(condition)) return;
+
+    if (condition.modifier === "NOT_NULL") state = "marked";
+    else if (condition.modifier === "IS_NULL") state = "unmarked";
+  });
+
+  return state;
+}
+
+/** The condition a manga state turns into, or none for "not asked". */
+function mangaSelectionConditions(
+  state: MangaToolsMangaState
+): MangaToolsCustomFieldCondition[] {
+  if (state === "marked") {
+    return [{ field: NS.MANGA_FIELD_NAME, modifier: "NOT_NULL" }];
+  }
+  if (state === "unmarked") {
+    return [{ field: NS.MANGA_FIELD_NAME, modifier: "IS_NULL" }];
+  }
+  return [];
+}
+
+/** The query parameters for the filter with this manga state applied. */
+function mangaFilterQuery(
+  filter: MangaToolsFilterModel,
+  state: MangaToolsMangaState
+): string | null {
+  if (!filter || typeof filter.clone !== "function") return null;
+
+  const options = filter.options?.criterionOptions || [];
+  let option: MangaToolsCriterionOption | null = null;
+  for (let i = 0; i < options.length; i++) {
+    if (options[i].type === CUSTOM_FIELDS_TYPE) option = options[i];
+  }
+  if (!option) return null;
+  const criterionOption = option;
+
+  const next = filter.clone();
+  let criterion = customFieldsCriterion(next);
+
+  const kept: MangaToolsCustomFieldCondition[] = [];
+  if (criterion?.value) {
+    for (let j = 0; j < criterion.value.length; j++) {
+      if (!isMangaCondition(criterion.value[j])) kept.push(criterion.value[j]);
+    }
+  }
+
+  const conditions = kept.concat(mangaSelectionConditions(state));
+
+  if (!conditions.length) {
+    next.criteria = (next.criteria || []).filter((c) => c !== criterion);
+  } else {
+    if (!criterion) {
+      criterion = criterionOption.makeCriterion();
+      next.criteria = (next.criteria || []).concat([criterion]);
+    }
+    criterion.value = conditions;
+  }
+
+  return next.makeQueryParameters();
+}
+
+/** Reports a manga change the way applyLanguage does, by replacing the URL. */
+function applyManga(
+  filter: MangaToolsFilterModel,
+  history: MangaToolsHistory,
+  state: MangaToolsMangaState
+): void {
+  const search = mangaFilterQuery(filter, state);
+  if (search === null) {
+    console.error(
+      "[mangaTools] this list has no custom-fields filter, so the manga filter is unavailable"
+    );
+    return;
+  }
+
+  history.replace(Object.assign({}, history.location, { search: search }));
+}
+
 // Published on the namespace alongside the rest of the plugin's pure logic, so
 // the smoke tests can exercise the read/merge rules against a stub filter model
 // without rendering anything.
@@ -633,9 +987,15 @@ NS.conditionLabel = conditionLabel;
 NS.tagLabels = tagLabels;
 NS.readLanguageFilter = readLanguageFilter;
 NS.languageFilterQuery = languageFilterQuery;
+NS.readCensorshipFilter = readCensorshipFilter;
+NS.censorshipFilterQuery = censorshipFilterQuery;
+NS.readMangaFilter = readMangaFilter;
+NS.mangaFilterQuery = mangaFilterQuery;
 NS.registerLanguageCriterionOption = registerLanguageCriterionOption;
 NS.adoptLanguageCriterion = adoptLanguageCriterion;
 NS.relabelTags = relabelTags;
+NS.relabelCensorshipTags = relabelCensorshipTags;
+NS.relabelMangaTags = relabelMangaTags;
 NS.manageDialogTags = manageDialogTags;
 NS.ownTagLabels = ownTagLabels;
 NS.clickedTagRemove = clickedTagRemove;
@@ -648,6 +1008,11 @@ function fieldLabel(intl: MangaToolsIntl): string {
     id: "config.ui.language.heading",
     defaultMessage: "Language",
   });
+}
+
+/** The censorship field's own label — this plugin's word, since Stash has none */
+function censorshipHeading(intl: MangaToolsIntl): string {
+  return t(intl, "mangaTools.censorship.heading");
 }
 
 /** A regional flag, drawn by flag-icons' CSS — the same markup the dropdowns use */
@@ -766,6 +1131,8 @@ function LanguageRow(props: {
   state: "candidate" | "included" | "excluded";
   variant: "sidebar" | "dialog";
   flag?: string | null;
+  /** A leading element drawn where a flag would go — the censorship chess icon. */
+  leading?: ReactElement | null;
   modifier?: boolean;
   canExclude?: boolean;
   onClick: () => void;
@@ -830,7 +1197,11 @@ function LanguageRow(props: {
             }
             icon={icon}
           />
-          {props.flag ? <Flag flag={props.flag} /> : null}
+          {props.leading != null ? (
+            props.leading
+          ) : props.flag ? (
+            <Flag flag={props.flag} />
+          ) : null}
           {sidebar ? (
             <span className={"TruncatedText inline " + labelClass}>
               {props.label}
@@ -889,11 +1260,15 @@ const TAG_SELECTOR = ".filter-tags .tag-item";
  */
 const TAG_MARK = "data-manga-tools-language";
 
+/** The same mark, per field: one attribute each, so a re-worded tag stays recognisable. */
+const CENSORSHIP_TAG_MARK = "data-manga-tools-censorship";
+const MANGA_TAG_MARK = "data-manga-tools-manga";
+
 /** And this one, on the tags this plugin draws itself, so it never mistakes them for Stash's */
 const OWN_TAG_MARK = "data-manga-tools-own-tag";
 
 /**
- * Is this tag Stash's tag for the language criterion?
+ * Is this tag Stash's tag for a criterion of ours?
  *
  * Recognised by its text, there being no attribute on a tag saying which criterion
  * it came from. Every one of Stash's formats opens with the field name and then a
@@ -903,42 +1278,72 @@ const OWN_TAG_MARK = "data-manga-tools-own-tag";
  * run of characters *and* a space. See TAG_MARK for the tag that has already been
  * re-worded and so no longer says that.
  */
-function isLanguageTag(tag: Element): boolean {
+function isFieldTag(tag: Element, fieldName: string, mark: string): boolean {
   // The label is the tag's first child — `{label}` ahead of the ✗ button.
   const text = tag.firstChild;
   if (text?.nodeType !== 3 /* TEXT_NODE */) return false;
 
   const value = String(text.nodeValue).trim();
-  if (tag.getAttribute(TAG_MARK) === value) return true;
+  if (tag.getAttribute(mark) === value) return true;
 
-  const prefix = NS.FIELD_NAME.toLowerCase() + " ";
+  const prefix = fieldName.toLowerCase() + " ";
   return value.toLowerCase().indexOf(prefix) === 0;
 }
 
-/** The text node holding a language tag's label */
+/** Is this tag Stash's tag for the language criterion? */
+function isLanguageTag(tag: Element): boolean {
+  return isFieldTag(tag, NS.FIELD_NAME, TAG_MARK);
+}
+
+/** Is this tag Stash's tag for the censorship criterion? */
+function isCensorshipTag(tag: Element): boolean {
+  return isFieldTag(tag, NS.CENSORSHIP_FIELD_NAME, CENSORSHIP_TAG_MARK);
+}
+
+/** Is this tag Stash's tag for the manga criterion? */
+function isMangaTag(tag: Element): boolean {
+  return isFieldTag(tag, NS.MANGA_FIELD_NAME, MANGA_TAG_MARK);
+}
+
+/** The text node holding a tag's label */
 function tagText(tag: Element): Node {
   return tag.firstChild as Node;
 }
 
 /**
- * The language tags in the list's own row — that is, everything outside the
- * dialog.
+ * The tags in the list's own row — that is, everything outside the dialog — that
+ * a given predicate recognises.
  *
  * The dialog's row is excluded on purpose, because the two rows mean different
  * things: this one reports the filter the list is *applied* to, which is what the
  * labels this plugin builds describe, while the dialog's reports the dialog's
  * working copy, which may be ahead of it. See manageDialogTags for that one.
  */
-function listLanguageTags(): Element[] {
+function listFieldTags(isField: (tag: Element) => boolean): Element[] {
   const all = document.querySelectorAll(TAG_SELECTOR);
   const ours: Element[] = [];
 
   for (let i = 0; i < all.length; i++) {
     if (all[i].closest(".edit-filter-dialog")) continue;
-    if (isLanguageTag(all[i])) ours.push(all[i]);
+    if (isField(all[i])) ours.push(all[i]);
   }
 
   return ours;
+}
+
+/** The language tags in the list's own row */
+function listLanguageTags(): Element[] {
+  return listFieldTags(isLanguageTag);
+}
+
+/** The censorship tags in the list's own row */
+function listCensorshipTags(): Element[] {
+  return listFieldTags(isCensorshipTag);
+}
+
+/** The manga tags in the list's own row */
+function listMangaTags(): Element[] {
+  return listFieldTags(isMangaTag);
 }
 
 /**
@@ -967,11 +1372,11 @@ function dialogLanguageTags(): HTMLElement[] {
   return ours;
 }
 
-/** Writes labels into tags, in order, one per tag */
-function writeTagLabels(tags: Element[], labels: string[]): void {
+/** Writes labels into tags, in order, one per tag, under the given mark */
+function writeTagLabels(tags: Element[], labels: string[], mark: string): void {
   for (let i = 0; i < tags.length && i < labels.length; i++) {
     tagText(tags[i]).nodeValue = labels[i];
-    tags[i].setAttribute(TAG_MARK, labels[i]);
+    tags[i].setAttribute(mark, labels[i]);
   }
 }
 
@@ -1006,7 +1411,17 @@ function writeTagLabels(tags: Element[], labels: string[]): void {
  * tag for each of the criterion's conditions, in their order.
  */
 function relabelTags(labels: string[]): void {
-  writeTagLabels(listLanguageTags(), labels);
+  writeTagLabels(listLanguageTags(), labels, TAG_MARK);
+}
+
+/** Re-words the censorship tags in the list's row. See relabelTags. */
+function relabelCensorshipTags(labels: string[]): void {
+  writeTagLabels(listCensorshipTags(), labels, CENSORSHIP_TAG_MARK);
+}
+
+/** Re-words the manga tags in the list's row. See relabelTags. */
+function relabelMangaTags(labels: string[]): void {
+  writeTagLabels(listMangaTags(), labels, MANGA_TAG_MARK);
 }
 
 /** Class of the box the dialog's card is drawn in, inside Stash's editor area */
@@ -2048,6 +2463,391 @@ export function SidebarLanguageFilter(props: {
                   onExclude={() => {
                     toggleExclude(o.value);
                     setQuery("");
+                  }}
+                />
+              ))}
+            </ul>
+          </div>
+        </div>
+      </Bootstrap.Collapse>
+    </div>
+  );
+
+  return PluginApi.ReactDOM.createPortal(section, host);
+}
+
+/** The open/closed keys for the two new sections, beside the language one's */
+const CENSORSHIP_SECTION_STATE_KEY = "mangaToolsCensorshipOpen";
+const MANGA_SECTION_STATE_KEY = "mangaToolsMangaOpen";
+
+/** The chess icon for a censorship value, drawn where a language row draws its flag */
+function censorshipLeading(value: string): ReactElement | null {
+  const Icon = PluginApi.components.Icon;
+  const icon = NS.censorshipIcon(value);
+  return icon ? <Icon className="fa-fw" icon={icon} /> : null;
+}
+
+/** The censorship field's two values as options, in the order censorship.tsx lists them */
+function censorshipOptions(intl: MangaToolsIntl): MangaToolsOption[] {
+  return NS.CENSORSHIP_VALUES.map((value) => ({
+    value,
+    label: NS.censorshipLabel(intl, value),
+    // No flag: the row draws a chess piece instead, via censorshipLeading.
+    flag: null,
+  }));
+}
+
+/**
+ * The gallery list's censorship filter — the language section's shape, on two
+ * fixed values.
+ *
+ * Same mechanism as the language section (read the filter, write the URL, repair
+ * the tag), minus the search box and the flag: two values need no search, and a
+ * chess piece stands in for the flag.
+ */
+export function SidebarCensorshipFilter(props: {
+  filter: MangaToolsFilterModel;
+}) {
+  const intl = PluginApi.libraries.Intl.useIntl();
+  const history = PluginApi.libraries.ReactRouterDOM.useHistory();
+
+  const openState = React.useState<boolean>(() => {
+    const state = history.location.state;
+    const stored = state ? state[CENSORSHIP_SECTION_STATE_KEY] : undefined;
+    return typeof stored === "boolean" ? stored : false;
+  });
+  const open = openState[0];
+  const setOpen = openState[1];
+
+  const bump = React.useState(0)[1];
+  const host = ensureFilterHost();
+
+  const selection = readCensorshipFilter(props.filter);
+
+  const criterion = censorshipCriterionOf(props.filter);
+  const tagLabelsFor = criterion ? tagLabels(intl, criterion) : null;
+
+  React.useLayoutEffect(() => {
+    if (tagLabelsFor) relabelCensorshipTags(tagLabelsFor);
+
+    if (ensureFilterHost() !== host) {
+      bump((v) => v + 1);
+    }
+  });
+
+  if (!host) return null;
+
+  const Bootstrap = PluginApi.libraries.Bootstrap;
+  if (!Bootstrap) {
+    console.error(
+      "[mangaTools] react-bootstrap not available, cannot draw the censorship filter"
+    );
+    return null;
+  }
+
+  const Solid = PluginApi.libraries.FontAwesomeSolid || {};
+  const Icon = PluginApi.components.Icon;
+
+  function update(next: MangaToolsLanguageSelection) {
+    applyCensorship(props.filter, history, next);
+  }
+
+  // The same shared operations as the language section — the meaning of a click
+  // is defined there, so the two sections cannot drift apart.
+  function toggleInclude(value: string) {
+    update(toggleIncluded(selection, value));
+  }
+  function toggleExclude(value: string) {
+    update(toggleExcluded(selection, value));
+  }
+  function setModifier(modifier: "any" | "none") {
+    update(withModifier(selection, modifier));
+  }
+  function clearModifier() {
+    update(withoutModifier(selection));
+  }
+
+  function toggleOpen() {
+    const next = !open;
+    setOpen(next);
+    history.replace(
+      Object.assign({}, history.location, {
+        state: Object.assign({}, history.location.state, {
+          [CENSORSHIP_SECTION_STATE_KEY]: next,
+        }),
+      })
+    );
+  }
+
+  const options = censorshipOptions(intl);
+  const chosen = options.filter(
+    (o) => selection.included.indexOf(o.value) !== -1
+  );
+  const excludedChosen = options.filter(
+    (o) => selection.excluded.indexOf(o.value) !== -1
+  );
+  const candidates = options.filter(
+    (o) =>
+      selection.included.indexOf(o.value) === -1 &&
+      selection.excluded.indexOf(o.value) === -1
+  );
+
+  const showModifiers = isEmptySelection(selection);
+
+  const chosenItems: ReactElement[] = [];
+  if (selection.modifier) {
+    chosenItems.push(
+      <li className="selected-object modifier-object" key="modifier">
+        <a tabIndex={0} onClick={clearModifier}>
+          <div className="label-group">
+            <Icon className="fa-fw include-button" icon={Solid.faCheckCircle} />
+            <span className="TruncatedText inline selected-object-label">
+              {"(" +
+                message(
+                  intl,
+                  "criterion_modifier_values." + selection.modifier,
+                  selection.modifier === "any" ? "Any" : "None"
+                ) +
+                ")"}
+            </span>
+          </div>
+        </a>
+      </li>
+    );
+  }
+  chosen.forEach((o) => {
+    chosenItems.push(
+      <LanguageRow
+        variant="sidebar"
+        key={"in-" + o.value}
+        label={o.label}
+        leading={censorshipLeading(o.value)}
+        state="included"
+        onClick={() => {
+          toggleInclude(o.value);
+        }}
+      />
+    );
+  });
+
+  const section = (
+    <div className="sidebar-section sidebar-list-filter">
+      <div className="collapse-header">
+        <Bootstrap.Button
+          onClick={toggleOpen}
+          className="minimal collapse-button"
+        >
+          <Icon
+            icon={open ? Solid.faChevronDown : Solid.faChevronRight}
+            fixedWidth
+          />
+          <span>{censorshipHeading(intl)}</span>
+        </Bootstrap.Button>
+      </div>
+
+      {chosenItems.length ? (
+        <ul className="selected-list">{chosenItems}</ul>
+      ) : null}
+      {excludedChosen.length ? (
+        <ul className="selected-list excluded-list">
+          {excludedChosen.map((o) => (
+            <LanguageRow
+              variant="sidebar"
+              key={"ex-" + o.value}
+              label={o.label}
+              leading={censorshipLeading(o.value)}
+              state="excluded"
+              onClick={() => {
+                toggleExclude(o.value);
+              }}
+            />
+          ))}
+        </ul>
+      ) : null}
+
+      <Bootstrap.Collapse in={open} mountOnEnter unmountOnExit>
+        <div>
+          <div className="queryable-candidate-list">
+            <ul>
+              {showModifiers ? (
+                <LanguageRow
+                  variant="sidebar"
+                  label={
+                    "(" +
+                    message(intl, "criterion_modifier_values.any", "Any") +
+                    ")"
+                  }
+                  state="candidate"
+                  modifier
+                  canExclude={false}
+                  onClick={() => {
+                    setModifier("any");
+                  }}
+                />
+              ) : null}
+              {showModifiers ? (
+                <LanguageRow
+                  variant="sidebar"
+                  label={
+                    "(" +
+                    message(intl, "criterion_modifier_values.none", "None") +
+                    ")"
+                  }
+                  state="candidate"
+                  modifier
+                  canExclude={false}
+                  onClick={() => {
+                    setModifier("none");
+                  }}
+                />
+              ) : null}
+              {candidates.map((o) => (
+                <LanguageRow
+                  variant="sidebar"
+                  key={o.value}
+                  label={o.label}
+                  leading={censorshipLeading(o.value)}
+                  state="candidate"
+                  canExclude
+                  onClick={() => {
+                    toggleInclude(o.value);
+                  }}
+                  onExclude={() => {
+                    toggleExclude(o.value);
+                  }}
+                />
+              ))}
+            </ul>
+          </div>
+        </div>
+      </Bootstrap.Collapse>
+    </div>
+  );
+
+  return PluginApi.ReactDOM.createPortal(section, host);
+}
+
+/**
+ * The gallery list's manga filter — a boolean section like Stash's organised.
+ *
+ * Two values, one of which may be chosen. The chosen one sits above the fold and
+ * the other below it, and choosing one clears the other: single-select, no
+ * include/exclude, no search box. The mark is a presence, so "marked" is NOT_NULL
+ * and "unmarked" is IS_NULL.
+ */
+export function SidebarMangaFilter(props: { filter: MangaToolsFilterModel }) {
+  const intl = PluginApi.libraries.Intl.useIntl();
+  const history = PluginApi.libraries.ReactRouterDOM.useHistory();
+
+  const openState = React.useState<boolean>(() => {
+    const state = history.location.state;
+    const stored = state ? state[MANGA_SECTION_STATE_KEY] : undefined;
+    return typeof stored === "boolean" ? stored : false;
+  });
+  const open = openState[0];
+  const setOpen = openState[1];
+
+  const bump = React.useState(0)[1];
+  const host = ensureFilterHost();
+
+  const state = readMangaFilter(props.filter);
+
+  const criterion = mangaCriterionOf(props.filter);
+  const tagLabelsFor = criterion ? tagLabels(intl, criterion) : null;
+
+  React.useLayoutEffect(() => {
+    if (tagLabelsFor) relabelMangaTags(tagLabelsFor);
+
+    if (ensureFilterHost() !== host) {
+      bump((v) => v + 1);
+    }
+  });
+
+  if (!host) return null;
+
+  const Bootstrap = PluginApi.libraries.Bootstrap;
+  if (!Bootstrap) {
+    console.error(
+      "[mangaTools] react-bootstrap not available, cannot draw the manga filter"
+    );
+    return null;
+  }
+
+  const Solid = PluginApi.libraries.FontAwesomeSolid || {};
+  const Icon = PluginApi.components.Icon;
+
+  const options: { value: MangaToolsMangaState; label: string }[] = [
+    { value: "marked", label: t(intl, "mangaTools.filter.manga.marked") },
+    { value: "unmarked", label: t(intl, "mangaTools.filter.manga.unmarked") },
+  ];
+
+  // Choosing the chosen value clears it; choosing the other moves the mark.
+  function choose(value: MangaToolsMangaState) {
+    applyManga(props.filter, history, state === value ? "" : value);
+  }
+
+  function toggleOpen() {
+    const next = !open;
+    setOpen(next);
+    history.replace(
+      Object.assign({}, history.location, {
+        state: Object.assign({}, history.location.state, {
+          [MANGA_SECTION_STATE_KEY]: next,
+        }),
+      })
+    );
+  }
+
+  // Stash's boolean filter shows the chosen value above the fold and the other
+  // below it, so the two trade places rather than both sitting in one list.
+  const chosen = options.filter((o) => o.value === state);
+  const candidates = options.filter((o) => o.value !== state);
+
+  const section = (
+    <div className="sidebar-section sidebar-list-filter">
+      <div className="collapse-header">
+        <Bootstrap.Button
+          onClick={toggleOpen}
+          className="minimal collapse-button"
+        >
+          <Icon
+            icon={open ? Solid.faChevronDown : Solid.faChevronRight}
+            fixedWidth
+          />
+          <span>{t(intl, "mangaTools.manga.marked")}</span>
+        </Bootstrap.Button>
+      </div>
+
+      {chosen.length ? (
+        <ul className="selected-list">
+          {chosen.map((o) => (
+            <LanguageRow
+              variant="sidebar"
+              key={o.value}
+              label={o.label}
+              state="included"
+              canExclude={false}
+              onClick={() => {
+                choose(o.value);
+              }}
+            />
+          ))}
+        </ul>
+      ) : null}
+
+      <Bootstrap.Collapse in={open} mountOnEnter unmountOnExit>
+        <div>
+          <div className="queryable-candidate-list">
+            <ul>
+              {candidates.map((o) => (
+                <LanguageRow
+                  variant="sidebar"
+                  key={o.value}
+                  label={o.label}
+                  state="candidate"
+                  canExclude={false}
+                  onClick={() => {
+                    choose(o.value);
                   }}
                 />
               ))}

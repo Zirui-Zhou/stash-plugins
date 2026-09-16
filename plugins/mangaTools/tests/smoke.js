@@ -1104,8 +1104,9 @@ assert.ok(patchedBefore.GalleryList, "missing patch: GalleryList (before)");
 assert.ok(patched.GalleryList, "missing patch: GalleryList (instead)");
 
 // The wrapper has to hand the list through untouched — the plugin adds siblings,
-// it does not replace anything. Two of them now: the sidebar section, and the
-// list the filter dialog draws inside its own card.
+// it does not replace anything. Five now: three sidebar sections (language,
+// censorship, manga), the list the filter dialog draws inside its own card, and
+// the original list at the end.
 const listModel = makeFilterModel();
 const listEl = call("GalleryList", {
   filter: listModel,
@@ -1116,16 +1117,32 @@ assert.strictEqual(
   React.Fragment,
   "GalleryList should be wrapped, not replaced"
 );
-const [sidebarFilter, dialogFilter, listOriginal] = listEl.props.children;
+const [
+  sidebarFilter,
+  censorshipFilter,
+  mangaFilter,
+  dialogFilter,
+  listOriginal,
+] = listEl.props.children;
 assert.strictEqual(
   typeof sidebarFilter.type,
   "function",
-  "the sidebar section as a sibling"
+  "the language section as a sibling"
+);
+assert.strictEqual(
+  typeof censorshipFilter.type,
+  "function",
+  "the censorship section as another"
+);
+assert.strictEqual(
+  typeof mangaFilter.type,
+  "function",
+  "and the manga section as a third"
 );
 assert.strictEqual(
   typeof dialogFilter.type,
   "function",
-  "and the dialog's list as another"
+  "and the dialog's list as a fourth"
 );
 assert.strictEqual(
   listOriginal.type,
@@ -2274,6 +2291,210 @@ console.log(
   "✓ filter conditions (read any/none/include/exclude, write, merge, clear, not mutated)"
 );
 
+// ── 10c2. Censorship and manga: the same rules, on their own fields ──
+// The censorship filter is the language filter's shape on a second field; the
+// manga filter is a boolean on a third. All three share the one custom-fields
+// criterion, so what is worth testing is that each field reads and writes its own
+// conditions and leaves the others' alone.
+const censorshipConditionsOf = (modifier, value) => {
+  const c = { field: "plugin.mangaTools.censorship", modifier };
+  if (value !== undefined) c.value = value;
+  return c;
+};
+
+assert.deepStrictEqual(
+  NS.readCensorshipFilter(makeFilterModel()),
+  sel(),
+  "a filter with no criteria means no censorship selection"
+);
+assert.deepStrictEqual(
+  NS.readCensorshipFilter(
+    makeFilterModel([
+      customFieldsCriterion([censorshipConditionsOf("NOT_NULL")]),
+    ])
+  ),
+  sel("any"),
+  "NOT_NULL is the (Any) state for censorship"
+);
+assert.deepStrictEqual(
+  NS.readCensorshipFilter(
+    makeFilterModel([
+      customFieldsCriterion([censorshipConditionsOf("IS_NULL")]),
+    ])
+  ),
+  sel("none"),
+  "IS_NULL is the (None) state for censorship"
+);
+assert.deepStrictEqual(
+  NS.readCensorshipFilter(
+    makeFilterModel([
+      customFieldsCriterion([censorshipConditionsOf("EQUALS", ["censored"])]),
+    ])
+  ),
+  sel("", ["censored"]),
+  "EQUALS is an included censorship value"
+);
+assert.deepStrictEqual(
+  NS.readCensorshipFilter(
+    makeFilterModel([
+      customFieldsCriterion([
+        censorshipConditionsOf("NOT_EQUALS", ["uncensored"]),
+      ]),
+    ])
+  ),
+  sel("", [], ["uncensored"]),
+  "NOT_EQUALS is an excluded censorship value"
+);
+assert.deepStrictEqual(
+  NS.readCensorshipFilter(
+    makeFilterModel([
+      customFieldsCriterion([
+        censorshipConditionsOf("EQUALS", ["censored"]),
+        conditionsOf("EQUALS", ["ja"]),
+      ]),
+    ])
+  ),
+  sel("", ["censored"]),
+  "the language field's condition is not a censorship selection"
+);
+
+// writing: the censorship conditions replace only themselves
+function writeCensorship(selection, conditions) {
+  const model = makeFilterModel(
+    conditions === undefined ? [] : [customFieldsCriterion(conditions)]
+  );
+  encodedCriteria.length = 0;
+  const result = NS.censorshipFilterQuery(model, selection);
+  return {
+    result,
+    criteria: encodedCriteria.length
+      ? encodedCriteria[encodedCriteria.length - 1]
+      : null,
+  };
+}
+let r = writeCensorship(sel("", ["censored"]));
+assert.ok(r.result, "a censorship selection should produce query parameters");
+assert.deepStrictEqual(
+  languageConditions(r.criteria),
+  [censorshipConditionsOf("EQUALS", ["censored"])],
+  "an empty filter becomes one censorship condition"
+);
+assert.strictEqual(
+  r.criteria[0].criterionOption.type,
+  "custom_fields",
+  "created under the custom-fields identity, since no censorship card is registered"
+);
+
+// …and it keeps the language condition beside its own
+r = writeCensorship(sel("", [], ["uncensored"]), [
+  conditionsOf("EQUALS", ["ja"]),
+]);
+assert.deepStrictEqual(
+  languageConditions(r.criteria),
+  [
+    conditionsOf("EQUALS", ["ja"]),
+    censorshipConditionsOf("NOT_EQUALS", ["uncensored"]),
+  ],
+  "the censorship write keeps the language condition and adds its own"
+);
+
+// clearing drops only the censorship condition
+r = writeCensorship(sel(), [
+  conditionsOf("EQUALS", ["ja"]),
+  censorshipConditionsOf("EQUALS", ["censored"]),
+]);
+assert.deepStrictEqual(
+  languageConditions(r.criteria),
+  [conditionsOf("EQUALS", ["ja"])],
+  "an empty censorship selection removes its condition and keeps the language's"
+);
+
+// ── manga: a single choice among two ──
+const mangaConditionsOf = (modifier) => ({
+  field: "plugin.mangaTools.manga",
+  modifier,
+});
+assert.strictEqual(
+  NS.readMangaFilter(makeFilterModel()),
+  "",
+  "no criteria means no manga state"
+);
+assert.strictEqual(
+  NS.readMangaFilter(
+    makeFilterModel([customFieldsCriterion([mangaConditionsOf("NOT_NULL")])])
+  ),
+  "marked",
+  "NOT_NULL is the marked state"
+);
+assert.strictEqual(
+  NS.readMangaFilter(
+    makeFilterModel([customFieldsCriterion([mangaConditionsOf("IS_NULL")])])
+  ),
+  "unmarked",
+  "IS_NULL is the unmarked state"
+);
+assert.strictEqual(
+  NS.readMangaFilter(
+    makeFilterModel([
+      customFieldsCriterion([
+        conditionsOf("EQUALS", ["ja"]),
+        mangaConditionsOf("NOT_NULL"),
+      ]),
+    ])
+  ),
+  "marked",
+  "the manga state is read beside another field's condition"
+);
+
+function writeManga(state, conditions) {
+  const model = makeFilterModel(
+    conditions === undefined ? [] : [customFieldsCriterion(conditions)]
+  );
+  encodedCriteria.length = 0;
+  const result = NS.mangaFilterQuery(model, state);
+  return {
+    result,
+    criteria: encodedCriteria.length
+      ? encodedCriteria[encodedCriteria.length - 1]
+      : null,
+  };
+}
+assert.deepStrictEqual(
+  languageConditions(writeManga("marked").criteria),
+  [mangaConditionsOf("NOT_NULL")],
+  "marked becomes NOT_NULL"
+);
+assert.deepStrictEqual(
+  languageConditions(writeManga("unmarked").criteria),
+  [mangaConditionsOf("IS_NULL")],
+  "unmarked becomes IS_NULL"
+);
+assert.deepStrictEqual(
+  writeManga("", [mangaConditionsOf("NOT_NULL")]).criteria,
+  [],
+  "clearing the manga state drops the criterion entirely"
+);
+
+// the three compose: language + censorship + manga on the one criterion
+assert.deepStrictEqual(
+  languageConditions(
+    writeManga("marked", [
+      conditionsOf("EQUALS", ["ja"]),
+      censorshipConditionsOf("EQUALS", ["censored"]),
+    ]).criteria
+  ),
+  [
+    conditionsOf("EQUALS", ["ja"]),
+    censorshipConditionsOf("EQUALS", ["censored"]),
+    mangaConditionsOf("NOT_NULL"),
+  ],
+  "the manga write keeps both other fields and adds its own"
+);
+
+console.log(
+  "✓ censorship & manga filters (read and write, composed on the one criterion)"
+);
+
 // ── 10d. The sidebar section itself ────────────────────────────────
 // Stand in for the gallery list's sidebar, in the shape the real one has: the
 // saved-filters section, then Stash's own pinned-criteria sections, then the
@@ -2907,7 +3128,7 @@ const renderDialogCard = (conditions) => {
       conditions ? [customFieldsCriterion(conditions)] : []
     ),
     selectedIds: new Set(),
-  }).props.children[1];
+  }).props.children[3];
   return el.type(el.props);
 };
 renderDialogCard([
