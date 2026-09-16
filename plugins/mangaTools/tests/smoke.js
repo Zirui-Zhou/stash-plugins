@@ -3916,6 +3916,12 @@ setTimeout(() => {
     return children.find((c) => c?.__portal) || null;
   };
 
+  /** The FontAwesome name a state's icon resolved to, through the guard around it */
+  const iconNameOf = (child) => {
+    const drawn = child.type(child.props);
+    return drawn ? drawn.props.icon : null;
+  };
+
   const marked = markPortal("1");
   assert.ok(marked, "gallery 1 is marked, so its card should draw the mark");
   assert.strictEqual(
@@ -3949,7 +3955,7 @@ setTimeout(() => {
     "with the state as its tooltip, in the UI language"
   );
   assert.strictEqual(
-    marked.node.props.children.props.icon,
+    iconNameOf(marked.node.props.children),
     "faChessKnight",
     "and the knight for a censored release"
   );
@@ -3961,7 +3967,7 @@ setTimeout(() => {
     "gallery 3 is the other state"
   );
   assert.strictEqual(
-    uncensored.node.props.children.props.icon,
+    iconNameOf(uncensored.node.props.children),
     "faChessPawn",
     "which is the pawn"
   );
@@ -4085,7 +4091,7 @@ setTimeout(() => {
     "and its tooltip names the state a click moves to, not the current one"
   );
   assert.strictEqual(
-    first.drawn.node.props.children.props.icon,
+    iconNameOf(first.drawn.node.props.children),
     "faChessKnight",
     "the icon is the current state's"
   );
@@ -4172,7 +4178,7 @@ setTimeout(() => {
       "gallery's button reads as an offer rather than as a value"
   );
   assert.strictEqual(
-    unmarked.drawn.node.props.children.props.icon,
+    iconNameOf(unmarked.drawn.node.props.children),
     "faChessBoard",
     "an empty board for a gallery with nothing on it — the third member of the " +
       "same set, rather than a UI glyph the toolbar already uses for help"
@@ -4272,6 +4278,32 @@ setTimeout(() => {
   // panel is a place for these attributes, so an empty one still answers
   // "where would this go". (Worth revisiting if this ever ships: everywhere else
   // the plugin keeps an unset value quiet.)
+  // The icon lookup is by string at runtime, so a name the running Stash's
+  // FontAwesome does not have comes back undefined — and undefined handed to
+  // Stash's Icon *throws inside a render*, which takes the whole page down rather
+  // than one glyph. These names are checked against FontAwesome's documentation,
+  // which lists every version rather than the subset Stash happens to ship, so
+  // this is a real possibility and not a hypothetical one.
+  // find() calls function components as it walks, so this descends *through* the
+  // guard — which is the point: if the guard let an undefined icon through, the
+  // throw happens here rather than being invisible.
+  const iconOf = (node) => find(node, (n) => n.type === "Icon");
+  assert.ok(iconOf(panel), "a name the bundled set has draws its icon");
+
+  const board = PluginApi.libraries.FontAwesomeSolid.faChessBoard;
+  delete PluginApi.libraries.FontAwesomeSolid.faChessBoard;
+  let withoutBoard = null;
+  try {
+    withoutBoard = iconOf(panelOf({ alsoNotOurs: "x" }));
+  } finally {
+    PluginApi.libraries.FontAwesomeSolid.faChessBoard = board;
+  }
+  assert.strictEqual(
+    withoutBoard,
+    null,
+    "a name it does not have draws nothing at all, rather than throwing"
+  );
+
   const empty = panelOf({ alsoNotOurs: "x" });
   assert.ok(hasText(empty, "—"), "an unset value reads as a dash");
   assert.ok(hasText(empty, "未标注"), "and an unmarked gallery says so");
@@ -4359,18 +4391,23 @@ setTimeout(() => {
   // of Stash's tabs are reachable by keyboard, and those call the state setter
   // directly, so nothing is clicked.
   //
-  // Two observers watch document.body by this point — the filter dialog's and
-  // this one — and they are told apart by what they watch: only the tab's cares
-  // about a class changing on an element it did not draw.
-  const tabObserver = observed.find(
-    (o) => o.target === documentRoot && o.options.attributeFilter
-  );
+  // Two observers are registered by this point — the filter dialog's and this
+  // one — and they are told apart by what they watch.
+  const tabObserver = observed.find((o) => o.options.attributeFilter);
   assert.ok(tabObserver, "the tab state is watched for attribute changes");
+  assert.strictEqual(
+    tabObserver.target,
+    tabNav,
+    "and watched on the tab bar itself. A document-wide observer was tried " +
+      "first and is the wrong scope twice over: it fires on every mutation " +
+      "anywhere in Stash, and it makes this plugin's writes part of what every " +
+      "other observer on the page sees."
+  );
   assert.ok(
     observed.some(
       (o) => o.target === documentRoot && !o.options.attributeFilter
     ),
-    "…and it is not the observer the filter dialog already had"
+    "…leaving the filter dialog's own observer where it was"
   );
   detailsLink.className = "nav-link active";
   detailsLink.setAttribute("aria-selected", "true");

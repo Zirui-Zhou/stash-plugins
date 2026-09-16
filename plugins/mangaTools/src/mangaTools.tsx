@@ -174,6 +174,27 @@ function noteFired(target: string): void {
   console.info("[mangaTools] patch active: " + target);
 }
 
+/**
+ * Records whether the experimental tab could be mounted, once.
+ *
+ * The tab is the one thing here whose failure is invisible: a caller sees a
+ * missing tab, and "not injected" and "injected and then hidden" look identical
+ * from outside. Everything else the plugin does shows up on screen when it works
+ * and is silent when it does not; this is the one place worth a log line.
+ */
+let notedTabHost = false;
+
+function noteTabHost(found: boolean): void {
+  if (notedTabHost) return;
+  notedTabHost = true;
+  console.info(
+    found
+      ? "[mangaTools] manga tab: injected"
+      : "[mangaTools] manga tab: Stash's tab bar was not found, so no tab was " +
+          "added. The panel further down the details tab is unaffected."
+  );
+}
+
 // ───────────────────────────── State ─────────────────────────────
 
 /**
@@ -667,9 +688,53 @@ function LanguageBadge(props: { galleryId: string }) {
  */
 function censorshipIcon(value: string): unknown {
   const Solid = PluginApi.libraries.FontAwesomeSolid || {};
-  if (value === "censored") return Solid.faChessKnight;
-  if (value === "uncensored") return Solid.faChessPawn;
-  return Solid.faChessBoard;
+  const name = CENSORSHIP_ICONS[value] || CENSORSHIP_ICONS[""];
+  const icon = Solid[name];
+  if (!icon) {
+    // The lookup is by string, at runtime, so a name the bundled set does not
+    // have comes back undefined — and undefined handed to Stash's Icon *throws
+    // inside a render*, which takes the whole page down rather than one glyph.
+    // The names below are checked against the wrong source by nature:
+    // FontAwesome's docs list every version, not the subset this Stash ships.
+    noteMissingIcon(name);
+    return null;
+  }
+  return icon;
+}
+
+/** The one place the three icon names are written down, so the log can name them */
+const CENSORSHIP_ICONS: { [value: string]: string } = {
+  censored: "faChessKnight",
+  uncensored: "faChessPawn",
+  "": "faChessBoard",
+};
+
+/** Names already reported, so a page of galleries does not print a page of logs */
+const missingIcons: { [name: string]: boolean } = {};
+
+function noteMissingIcon(name: string): void {
+  if (missingIcons[name]) return;
+  missingIcons[name] = true;
+  console.error(
+    "[mangaTools] this Stash's FontAwesome has no " +
+      name +
+      ", so that icon is drawn as nothing. Run this in the console to see which " +
+      "names it does have: window.PluginApi.libraries.FontAwesomeSolid." +
+      name
+  );
+}
+
+/**
+ * The state's icon, or nothing at all when this Stash has no such name.
+ *
+ * A component rather than a bare `<Icon icon={censorshipIcon(...)} />`, so that a
+ * name the bundled icon set does not have costs one glyph instead of throwing
+ * through a render — which on a detail page means the page, not the icon.
+ */
+function CensorshipIcon(props: { value: string }) {
+  const Icon = PluginApi.components.Icon;
+  const icon = censorshipIcon(props.value);
+  return icon ? <Icon icon={icon} /> : null;
 }
 
 /** The plugin's own word for a state, for a tooltip or a label */
@@ -831,7 +896,6 @@ function CensorshipPopoverMark(props: { galleryId: string }) {
   // Read here rather than bound at module scope: plugin scripts can run before
   // Stash has registered its components, so a module-level read can come back
   // undefined and never recover. language-filter.tsx reads it the same way.
-  const Icon = PluginApi.components.Icon;
   const intl = PluginApi.libraries.Intl.useIntl();
   const value = storedCensorship(props.galleryId);
   const slot = value ? ensurePopoverSlot(props.galleryId) : null;
@@ -848,7 +912,7 @@ function CensorshipPopoverMark(props: { galleryId: string }) {
               className="minimal btn btn-primary manga-tools-mark"
               title={censorshipLabel(intl, value)}
             >
-              <Icon icon={censorshipIcon(value)} />
+              <CensorshipIcon value={value} />
             </button>,
             slot
           )
@@ -966,7 +1030,6 @@ function CensorshipToolbarButton(props: {
   useGlobalVersion();
   useAfterMount();
 
-  const Icon = PluginApi.components.Icon;
   const intl = PluginApi.libraries.Intl.useIntl();
   const update = PluginApi.utils.StashService.useGalleryUpdate();
 
@@ -1020,7 +1083,7 @@ function CensorshipToolbarButton(props: {
       disabled={busy}
       onClick={onClick}
     >
-      <Icon icon={censorshipIcon(mark)} />
+      <CensorshipIcon value={mark} />
     </button>,
     host
   );
@@ -1758,7 +1821,6 @@ function MangaDetailsPanel(props: { values: CustomFieldsMap }) {
   const intl = PluginApi.libraries.Intl.useIntl();
   const language = NS.describe(pickLanguage(props.values), intl.locale);
   const mark = censorshipOf(props.values);
-  const Icon = PluginApi.components.Icon;
 
   return (
     <div className="manga-tools-panel">
@@ -1784,7 +1846,7 @@ function MangaDetailsPanel(props: { values: CustomFieldsMap }) {
       </PanelRow>
 
       <PanelRow label={t(intl, "mangaTools.censorship.heading")}>
-        <Icon icon={censorshipIcon(mark)} />
+        <CensorshipIcon value={mark} />
         {mark ? " " : null}
         {censorshipLabel(intl, mark)}
       </PanelRow>
@@ -1860,13 +1922,28 @@ function firstChildElement(parent: Element): HTMLElement | null {
   return (parent.children[0] as HTMLElement | undefined) || null;
 }
 
-/** Adds or removes a class. Written out because the tests' DOM stub has no classList. */
+/**
+ * Adds or removes a class. Written out because the tests' DOM stub has no classList.
+ *
+ * **Writes nothing when there is nothing to change.** That is not a micro
+ * optimisation: this runs on classes React owns, from a MutationObserver, and a
+ * write is itself a mutation — one the observer would then be told about. Setting
+ * an attribute to the value it already has does not create a record, but relying
+ * on that would be relying on a detail; not writing at all is the guarantee.
+ */
 function toggleClass(el: Element, name: string, on: boolean): void {
   const parts = (el.className || "").split(/\s+/).filter(Boolean);
   const has = parts.indexOf(name) >= 0;
   if (on && !has) parts.push(name);
   if (!on && has) parts.splice(parts.indexOf(name), 1);
-  el.className = parts.join(" ");
+  const next = parts.join(" ");
+  if (next !== el.className) el.className = next;
+}
+
+/** As toggleClass, for the one attribute set beside these classes */
+function setFlag(el: Element, name: string, on: boolean): void {
+  const value = on ? "true" : "false";
+  if (el.getAttribute(name) !== value) el.setAttribute(name, value);
 }
 
 /** A class list with the parts that make a tab visible taken out */
@@ -1921,6 +1998,8 @@ function ensureTabHost(label: string): HTMLElement | null {
   const content = tabContentFor(nav);
   if (!content) return null;
 
+  watchTabNav(nav);
+
   // ── the nav item ──
   let item = nav.querySelector(
     "[" + TAB_MARK + '="nav"]'
@@ -1935,7 +2014,7 @@ function ensureTabHost(label: string): HTMLElement | null {
     link.setAttribute("href", "#");
     link.setAttribute("role", "tab");
     link.setAttribute("data-rb-event-key", TAB_KEY);
-    link.setAttribute("aria-selected", "false");
+    setFlag(link, "aria-selected", false);
     link.addEventListener("click", (e) => {
       if (e && typeof e.preventDefault === "function") e.preventDefault();
       tabWanted = true;
@@ -2020,21 +2099,21 @@ function syncTabState(): void {
 
   if (!tabWanted) {
     toggleClass(ourLink, "active", false);
-    ourLink.setAttribute("aria-selected", "false");
+    setFlag(ourLink, "aria-selected", false);
     toggleClass(ourPane, "active", false);
     toggleClass(ourPane, "show", false);
     return;
   }
 
   toggleClass(ourLink, "active", true);
-  ourLink.setAttribute("aria-selected", "true");
+  setFlag(ourLink, "aria-selected", true);
   toggleClass(ourPane, "active", true);
   toggleClass(ourPane, "show", true);
 
   for (const link of links) {
     if (link === ourLink) continue;
     toggleClass(link, "active", false);
-    link.setAttribute("aria-selected", "false");
+    setFlag(link, "aria-selected", false);
   }
 
   for (let i = 0; i < content.children.length; i++) {
@@ -2046,37 +2125,53 @@ function syncTabState(): void {
 }
 
 /**
- * Watches for Stash's tab state moving without this plugin's involvement.
+ * Watches Stash's tab bar for its state moving without this plugin's involvement.
  *
- * Only a class and an aria attribute are watched, and on the whole document
- * because the nav is rebuilt as the page navigates. The same shape as the
- * observer language-filter.tsx keeps for the filter dialog, for the same reason:
- * the state that matters belongs to React and no event reports it.
+ * Scoped to the nav element, deliberately. The first version watched
+ * `document.body` with `subtree`, the way the filter dialog's observer does — and
+ * that is the wrong scope twice over: it fires on every mutation anywhere in
+ * Stash (this plugin then does tree walks per keystroke of an unrelated form), and
+ * it makes this plugin's writes part of a conversation with every other observer
+ * on the page. Nothing outside the tab bar can tell this plugin anything about
+ * which tab is active.
+ *
+ * Re-attached when Stash rebuilds the nav, which it does on every navigation:
+ * `ensureTabHost` calls this with whatever nav it has just found.
  */
-let tabObserver = false;
+let tabObserver: MutationObserver | null = null;
+let watchedNav: Element | null = null;
 
-function watchTabState(): void {
-  if (tabObserver || typeof MutationObserver !== "function") return;
-  tabObserver = true;
-  const observer = new MutationObserver(() => {
+function watchTabNav(nav: Element): void {
+  if (typeof MutationObserver !== "function") return;
+  if (watchedNav === nav && tabObserver) return;
+
+  if (tabObserver) tabObserver.disconnect();
+  tabObserver = new MutationObserver(() => {
     syncTabState();
   });
-  observer.observe(document.body, {
+  tabObserver.observe(nav, {
     subtree: true,
     childList: true,
     attributes: true,
     attributeFilter: ["class", "aria-selected"],
   });
+  watchedNav = nav;
 }
 
 /** The panel, rendered into the tab this plugin added */
 function MangaTab(props: { values: CustomFieldsMap }) {
   useGlobalVersion();
   useAfterMount();
-  watchTabState();
 
   const intl = PluginApi.libraries.Intl.useIntl();
   const slot = ensureTabHost(t(intl, "mangaTools.panel.heading"));
+
+  // This is the experiment's one observable, and the only way to tell a tab that
+  // was not injected from one that was injected and then hidden: a log saying
+  // whether the anchors were found at all. Everything else about the tab is
+  // visible on screen, but "it is not there" is not.
+  noteTabHost(!!slot);
+
   if (!slot) return null;
 
   return PluginApi.ReactDOM.createPortal(
