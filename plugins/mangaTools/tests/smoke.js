@@ -4610,17 +4610,25 @@ setTimeout(() => {
   );
   assert.strictEqual(b14.host, bulkHost);
 
-  // Structure and classes are copied from the native row, so the rows line up
-  // with it. Nothing is selected yet, so only the mark is drawn.
+  // The mark is native organized-style markup (form-group wrapping a form-check,
+  // checkbox then label), not the grid columns the selects below use. Nothing is
+  // selected yet, so only the mark is drawn.
   const markRow = bulkChildren()[0];
-  assert.strictEqual(markRow.props.className, "row");
+  assert.strictEqual(markRow.props.className, "form-group");
   assert.strictEqual(markRow.props["data-field"], "manga_tools_manga");
+  const markCheck = markRow.props.children;
   assert.strictEqual(
-    markRow.props.children[0].props.className,
-    "col-form-label col-3",
-    "the label classes should be copied from the native row"
+    markCheck.props.className,
+    "form-check",
+    "the mark should be a native form-check like Stash's organized field"
   );
-  assert.strictEqual(markRow.props.children[0].props.children, "漫画");
+  const markLabel = markCheck.props.children[1];
+  assert.strictEqual(
+    markLabel.props.className,
+    "form-check-label",
+    "with the label after the checkbox"
+  );
+  assert.strictEqual(markLabel.props.children, "漫画");
 
   // ── The mark is the gate ──
   // Nothing selected reads as "not manga", so only the mark is drawn — no fields,

@@ -1970,12 +1970,13 @@ function BulkFieldsRow() {
     emit();
   };
 
+  // The mark is native organized-style markup — a form-group wrapping a
+  // form-check, checkbox then label, no grid columns — so it sits in the dialog
+  // exactly like Stash's "organized" field rather than in the label/control
+  // column split the selects below use.
   const mangaRow = (
-    <div className={cls.group} data-field="manga_tools_manga">
-      <label className={cls.label} htmlFor="manga_tools_manga">
-        {t(intl, "mangaTools.manga.marked")}
-      </label>
-      <div className={cls.control}>
+    <div className="form-group" data-field="manga_tools_manga">
+      <div className="form-check">
         <input
           type="checkbox"
           className="form-check-input"
@@ -1984,6 +1985,9 @@ function BulkFieldsRow() {
           checked={tri === true}
           onChange={cycleManga}
         />
+        <label className="form-check-label" htmlFor="manga_tools_manga">
+          {t(intl, "mangaTools.manga.marked")}
+        </label>
       </div>
     </div>
   );
