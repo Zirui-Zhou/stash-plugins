@@ -232,6 +232,11 @@ function createDom() {
       return true;
     },
     Image: ImageStub,
+    // The reader waits on a timer for a key press the lightbox dropped, so these
+    // are the real ones: a test that has to wait for a retry can, and one that does
+    // not is not slowed down by them.
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout: (handle) => clearTimeout(handle),
   };
 
   return {

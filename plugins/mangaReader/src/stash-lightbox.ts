@@ -80,24 +80,28 @@ export function galleryIdFromPath(pathname: string): string | null {
 }
 
 /**
- * Moves the lightbox by whole pages, the way its own keyboard does.
+ * Presses one of the lightbox's own arrow keys, once.
  *
- * The events are dispatched on `document`, where the lightbox listens, and they
- * are deliberately not `isTrusted` — which is how the reader's own key handler
- * tells them from a real key press and lets them through. See takeover.ts.
+ * **One press, never a burst.** Stash's own key handler drops a press that arrives
+ * while a page is still swapping (`isSwitchingPageRef` in its lightbox — "rapid
+ * inputs are dropped", as its comment puts it), so two presses in the same tick
+ * advance one page rather than two. That is intermittent, because a cached page
+ * swaps fast enough for it not to happen, and it is why the reader presses, waits
+ * for the header to say it landed, and presses again — see steppingTo in
+ * takeover.ts.
  *
- * One press per page, because that is the only movement Stash's keyboard has: to
- * land two pages on, two presses go out. Checking that it worked is not this
- * function's business — the reader re-reads the header on the next DOM change,
- * which is the same path every other way of moving takes.
+ * The event is dispatched on `document`, where the lightbox listens, and is
+ * deliberately not `isTrusted` — which is how the reader's own key handler tells
+ * it from a real key press and lets it through.
  */
-export function movePages(steps: number): void {
-  const key = steps > 0 ? "ArrowRight" : "ArrowLeft";
-  for (let i = 0; i < Math.abs(steps); i++) {
-    document.dispatchEvent(
-      new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })
-    );
-  }
+export function pressArrow(direction: 1 | -1): void {
+  document.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: direction > 0 ? "ArrowRight" : "ArrowLeft",
+      bubbles: true,
+      cancelable: true,
+    })
+  );
 }
 
 /**

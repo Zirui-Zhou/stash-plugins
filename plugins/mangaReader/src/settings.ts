@@ -94,4 +94,69 @@ export function writeSettings(
   return merged;
 }
 
+/**
+ * Where the per-gallery offsets are kept — the pairing shift of a gallery whose
+ * pages are grouped wrongly.
+ *
+ * Per gallery, because that is what it belongs to: one scan's pages need shifting
+ * and the gallery beside it does not. In this browser rather than in the gallery's
+ * own custom fields, because it is a reading preference and not a fact about the
+ * manga — and because a custom field of ours would show up as a raw row in Stash's
+ * edit form, which lifts out only the fields it knows about.
+ *
+ * One object under one key: a gallery id is short and there is one of these per
+ * gallery that needed it, so this stays small however long a library is.
+ */
+const OFFSET_KEY = "mangaReader.offsets";
+
+/** Reads the stored offsets, ignoring anything that is not a gallery id and a shift */
+export function parseOffsets(raw: string | null): {
+  [galleryId: string]: 0 | 1;
+} {
+  const stored = ((): Record<string, unknown> => {
+    if (!raw) return {};
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      // Hand-edited, or another plugin's value under our key. No offset is a
+      // working answer for every gallery.
+      return {};
+    }
+  })();
+
+  const offsets: { [galleryId: string]: 0 | 1 } = {};
+  for (const [id, value] of Object.entries(stored)) {
+    if (value === 1) offsets[id] = 1;
+  }
+
+  return offsets;
+}
+
+/** The shift remembered for a gallery, or 0 when none was. */
+export function readOffset(galleryId: string): 0 | 1 {
+  try {
+    return (
+      parseOffsets(window.localStorage.getItem(OFFSET_KEY))[galleryId] || 0
+    );
+  } catch (e) {
+    console.error("[mangaReader] offsets are not readable:", e);
+    return 0;
+  }
+}
+
+/** Remembers a gallery's shift, dropping the entry when it is back to none. */
+export function writeOffset(galleryId: string, offset: 0 | 1): void {
+  try {
+    const offsets = parseOffsets(window.localStorage.getItem(OFFSET_KEY));
+    if (offset === 1) offsets[galleryId] = 1;
+    else delete offsets[galleryId];
+
+    window.localStorage.setItem(OFFSET_KEY, JSON.stringify(offsets));
+  } catch (e) {
+    console.error("[mangaReader] offsets are not writable:", e);
+  }
+}
+
 NR.parseSettings = parseSettings;
+NR.parseOffsets = parseOffsets;

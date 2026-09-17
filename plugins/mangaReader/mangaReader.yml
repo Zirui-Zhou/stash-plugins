@@ -13,7 +13,7 @@ name: Manga Reader
 description: A two-page (spread) view for the image lightbox, for reading manga.
 # Shown as the link button beside the plugin in Settings → Plugins.
 url: https://github.com/Zirui-Zhou/stash-plugins/tree/main/plugins/mangaReader
-version: 0.2.0
+version: 0.2.1
 ui:
   javascript:
     - mangaReader.js

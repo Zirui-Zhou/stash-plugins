@@ -26,7 +26,12 @@
  */
 import { labelFor } from "./i18n";
 import type { MangaReaderGallery, MangaReaderSettings } from "./plugin-api";
-import { readSettings, writeSettings } from "./settings";
+import {
+  readOffset,
+  readSettings,
+  writeOffset,
+  writeSettings,
+} from "./settings";
 import type { MangaReaderScreen } from "./spreads";
 import { layout, screenAt, stepsToAdjacent } from "./spreads";
 import {
@@ -35,7 +40,7 @@ import {
   SELECTOR_POPOVER_BODY,
   fetchGallery,
   galleryIdFromPath,
-  movePages,
+  pressArrow,
   readPosition,
 } from "./stash-lightbox";
 
@@ -45,8 +50,11 @@ const CLASS_ACTIVE = "manga-reader-active";
 const CLASS_SPREAD = "manga-reader-spread";
 const CLASS_PAGE = "manga-reader-page";
 const CLASS_SINGLE = "is-single";
-/** The switch this plugin adds to the lightbox's options menu */
+/** The switches this plugin adds to the lightbox's options menu */
 const SWITCH_ID = "manga-reader-double-page";
+const OFFSET_ID = "manga-reader-offset";
+/** Class of the group holding them, so it can be found again */
+const CLASS_OPTIONS = "manga-reader-options";
 
 /**
  * How many times the container may be put back before the plugin gives up.
@@ -85,11 +93,9 @@ let shownAt = -1;
 /**
  * The offset for the gallery in hand, and which gallery that was.
  *
- * Per gallery and for this session only, because what it corrects is a property of
- * one scan rather than a preference: a gallery whose pages were grouped wrongly
- * needs its pairs shifted, and the gallery next to it does not. Persisting it would
- * mean deciding where — and the honest place, a per-gallery custom field, is a
- * coupling this plugin does not have with anything else yet.
+ * Per gallery, and remembered for it — see the note on OFFSET_KEY. Only one
+ * gallery is being read at a time, so the value in hand is the one for `offsetFor`
+ * and the two are set together.
  */
 let offset: 0 | 1 = 0;
 let offsetFor: string | null = null;
@@ -97,6 +103,29 @@ let offsetFor: string | null = null;
 let reinsers = 0;
 let language: string | null = null;
 let logged = false;
+
+/**
+ * Where the lightbox is being moved to, while it is on the way there.
+ *
+ * A turn of a screen is several pages, and the lightbox only moves one page per
+ * press — and drops a press that arrives while the page before it is still
+ * swapping. So a move is a small errand: press once, wait for the header to say it
+ * landed, press again, and give up if it never does. See `press` and `arrived`.
+ */
+let errand: {
+  /** The page index (0-based) the last press started from */
+  from: number;
+  /** The page index being aimed at */
+  to: number;
+  /** The press that has been sent and not yet seen land */
+  retry: number | null;
+} | null = null;
+
+/** How long to wait for a press to land before sending it again, in milliseconds */
+const PRESS_RETRY_MS = 120;
+/** How many times one step may be re-sent before the errand is abandoned */
+const MAX_ATTEMPTS = 3;
+let attempts = 0;
 
 // ── The loop ───────────────────────────────────────────────────────
 
@@ -137,6 +166,10 @@ function step(): void {
   }
 
   sync(lightbox);
+
+  // After the drawing, so an unfinished move shows the page it is passing through
+  // rather than skipping it.
+  arrived(lightbox);
 }
 
 /** Whether the reader should be drawing, as far as can be told without asking */
@@ -155,10 +188,12 @@ function current(): MangaReaderGallery | null {
 
 /** Asks Stash for the gallery's pages, unless they are already in hand */
 function loadGallery(id: string): void {
-  // The offset belongs to one gallery: a different one starts from the top.
+  // The offset belongs to one gallery, and is remembered for it: a gallery whose
+  // pages are grouped wrongly is opened again and again, and being made to shift
+  // the pairing every time would be the feature failing at its one job.
   if (offsetFor !== id) {
     offsetFor = id;
-    offset = 0;
+    offset = readOffset(id);
   }
 
   const already = loaded.get(id);
@@ -322,8 +357,8 @@ function draw(screen: MangaReaderScreen, at: number): void {
   if (!logged && gallery) {
     logged = true;
     // One line per read, on the first gallery of the session: what was paired, and
-    // the key that shifts it. It is the first thing to look at when the pairs look
-    // wrong, and the only place the offset key is ever mentioned on screen.
+    // where the switch that shifts it lives. The first thing to look at when the
+    // pairs look wrong.
     console.info(
       "[mangaReader] " +
         gallery.screens.length +
@@ -331,7 +366,7 @@ function draw(screen: MangaReaderScreen, at: number): void {
         gallery.pages.length +
         " page(s), offset " +
         offset +
-        " — press O in the lightbox to shift the pairing by one page"
+        " — the lightbox's options menu can shift the pairing, and O does the same"
     );
   }
 
@@ -359,6 +394,116 @@ function preload(at: number): void {
       image.src = "/image/" + page.id + "/image";
     }
   }
+}
+
+// ── Moving the lightbox, a page at a time ──────────────────────────
+
+/** The page the lightbox says it is on, 0-based, or null when it cannot be read */
+function currentIndex(lightbox: Element): number | null {
+  const position = readPosition(lightbox);
+  return position ? position.current - 1 : null;
+}
+
+/**
+ * Starts moving the lightbox to a page, by whole pages.
+ *
+ * Called with the page index a turn of the screen lands on. Nothing is sent if the
+ * lightbox is already there; otherwise the first press goes now and the rest
+ * follow as it lands.
+ */
+function startErrand(lightbox: Element, to: number): void {
+  const from = currentIndex(lightbox);
+  if (from === null || from === to) return;
+
+  endErrand();
+  attempts = 0;
+  errand = { from, to, retry: null };
+  press(lightbox);
+}
+
+/** Sends the next press of the errand, and arms the retry that covers a dropped one */
+function press(lightbox: Element): void {
+  if (!errand) return;
+
+  const from = currentIndex(lightbox);
+  if (from === null) {
+    endErrand();
+    return;
+  }
+  if (from === errand.to) {
+    endErrand();
+    return;
+  }
+
+  errand.from = from;
+  attempts += 1;
+  pressArrow(from < errand.to ? 1 : -1);
+  armRetry(lightbox);
+}
+
+/**
+ * Waits a moment for the press to land, and sends it again if it did not.
+ *
+ * The lightbox drops a press that arrives while the page before it is still
+ * swapping (see pressArrow), and a dropped press changes nothing in the DOM — so
+ * nothing else here would ever notice. This is the only place that waits on a
+ * clock rather than on the reader's own header.
+ */
+function armRetry(lightbox: Element): void {
+  if (!errand) return;
+  if (errand.retry !== null) window.clearTimeout(errand.retry);
+
+  errand.retry = window.setTimeout(() => {
+    if (!errand) return;
+    errand.retry = null;
+
+    const at = currentIndex(lightbox);
+    // It landed: the drawing follows on its own, and the next press with it.
+    if (at === null || at !== errand.from) return;
+
+    if (attempts >= MAX_ATTEMPTS) {
+      // Three presses that went nowhere: the lightbox is not moving for reasons
+      // this plugin cannot see. Stop, and leave the reader where they are.
+      console.error(
+        "[mangaReader] the lightbox did not respond to the arrow keys, so the " +
+          "spread view has stopped moving it — the page shown is the one it is on"
+      );
+      endErrand();
+      return;
+    }
+
+    press(lightbox);
+  }, PRESS_RETRY_MS);
+}
+
+/**
+ * Carries the errand on when a press has landed — called on every DOM change.
+ *
+ * This is what makes a turn feel immediate: the wait between presses is the
+ * lightbox's own page swap, not a timer. The timer in armRetry is only there for
+ * the press that landed nowhere.
+ */
+function arrived(lightbox: Element): void {
+  if (!errand) return;
+
+  const at = currentIndex(lightbox);
+  if (at === null) {
+    endErrand();
+    return;
+  }
+  if (at === errand.to) {
+    endErrand();
+    return;
+  }
+
+  // Still on the page that press started from: it has not landed yet, and the
+  // timer is watching for that. Anywhere else, it landed short of the target.
+  if (at !== errand.from) press(lightbox);
+}
+
+function endErrand(): void {
+  if (errand && errand.retry !== null) window.clearTimeout(errand.retry);
+  errand = null;
 }
 
 // ── Turning the mode on and off ────────────────────────────────────
@@ -402,13 +547,18 @@ function closeLightbox(): void {
 // ── The switch in the lightbox's own options menu ──────────────────
 
 /**
- * Adds this plugin's switch to the lightbox's options popover, once per opening.
+ * Adds this plugin's switches to the lightbox's options popover, once per opening.
  *
- * The same markup Stash's own options use (a `form-group` holding a `form-check`),
- * so it reads as one of them rather than as something bolted on. Injected into
- * whatever popover is on screen at the time, because the popover is rebuilt from
- * scratch each time it is opened — which is also why this cannot be a React
- * component of ours: there is no patch point in there.
+ * The same markup Stash's own options use (a `form-group` holding `form-check`s),
+ * so they read as part of the menu rather than as something bolted on. Injected
+ * into whatever popover is on screen at the time, because the popover is rebuilt
+ * from scratch each time it is opened — which is also why these cannot be React
+ * components of ours: there is no patch point in there.
+ *
+ * The mode switch is always there. The offset one appears only while a gallery is
+ * in hand, because the offset is a page pairing and there is no pairing without
+ * one — and it is the escape hatch for a page that was taken for a spread and was
+ * not one, so it belongs where the reader looks when the pairs look wrong.
  *
  * A reader who opens the menu before this plugin has read a gallery's language
  * gets the English wording; the next opening has the right one.
@@ -416,11 +566,62 @@ function closeLightbox(): void {
 function injectSwitch(lightbox: Element): void {
   const body = lightbox.querySelector(SELECTOR_POPOVER_BODY);
   if (!body) return;
-  if (body.querySelector("#" + SWITCH_ID)) return;
+
+  // The group is put there once and completed afterwards: the menu can be opened
+  // before the gallery's pages have arrived — two clicks from opening the lightbox
+  // is enough — and the offset switch has nothing to offer until they have.
+  const existing = body.querySelector("." + CLASS_OPTIONS);
+  if (existing) {
+    addOffsetSwitch(existing);
+    return;
+  }
 
   const group = document.createElement("div");
-  group.className = "form-group manga-reader-options";
+  group.className = "form-group " + CLASS_OPTIONS;
+  group.appendChild(
+    checkbox({
+      id: SWITCH_ID,
+      label: labelFor(language, "doublePage"),
+      checked: settings.doublePage,
+      onChange: (checked) => {
+        if (checked) {
+          activate();
+        } else {
+          settings = writeSettings({ doublePage: false });
+          deactivate();
+        }
+      },
+    })
+  );
 
+  addOffsetSwitch(group);
+  body.appendChild(group);
+}
+
+/** Adds the offset switch to the group, once there is a gallery to shift */
+function addOffsetSwitch(group: Element): void {
+  if (!current() || group.querySelector("#" + OFFSET_ID)) return;
+
+  group.appendChild(
+    checkbox({
+      id: OFFSET_ID,
+      label: labelFor(language, "offset"),
+      checked: offset === 1,
+      onChange: (checked) => {
+        const gallery = current();
+        if (gallery) setOffset(gallery, checked ? 1 : 0);
+      },
+    })
+  );
+}
+
+/** One option row, in Stash's own markup: a form-check inside a row's column */
+function checkbox(option: {
+  id: string;
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}): Element {
   const row = document.createElement("div");
   row.className = "row mb-1";
 
@@ -433,34 +634,41 @@ function injectSwitch(lightbox: Element): void {
   const input = document.createElement("input");
   input.type = "checkbox";
   input.className = "form-check-input";
-  input.id = SWITCH_ID;
-  input.checked = settings.doublePage;
+  input.id = option.id;
+  input.checked = option.checked;
 
   const text = document.createElement("label");
   text.className = "form-check-label";
-  text.htmlFor = SWITCH_ID;
-  text.textContent = labelFor(language, "doublePage");
+  text.htmlFor = option.id;
+  text.textContent = option.label;
 
-  input.addEventListener("change", () => {
-    if (input.checked) {
-      activate();
-    } else {
-      settings = writeSettings({ doublePage: false });
-      deactivate();
-    }
-  });
+  input.addEventListener("change", () => option.onChange(input.checked));
 
   check.appendChild(input);
   check.appendChild(text);
   column.appendChild(check);
   row.appendChild(column);
-  group.appendChild(row);
-  body.appendChild(group);
+
+  return row;
 }
 
-/** Keeps the switch in step when the mode is changed by something other than it */
+/**
+ * Keeps a switch in step when the state changes by another route.
+ *
+ * Both switches can be changed without being clicked — the mode by its own key
+ * handling, the offset by `O` — and a checkbox that disagrees with what the reader
+ * sees on screen is worse than no checkbox.
+ */
 function setSwitchChecked(checked: boolean): void {
-  const input = document.getElementById(SWITCH_ID) as HTMLInputElement | null;
+  setChecked(SWITCH_ID, checked);
+}
+
+function setOffsetSwitchChecked(checked: boolean): void {
+  setChecked(OFFSET_ID, checked);
+}
+
+function setChecked(id: string, checked: boolean): void {
+  const input = document.getElementById(id) as HTMLInputElement | null;
   if (input) input.checked = checked;
 }
 
@@ -476,26 +684,23 @@ function setSwitchChecked(checked: boolean): void {
  * whole point of the mode.
  *
  * Events this plugin dispatched are ignored, by `isTrusted`: they are how the
- * lightbox is moved (see movePages), they are what was asked for already, and
+ * lightbox is moved (see pressArrow), they are what was asked for already, and
  * handling them again would double every step.
  */
 function onKeyDown(event: KeyboardEvent): void {
   if (!event.isTrusted || !wanted() || !root) return;
 
+  const lightbox = root;
   const gallery = current();
   if (!gallery) return;
 
   if (event.key === "o" || event.key === "O") {
     if (event.repeat) return;
 
-    offset = offset === 0 ? 1 : 0;
-    offsetFor = gallery.id;
-    gallery.screens = layout(gallery.pages, { ...settings, offset });
-    shownAt = -1;
+    setOffset(gallery, offset === 0 ? 1 : 0);
 
     event.preventDefault();
     event.stopPropagation();
-    step();
     return;
   }
 
@@ -518,12 +723,12 @@ function onKeyDown(event: KeyboardEvent): void {
     return;
   }
 
-  const position = readPosition(root);
-  if (!position) return;
+  const at = currentIndex(lightbox);
+  if (at === null) return;
 
   const steps = stepsToAdjacent(
     gallery.screens,
-    position.current - 1,
+    at,
     event.key === "ArrowRight" ? 1 : -1
   );
 
@@ -533,7 +738,25 @@ function onKeyDown(event: KeyboardEvent): void {
 
   event.preventDefault();
   event.stopPropagation();
-  movePages(steps);
+  startErrand(lightbox, at + steps);
+}
+
+/**
+ * Shifts a gallery's pairing by one page, or puts it back, and remembers it.
+ *
+ * Two ways in — the key and the switch in the options menu — and both come through
+ * here, so they cannot disagree about what the offset is.
+ */
+function setOffset(gallery: MangaReaderGallery, next: 0 | 1): void {
+  offset = next;
+  offsetFor = gallery.id;
+  writeOffset(gallery.id, next);
+
+  gallery.screens = layout(gallery.pages, { ...settings, offset });
+  shownAt = -1;
+
+  setOffsetSwitchChecked(next === 1);
+  step();
 }
 
 // ── Wiring ─────────────────────────────────────────────────────────

@@ -640,88 +640,104 @@ async function main() {
     }
   );
 
-  await runSection("the arrows move by screen, not by page", async () => {
-    const { box } = await startReader({ galleryId: "8", on: true });
+  await runSection(
+    "the arrows move by screen, one press at a time",
+    async () => {
+      const { box } = await startReader({ galleryId: "8", on: true });
 
-    // What the plugin sends the lightbox, as opposed to what it consumes: the
-    // events it dispatches are not `isTrusted`, which is how its own key handler
-    // tells them from a reader's and lets them through.
-    const sent = [];
-    dom.document.addEventListener("keydown", (event) => sent.push(event.key));
+      // What the plugin sends the lightbox, as opposed to what it consumes: the
+      // events it dispatches are not `isTrusted`, which is how its own key handler
+      // tells them from a reader's and lets them through.
+      const sent = [];
+      dom.document.addEventListener("keydown", (event) => sent.push(event.key));
 
-    box.move(1);
-    dom.flush();
-    const forwards = press("ArrowRight");
-    assert.deepStrictEqual(
-      sent,
-      ["ArrowRight"],
-      "forward from the cover is one page"
-    );
-    assert.strictEqual(
-      forwards.defaultPrevented,
-      true,
-      "and the press is consumed: this plugin decides where the lightbox goes"
-    );
-    assert.strictEqual(forwards.propagationStopped, true);
+      box.move(1);
+      dom.flush();
+      const forwards = press("ArrowRight");
+      assert.deepStrictEqual(
+        sent,
+        ["ArrowRight"],
+        "forward from the cover is one page"
+      );
+      assert.strictEqual(
+        forwards.defaultPrevented,
+        true,
+        "and the press is consumed: this plugin decides where the lightbox goes"
+      );
+      assert.strictEqual(forwards.propagationStopped, true);
 
-    box.move(2);
-    dom.flush();
-    sent.length = 0;
-    press("ArrowRight");
-    assert.deepStrictEqual(
-      sent,
-      ["ArrowRight", "ArrowRight"],
-      "from the first page of a pair, two presses land on the next screen"
-    );
+      // A screen is two pages, and the lightbox moves one page per press — so the
+      // second press waits for the first to land rather than being sent with it.
+      // Stash drops a press that arrives while a page is still swapping, which is
+      // what "the arrows are sometimes wrong" was.
+      box.move(2);
+      dom.flush();
+      sent.length = 0;
+      press("ArrowRight");
+      assert.deepStrictEqual(
+        sent,
+        ["ArrowRight"],
+        "the press that starts a two-page move"
+      );
 
-    box.move(3);
-    dom.flush();
-    sent.length = 0;
-    press("ArrowRight");
-    assert.deepStrictEqual(
-      sent,
-      ["ArrowRight"],
-      "and from the second page of one, the next screen is a single page on"
-    );
+      // The lightbox lands on the page it was sent to, and the reader carries on.
+      box.move(3);
+      dom.flush();
+      assert.deepStrictEqual(
+        sent,
+        ["ArrowRight", "ArrowRight"],
+        "and the one that finishes it, once the lightbox has said it landed"
+      );
 
-    box.move(2);
-    dom.flush();
-    sent.length = 0;
-    press("ArrowLeft");
-    assert.deepStrictEqual(
-      sent,
-      ["ArrowLeft"],
-      "backwards is one page, to the cover"
-    );
+      box.move(3);
+      dom.flush();
+      sent.length = 0;
+      press("ArrowRight");
+      assert.deepStrictEqual(
+        sent,
+        ["ArrowRight"],
+        "from the second page of a pair, the next screen is a single page on"
+      );
 
-    // The end of the book is left to Stash, which does nothing with it either:
-    // consuming the press would only be a lie about having moved.
-    box.move(5);
-    dom.flush();
-    sent.length = 0;
-    const pastTheEnd = press("ArrowRight");
-    assert.deepStrictEqual(sent, [], "nothing to move on to");
-    assert.strictEqual(pastTheEnd.defaultPrevented, false);
+      box.move(2);
+      dom.flush();
+      sent.length = 0;
+      press("ArrowLeft");
+      assert.deepStrictEqual(
+        sent,
+        ["ArrowLeft"],
+        "backwards is one page, to the cover"
+      );
 
-    // A key press this plugin did not make passes straight through to the
-    // lightbox — if its own handler took these, every step would double.
-    sent.length = 0;
-    dom.document.dispatchEvent(
-      dom.makeEvent("keydown", { key: "ArrowRight", isTrusted: false })
-    );
-    assert.deepStrictEqual(sent, ["ArrowRight"]);
+      // The end of the book is left to Stash, which does nothing with it either:
+      // consuming the press would only be a lie about having moved.
+      box.move(5);
+      dom.flush();
+      sent.length = 0;
+      const pastTheEnd = press("ArrowRight");
+      assert.deepStrictEqual(sent, [], "nothing to move on to");
+      assert.strictEqual(pastTheEnd.defaultPrevented, false);
 
-    // Keys that are not a page turn are none of this plugin's business.
-    sent.length = 0;
-    const other = press("Escape");
-    assert.deepStrictEqual(sent, [], "Escape is left alone");
-    assert.strictEqual(other.defaultPrevented, false);
+      // A key press this plugin did not make passes straight through to the
+      // lightbox — if its own handler took these, every step would double.
+      sent.length = 0;
+      dom.document.dispatchEvent(
+        dom.makeEvent("keydown", { key: "ArrowRight", isTrusted: false })
+      );
+      assert.deepStrictEqual(sent, ["ArrowRight"]);
 
-    stopReader(box);
-  });
+      // Keys that are not a page turn are none of this plugin's business.
+      sent.length = 0;
+      const other = press("Escape");
+      assert.deepStrictEqual(sent, [], "Escape is left alone");
+      assert.strictEqual(other.defaultPrevented, false);
+
+      stopReader(box);
+    }
+  );
 
   await runSection("the offset key re-pairs the gallery", async () => {
-    const { box } = await startReader({ galleryId: "8", on: true });
+    const { box, popover } = await startReader({ galleryId: "8", on: true });
 
     // At page 2, which is where the two layouts differ: without the offset its
     // screen is 2+3, and with it page 2 stands alone.
@@ -737,9 +753,97 @@ async function main() {
       "O shifts the pairing by one page and redraws — the escape hatch for a page " +
         "that was taken for a spread and was not one"
     );
+    assert.strictEqual(
+      popover.querySelector("#manga-reader-offset").checked,
+      true,
+      "and the switch in the options menu says so, because both routes go through " +
+        "the one place that sets it"
+    );
 
     press("o");
     assert.deepStrictEqual(drawn(), before, "and shifts it back");
+
+    stopReader(box);
+  });
+
+  await runSection(
+    "the offset is a switch, and is remembered for the gallery",
+    async () => {
+      const { box, popover } = await startReader({ galleryId: "8", on: true });
+
+      const offsetSwitch = popover.querySelector("#manga-reader-offset");
+      assert.ok(
+        offsetSwitch,
+        "the options menu offers the offset while a gallery is in hand"
+      );
+      assert.strictEqual(
+        offsetSwitch.checked,
+        false,
+        "and it starts unshifted"
+      );
+
+      box.move(2);
+      dom.flush();
+      offsetSwitch.checked = true;
+      offsetSwitch.dispatch("change");
+
+      assert.deepStrictEqual(
+        drawn(),
+        ["/image/402/image"],
+        "turning it on re-pairs the gallery there and then"
+      );
+      assert.deepStrictEqual(
+        JSON.parse(dom.window.localStorage.getItem("mangaReader.offsets")),
+        { 8: 1 },
+        "and the gallery's shift is remembered, so it need not be set again"
+      );
+
+      stopReader(box);
+
+      // Opened again — a fresh lightbox, a fresh popover — it starts where the reader
+      // left it.
+      const again = await startReader({ galleryId: "8", on: true });
+      assert.strictEqual(
+        again.popover.querySelector("#manga-reader-offset").checked,
+        true,
+        "the gallery opens with the shift it was given"
+      );
+
+      again.box.move(2);
+      dom.flush();
+      assert.deepStrictEqual(
+        drawn(),
+        ["/image/402/image"],
+        "and with the pairing it had"
+      );
+
+      stopReader(again.box);
+    }
+  );
+
+  await runSection("a press the lightbox drops is sent again", async () => {
+    // Stash ignores an arrow that arrives while the page before it is still
+    // swapping, and a dropped press changes nothing — so nothing but a clock can
+    // notice it. This is that clock: the press is sent again, and the move finishes.
+    const { box } = await startReader({ galleryId: "8", on: true });
+
+    const sent = [];
+    dom.document.addEventListener("keydown", (event) => sent.push(event.key));
+
+    box.move(2);
+    dom.flush();
+    sent.length = 0;
+    press("ArrowRight");
+    assert.deepStrictEqual(sent, ["ArrowRight"], "the first press");
+
+    // This time the lightbox does not move: the press went nowhere, so the wait
+    // ends with it being sent again.
+    await new Promise((resolve) => setTimeout(resolve, 160));
+    assert.deepStrictEqual(
+      sent,
+      ["ArrowRight", "ArrowRight"],
+      "and the same press again, after waiting for it to land"
+    );
 
     stopReader(box);
   });

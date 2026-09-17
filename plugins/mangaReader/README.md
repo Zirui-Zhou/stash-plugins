@@ -17,14 +17,17 @@ While the switch is on, and while you are reading a **gallery**:
 | **Spreads** | A page wider than it is tall is taken for one image spanning two pages, and stands alone |
 | **The cover** | Stands alone. A cover is not the left half of anything |
 | **Arrows** | Left and right move a *screen*, not a page — so a pair advances together |
-| **`O`** | Shifts the pairing by one page, for a gallery whose pages are grouped wrongly |
+| **Shift the pairing** | A second switch in the options menu, or `O`, for a gallery whose pages are grouped wrongly. Remembered for that gallery |
 | **Everything else** | Untouched. The header counter, the chapters, the nav strip, Escape, fullscreen, the slideshow — all still Stash's, and all still work, because the lightbox is still what says which page you are on |
 
-The switch is remembered per browser, like the lightbox options it sits beside.
+Both switches are remembered per browser, like the lightbox options they sit
+beside — except the shift, which is remembered *per gallery*, because that is what
+it belongs to: one scan's pages need shifting and the gallery next to it does not.
+
 Off a gallery page — an image list, a scene's stills — the mode draws nothing, even
 switched on: pairing pages only means something inside a gallery.
 
-## The two things worth knowing
+## The three things worth knowing
 
 **It is DOM surgery, not a React patch.** Stash's lightbox is
 `LightboxComponent`, a plain `React.FC` with no `PatchComponent` wrapper, so
@@ -40,6 +43,15 @@ The approach follows
 [kokkengMangaViewer](https://github.com/kokkeng1/stash_plugin_custom/tree/main/plugins/kokkengMangaViewer),
 which does the same thing in the wild for a scrolling view.
 
+**Keys are pressed one at a time, and that is not a detail.** A turn of a screen is
+two pages, and the lightbox moves one page per press — but it *drops* a press that
+arrives while the page before it is still swapping (`isSwitchingPageRef` in Stash's
+lightbox: "rapid inputs are dropped"). Two presses in the same tick therefore move
+one page rather than two, intermittently, since a cached page swaps fast enough for
+it not to happen. So a move is an errand: press once, wait for the header to say it
+landed, press again — and send it again if the wait runs out, because a dropped
+press changes nothing in the DOM for anything else to notice.
+
 **Everything it depends on is in one file.** `src/stash-lightbox.ts` holds the
 class names, the header format and the image query — the whole of what this plugin
 assumes about Stash's markup. If a Stash release renames any of it, the reader stops
@@ -52,10 +64,10 @@ showing.
 
 - **No zoom or pan in spread mode.** Stash's zoom acts on the carousel, which is
   hidden while this plugin draws. Pages are fitted to the screen and that is all.
-- **The pairing switches are settings without a UI**: `coverAlone` and
-  `detectSpreads` are stored and honoured, but the only one the options menu offers
-  is the mode itself. `O` is the escape hatch for a page judged wrongly.
-- **The switch is worded in English the first time.** Its language comes from
+- **Two of the pairing rules are settings without a UI**: `coverAlone` and
+  `detectSpreads` are stored and honoured, but the options menu offers only the
+  mode and the shift. Both default to what a manga wants.
+- **The switches are worded in English the first time.** Their language comes from
   Stash's own configuration, which is read with the gallery — so the wording is
   right from the second time the menu is opened in a session.
 - **Reading progress** is not tracked. That needs a viewer of our own rather than a

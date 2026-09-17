@@ -63,6 +63,7 @@ export interface MangaReaderGallery {
  */
 export interface MangaReaderNamespace {
   parseSettings(raw: string | null): MangaReaderSettings;
+  parseOffsets(raw: string | null): { [galleryId: string]: 0 | 1 };
   parseIndicator(text: string): { current: number; total: number } | null;
   galleryIdFromPath(pathname: string): string | null;
   isWideSpreadPage(page: MangaReaderPage): boolean;
