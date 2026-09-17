@@ -19,6 +19,7 @@ const {
   callAfter,
   documentRoot,
   find,
+  galleryToolbarDom,
   globalListeners,
   hasText,
   makeEl,
@@ -669,23 +670,7 @@ module.exports = () => {
   );
 
   // --- the detail page's toolbar ---
-  //
-  // Stash's toolbar: a group holding the span with the organized button, then
-  // the span with the operation menu.
-  const toolbarEl = makeEl("div");
-  toolbarEl.className = "gallery-toolbar";
-  const toolbarGroup = makeEl("span");
-  toolbarGroup.className = "gallery-toolbar-group";
-  const organizedSpan = makeEl("span");
-  const organizedButton = makeEl("button");
-  organizedButton.className =
-    "minimal organized-button organized btn btn-secondary";
-  organizedSpan.appendChild(organizedButton);
-  const menuSpan = makeEl("span");
-  toolbarGroup.appendChild(organizedSpan);
-  toolbarGroup.appendChild(menuSpan);
-  toolbarEl.appendChild(toolbarGroup);
-  documentRoot.appendChild(toolbarEl);
+  const { toolbarGroup } = galleryToolbarDom();
 
   // Gallery 3 is the one the cycle below writes to: its fixture mark is
   // "uncensored", and the cycle ends on "censored", so the store assertion at
@@ -696,11 +681,13 @@ module.exports = () => {
 
   /** The toolbar's mark, out of the same patch the panel comes from */
   const toolbarMark = (fields) => {
-    // `fields` is what Stash handed the page. The switch is drawn either way — it
-    // is the only way to set the mark, so it cannot itself be gated on it — while
-    // what it *says* comes from the edit form if one is open and from this
-    // plugin's store otherwise. Only then from the values passed in: the mark's
-    // own write is deliberately invisible to Apollo's cache, so those lag.
+    // `fields` is what Stash handed the page, and by the time this section runs
+    // they are not what the switch reads: it is drawn either way — it is the only
+    // way to set the mark, so it cannot itself be gated on it — while what it
+    // *says* comes from this plugin's store, which has answered by now (see
+    // isMarkedNow). The values are only the fallback before that answer, which is
+    // what 9c in section 03 drives; and it is why several assertions below are
+    // about the store rather than about these.
     const rendered = call("CustomFields", { values: fields });
     const el = rendered.props.children[2];
     return { rendered, el, drawn: el.type(el.props) };
@@ -866,7 +853,7 @@ module.exports = () => {
     "the form's own map gets the mark too"
   );
 
-  // …and the store's query is no-cache for the same reason MARK_UPDATE asks for
+  // …and the store's query is no-cache for the same reason MARK_QUERY_TEXT asks for
   // nothing: these are Gallery objects, and a copy landing in Apollo's cache is
   // what resets an open edit form.
   const mapQueries = queryOptions.filter((q) => /findGalleries/.test(q.query));
@@ -910,6 +897,36 @@ module.exports = () => {
   );
   assert.deepStrictEqual(NS.fieldsToClear(null), [NS.MANGA_FIELD_NAME]);
 
+  // The map the edit form is put into, which has to say the same thing as that
+  // list: every one of this plugin's keys gone, by the spelling it has, and
+  // everybody else's left exactly as it was.
+  const beforeClear = {
+    [NS.FIELD_NAME]: "ja",
+    "plugin.mangaTools.Censorship": "uncensored",
+    "plugin.mangaTools.Manga": "true",
+    other: "x",
+  };
+  assert.deepStrictEqual(
+    NS.clearFields(beforeClear),
+    { other: "x" },
+    "the form's copy loses this plugin's fields and nothing else"
+  );
+  assert.deepStrictEqual(
+    beforeClear,
+    {
+      [NS.FIELD_NAME]: "ja",
+      "plugin.mangaTools.Censorship": "uncensored",
+      "plugin.mangaTools.Manga": "true",
+      other: "x",
+    },
+    "and it is a copy: the map it was given is untouched"
+  );
+  // A gallery with none of this plugin's fields: fieldsToClear still names the
+  // mark — the removal has to name *something* — while the map has nothing to
+  // change. The two disagree there by design, which is why they are two.
+  assert.deepStrictEqual(NS.clearFields({ other: "x" }), { other: "x" });
+  assert.deepStrictEqual(NS.clearFields(null), {});
+
   // A rejected write leaves nothing behind: the mark it put in the store is
   // taken back by the refresh that follows. On a gallery the store does not
   // know, which is the one a click marks — and one no other section uses, for
@@ -920,6 +937,11 @@ module.exports = () => {
     detailValues("censored")
   ).drawn.node.props.children[0].props.onClick();
   state.galleryWriteResult = null;
+
+  // (A Stash with no client at all — the write that cannot even be attempted —
+  // is 14c, in the next section. Nothing here can tell it apart from a write that
+  // was sent: the store, the form and the switch all end up the same either way,
+  // and the difference is a promise away.)
 
   // The write path is the edit form, through Stash's own values map — which is
   // what makes Save persist the mark and Cancel discard it.

@@ -350,12 +350,24 @@ previous page's markup, which on a load is nothing. `useAfterMount` asks for one
 more render once the component has mounted, and that render is the one that can
 see it. One extra render, not a loop.
 
-The write goes through Stash's own `useGalleryUpdate`, the mutation its organized
-button uses, so the cache eviction that makes the rest of the page notice is
-Stash's rather than something re-derived here. Clearing removes the key rather
-than writing an empty value, and removes it *by the spelling the gallery
-actually carries* — so a key that drifted in case is removed rather than left
-behind holding the old mark.
+**The store, not the cache, is what says whether a gallery is manga** — which is
+what makes the quiet write safe, and why the two have to be read together. It is
+filled by a `no-cache` query for galleries carrying the mark, and it is what the
+switch, the card's mark and the panels all ask (`isMarkedNow`); a gallery the
+query did not return is one the server does not consider manga, and the mark
+therefore says so the moment the write takes it out of the store. Until the first
+answer the map is null rather than empty — "nothing is manga" is an answer, and a
+different one from "no answer yet", which is the only reading that can flicker a
+marked gallery's switch on the way in.
+
+A write is followed by a refetch of that store, *deferred* past any fetch already
+in flight: a fetch built before the write answers with the state before it, so
+letting that response land afterwards puts back what the write just changed. The
+reason is the same one the writes are quiet for, seen from the other side.
+
+Clearing removes the key rather than writing an empty value, and removes it *by
+the spelling the gallery actually carries* — so a key that drifted in case is
+removed rather than left behind holding the old mark.
 
 ### Settings
 

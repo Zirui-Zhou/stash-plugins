@@ -93,6 +93,8 @@ export interface MangaToolsNamespace {
   isOwnField(key: unknown): boolean;
   /** The keys to remove when a gallery stops being manga, by their own spelling. */
   fieldsToClear(customFields: unknown): string[];
+  /** A copy of a custom_fields map holding none of this plugin's fields. */
+  clearFields(customFields: unknown): MangaToolsCustomFields;
   /** The values the censorship field takes, in cycle order. See censorship.tsx. */
   CENSORSHIP_VALUES: string[];
   /** A stored censorship value as one of CENSORSHIP_VALUES, or "" for anything else. */
@@ -317,7 +319,7 @@ export interface MangaToolsApolloClient {
   /**
    * A mutation, which Apollo also writes into its cache — whatever the mutation
    * asks for. That is why the plugin's own mutations ask for as little as they
-   * can: see MARK_UPDATE in mangaTools.tsx.
+   * can: see MARK_QUERY_TEXT in mangaTools.tsx.
    */
   mutate(options: {
     mutation: unknown;

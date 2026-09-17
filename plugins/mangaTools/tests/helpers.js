@@ -40,6 +40,12 @@ const state = {
   capturedConfigWrite: null,
   /** When set, the gallery update the toolbar switch sends rejects with this */
   galleryWriteResult: null,
+  /**
+   * When true, StashService.getClient throws — a Stash whose client is not there
+   * yet. The plugin's writes then have nowhere to go, and what it does about that
+   * is what 14c checks.
+   */
+  clientMissing: false,
   /** The link hook the bulk rows install, once they have */
   installedLink: null,
   /** What the DOM stub's querySelectorAll answers with, per test */
@@ -282,6 +288,43 @@ const fakeClient = {
 /** data-some-name -> dataset.someName, the way the DOM does it */
 const datasetKey = (name) =>
   name.replace(/-([a-z])/g, (_m, ch) => ch.toUpperCase());
+
+/** The toolbar galleryToolbarDom() last put in the document */
+let mountedToolbar = null;
+
+/**
+ * The part of a gallery page's toolbar the plugin hangs itself on.
+ *
+ * Stash's toolbar is a group holding the span with the organized button, then
+ * the span with the operation menu — and the switch's host goes between the two,
+ * so a test needs both to tell "in the right place" from "somewhere in the
+ * toolbar". Appended to the document, since the host is found by searching it.
+ *
+ * Any toolbar this put there before is taken out first: a page has one, the
+ * plugin looks for *the* toolbar, and a second one left behind would quietly
+ * become the one it mounts into.
+ */
+function galleryToolbarDom() {
+  if (mountedToolbar) documentRoot.removeChild(mountedToolbar);
+
+  const toolbarEl = makeEl("div");
+  toolbarEl.className = "gallery-toolbar";
+  const toolbarGroup = makeEl("span");
+  toolbarGroup.className = "gallery-toolbar-group";
+  const organizedSpan = makeEl("span");
+  const organizedButton = makeEl("button");
+  organizedButton.className =
+    "minimal organized-button organized btn btn-secondary";
+  organizedSpan.appendChild(organizedButton);
+  const menuSpan = makeEl("span");
+  toolbarGroup.appendChild(organizedSpan);
+  toolbarGroup.appendChild(menuSpan);
+  toolbarEl.appendChild(toolbarGroup);
+  documentRoot.appendChild(toolbarEl);
+  mountedToolbar = toolbarEl;
+
+  return { toolbarEl, toolbarGroup, organizedSpan, organizedButton, menuSpan };
+}
 
 function makeEl(tag) {
   const el = {
@@ -599,7 +642,10 @@ const PluginApi = {
       // The switch writes through its own mutation on this client (see
       // MARK_QUERY_TEXT), not through Stash's useGalleryUpdate — so the client is
       // all a stub here has to provide.
-      getClient: () => fakeClient,
+      getClient: () => {
+        if (state.clientMissing) throw new Error("no client yet");
+        return fakeClient;
+      },
       useConfigurePlugin: () => [
         (opts) => {
           state.capturedConfigWrite = opts.variables;
@@ -753,6 +799,24 @@ global.Intl.DisplayNames = FakeDisplayNames;
 // to be on the window first, because the bundle reads it as it loads — the same
 // order Stash uses, where the API is injected before any plugin script runs.
 global.window.PluginApi = PluginApi;
+
+/**
+ * Every line the plugin sends to `console.error`, in order.
+ *
+ * A few of its failures have no other symptom. A write that never left is
+ * indistinguishable from one that was sent, from the outside: both leave the
+ * store as the click set it, and both refetch. The line it prints is the whole
+ * of the difference, so it is worth being able to assert on.
+ *
+ * Recorded *and* forwarded — a failure a human needs to see must still read the
+ * way it did before there was a spy here.
+ */
+const loggedErrors = [];
+const realConsoleError = console.error;
+console.error = (...args) => {
+  loggedErrors.push(args.map((a) => String(a)).join(" "));
+  realConsoleError.apply(console, args);
+};
 
 const BUNDLE = require.resolve(path.join(PLUGIN, "mangaTools.js"));
 
@@ -928,6 +992,16 @@ const tagWithText = (value, ancestors = []) => {
 
 const failures = [];
 
+/**
+ * Whether the tally has been printed already.
+ *
+ * A section whose check lives in a nested timer can land after it — which is how
+ * a run can end with "All smoke tests passed" printed over a failing assertion,
+ * the exit code being the only thing that disagrees. A failure arriving late is
+ * announced as such, and the tally is said again.
+ */
+let summaryPrinted = false;
+
 /** Runs one section, reporting rather than rethrowing so the rest still run */
 function runSection(name, body) {
   try {
@@ -936,11 +1010,17 @@ function runSection(name, body) {
     failures.push(name);
     console.error("\n✗ " + name);
     console.error(err?.stack ? err.stack : String(err));
+    if (summaryPrinted) {
+      console.error(
+        "\n(that section reported after the tally was printed — the run failed)"
+      );
+      printSummary();
+    }
   }
 }
 
-/** The tally, and the exit code — the only thing that decides pass or fail */
-function reportSummary() {
+/** The tally and the exit code. Callable more than once; the last word wins. */
+function printSummary() {
   if (failures.length === 0) {
     console.log("\nAll smoke tests passed");
     return;
@@ -949,6 +1029,11 @@ function reportSummary() {
     "\n" + failures.length + " section(s) failed: " + failures.join(", ")
   );
   process.exitCode = 1;
+}
+
+function reportSummary() {
+  summaryPrinted = true;
+  printSummary();
 }
 
 module.exports = {
@@ -972,9 +1057,11 @@ module.exports = {
   encodedCriteria,
   fakeHistory,
   find,
+  galleryToolbarDom,
   globalListeners,
   hasText,
   historyReplaces,
+  loggedErrors,
   makeEl,
   makeFilterModel,
   mangaConditionsOf,

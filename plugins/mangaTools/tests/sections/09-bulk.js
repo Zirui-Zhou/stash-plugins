@@ -11,7 +11,9 @@ const {
   documentRoot,
   find,
   globalListeners,
+  loggedErrors,
   makeEl,
+  mutationWrites,
   patchedBefore,
   runSection,
   state,
@@ -521,6 +523,12 @@ module.exports = () => {
     // before a write answers with the state before it, so letting that response
     // land afterwards puts back what the write just changed — a mark the reader
     // has just removed, or one they just made.
+    //
+    // One burst, so this is one refetch however many writes it holds: the clicks
+    // happen together, their refetches are all deferred onto the fetch the last
+    // navigation started, and the first of them to run starts a request the rest
+    // then share. What is being asserted is that the fetch happens at all —
+    // deliberately *not* one per write, which is not what the code does.
     const beforeToolbar = state.galleryQueryCount;
     for (const id of ["995", "996"]) {
       globalListeners["stash:location"]({
@@ -542,6 +550,54 @@ module.exports = () => {
             "one deduplicated fetch would be an answer from before the write"
         );
       });
+
+      // A write that fails *before* it is sent — no client — has to refetch for
+      // the same reason, only more so: the store was changed optimistically, the
+      // server never heard, and a page left without this refresh keeps a mark
+      // that does not exist. In its own burst, because a burst shares one
+      // refetch (above) and so cannot tell this one from the others'.
+      //
+      // The baseline is taken before the navigation, which is itself a refresh.
+      // The client is only missing for the click: the refresh it leads to is a
+      // promise away, by which time a Stash without a client would have one
+      // again — and a refresh that could not happen either way is not what this
+      // is about.
+      const beforeMissing = state.galleryQueryCount;
+      const errorsBefore = loggedErrors.length;
+      const writesBefore = mutationWrites.length;
+      globalListeners["stash:location"]({
+        detail: { data: { location: { pathname: "/galleries/994" } } },
+      });
+      const toolbar = call("CustomFields", {
+        values: { [NS.FIELD_NAME]: "ja", other: "x" },
+      }).props.children[2];
+      state.clientMissing = true;
+      toolbar.type(toolbar.props).node.props.children[0].props.onClick();
+      state.clientMissing = false;
+
+      setTimeout(() => {
+        runSection("14c a write with no client says so, and refetches", () => {
+          assert.strictEqual(
+            mutationWrites.length,
+            writesBefore,
+            "with no client there is nothing to write with, so nothing is sent"
+          );
+          assert.strictEqual(
+            state.galleryQueryCount - beforeMissing,
+            2,
+            "one fetch for the navigation and one to undo the optimistic mark — " +
+              "a write with nowhere to go must not leave the store lying"
+          );
+          // The one symptom this failure has: the page cannot be told apart from
+          // a successful write any other way.
+          assert.ok(
+            loggedErrors
+              .slice(errorsBefore)
+              .some((line) => /could not write the manga mark/.test(line)),
+            "a write that could not be sent must be reported as one"
+          );
+        });
+      }, 0);
     }, 0);
   }, 0);
 };

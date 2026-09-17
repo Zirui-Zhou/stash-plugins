@@ -10,6 +10,7 @@ const {
   call2,
   documentRoot,
   find,
+  galleryToolbarDom,
   globalListeners,
   hasText,
   makeEl,
@@ -462,5 +463,49 @@ module.exports = () => {
   editForm.insertBefore(studioRow, firstChild);
   console.log(
     "✓ edit page (target between studio and performers / widths copied / pull back / no anchor)"
+  );
+
+  // ── 9c. The switch, before the plugin's own answer arrives ─────────
+  //
+  // The store is null until the first fetch settles, and this section runs
+  // before that (see smoke.js). Null is *not* an answer, so the switch falls
+  // back to the custom fields Stash handed the page — the old behaviour, kept
+  // deliberately for this one window. Reading null as "nothing is manga" would
+  // draw an unmarked switch on a marked gallery for as long as the fetch takes,
+  // which is a flicker the reader sees.
+  //
+  // Both ways, and the unmarked one is what makes this test mean something:
+  // gallery 1 *is* in the fixture map, so a switch reading the store here would
+  // say marked no matter what the values hold. This asserting false is the
+  // proof that the values are what it read.
+  galleryToolbarDom();
+  globalListeners["stash:location"]({
+    detail: { data: { location: { pathname: "/galleries/1" } } },
+  });
+
+  const switchFor = (fields) => {
+    const el = call("CustomFields", { values: fields }).props.children[2];
+    return el.type(el.props).node.props.children[0];
+  };
+  assert.strictEqual(
+    switchFor({
+      [NS.FIELD_NAME]: "ja",
+      "plugin.mangaTools.manga": "true",
+    }).props["aria-pressed"],
+    true,
+    "before the store answers, the values Stash handed in are what the switch reads"
+  );
+  assert.strictEqual(
+    switchFor({ [NS.FIELD_NAME]: "ja" }).props["aria-pressed"],
+    false,
+    "…and an unmarked gallery reads unmarked the same way"
+  );
+  assert.strictEqual(
+    switchFor({ [NS.FIELD_NAME]: "ja" }).props.className,
+    "minimal manga-tools-manga-toggle btn btn-secondary",
+    "which is also what decides the state class the CSS colours"
+  );
+  console.log(
+    "✓ the switch before the store answers (falls back to Stash's values)"
   );
 };

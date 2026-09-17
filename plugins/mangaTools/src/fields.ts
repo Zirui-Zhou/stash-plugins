@@ -126,6 +126,28 @@ NS.fieldsToClear = (customFields: unknown): string[] => {
 };
 
 /**
+ * A copy of a custom_fields map with every one of this plugin's fields removed
+ * (the input is not mutated).
+ *
+ * The other half of fieldsToClear, and the reason both exist: unmarking has to
+ * say the same thing twice — once as the keys the server should delete
+ * (`remove:`), and once as the map Stash's edit form should be holding, because
+ * the map a Save sends back is the *whole* of the custom fields. Written out by
+ * hand the second one is a loop that reassigns a working value, which reads like
+ * it might be wrong until it is checked; this is that loop, said once.
+ */
+NS.clearFields = (customFields: unknown): MangaToolsCustomFields => {
+  let next = (customFields || {}) as MangaToolsCustomFields;
+  if (!next || typeof next !== "object") next = {};
+
+  NS.fieldsToClear(next).forEach((name) => {
+    next = NS.setField(next, name, "");
+  });
+
+  return next;
+};
+
+/**
  * Reads a named field out of a custom_fields map. The name is matched
  * case-insensitively, and the stored spelling is what comes back out of the map.
  * @returns "" when there is no such field, or it holds nothing
