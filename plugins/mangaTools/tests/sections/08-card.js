@@ -753,7 +753,13 @@ module.exports = () => {
 
   // A gallery the store has never heard of: the switch falls back to the values
   // Stash handed in, which say nothing about the mark.
-  nav("/galleries/8");
+  //
+  // The id is one no other section uses, and that is not decoration: marking a
+  // gallery marks it in the store for the rest of the run, because the write is
+  // real and so is the state it leaves behind. Section 14 picks its galleries out
+  // of that same store — gallery 8 is its "not manga" fixture — so a mark left on
+  // a shared id would quietly change what that section is testing.
+  nav("/galleries/999");
   const unmarkedToolbar = toolbarMark(detailValues("censored")).drawn.node;
   const toggle = unmarkedToolbar.props.children[0];
   assert.strictEqual(
@@ -769,18 +775,39 @@ module.exports = () => {
     "and nothing else, until the reader asks to stop managing the gallery"
   );
 
+  const writesBefore = mutationWrites.length;
+  toggle.props.onClick();
+
+  // The switch says so at once, rather than after a round trip that may yet fail,
+  // and it does it from the store — the values Stash handed in are untouched, so
+  // nothing else could be answering here.
+  assert.strictEqual(
+    toolbarMark(detailValues("censored")).drawn.node.props.children[0].props[
+      "aria-pressed"
+    ],
+    true,
+    "a click should show up at once, without waiting for the write"
+  );
+
+  // The details panel is drawn on it too — the same question, asked through the
+  // same helper — or marking a gallery on its own detail page would leave the page
+  // looking untouched until it was reloaded.
+  assert.ok(
+    call("CustomFields", { values: detailValues("censored") }).props
+      .children[1],
+    "marking should draw the details panel on the page it was marked from"
+  );
+
   // Marking is one click, and it goes through this plugin's own mutation rather
   // than Stash's. Stash's document asks for the gallery back, and what a mutation
   // asks for is what Apollo writes into its cache — which reinitialises a Stash
   // edit form open on the same page, on top of whatever is typed in it. So this
   // one asks for nothing.
-  const writesBefore = mutationWrites.length;
-  toggle.props.onClick();
   assert.deepStrictEqual(
     mutationWrites[writesBefore].variables,
     {
       input: {
-        id: "8",
+        id: "999",
         custom_fields: { partial: { [NS.MANGA_FIELD_NAME]: "true" } },
       },
     },
@@ -809,23 +836,13 @@ module.exports = () => {
   // Marking with an edit form open writes into the form as well, so the copy its
   // Save sends back — the whole map, `custom_fields: { full: … }` — is not a
   // version without the mark. The form is published by the custom-fields section
-  // of the edit page, which is rendered for every gallery, marked or not, so this
-  // is a gallery that has not been marked yet.
+  // of the edit page, which is rendered for every gallery, marked or not.
+  nav("/galleries/997");
   const pushes = [];
   call("CustomFieldsInput", {
     values: { [NS.FIELD_NAME]: "ja" },
     onChange: (next) => pushes.push(next),
   });
-
-  // The form has the last word on the mark, over whatever Stash handed the page:
-  // it is the copy a Save would send.
-  const overValues = toolbarMark(asManga(detailValues("censored"))).drawn.node
-    .props.children[0];
-  assert.strictEqual(
-    overValues.props["aria-pressed"],
-    false,
-    "an open edit form has the last word on the mark"
-  );
 
   toolbarMark(
     detailValues("censored")
@@ -834,18 +851,6 @@ module.exports = () => {
     pushes[0],
     { [NS.FIELD_NAME]: "ja", [NS.MANGA_FIELD_NAME]: "true" },
     "the form's own map gets the mark too"
-  );
-
-  // …and the switch says so at once rather than waiting for a server round trip
-  // that may yet fail: what it draws is the form's copy, which the click has
-  // already moved. The values Stash handed the page are untouched, which is what
-  // makes this a test of the click rather than of the write.
-  assert.strictEqual(
-    toolbarMark(detailValues("censored")).drawn.node.props.children[0].props[
-      "aria-pressed"
-    ],
-    true,
-    "the switch should show the mark as soon as it is clicked"
   );
 
   // …and the store's query is no-cache for the same reason MARK_UPDATE asks for
@@ -892,9 +897,11 @@ module.exports = () => {
   );
   assert.deepStrictEqual(NS.fieldsToClear(null), [NS.MANGA_FIELD_NAME]);
 
-  // A rejected write leaves the switch as it was, so the click can be repeated.
-  // On a gallery the store does not know, which is the one a click marks.
-  nav("/galleries/8");
+  // A rejected write leaves nothing behind: the mark it put in the store is
+  // taken back by the refresh that follows. On a gallery the store does not
+  // know, which is the one a click marks — and one no other section uses, for
+  // the reason given above.
+  nav("/galleries/998");
   state.galleryWriteResult = new Error("nope");
   toolbarMark(
     detailValues("censored")
@@ -1110,6 +1117,13 @@ module.exports = () => {
     [NS.CENSORSHIP_FIELD_NAME]: "censored",
     other: "x",
   };
+
+  // Gallery 8: the fixtures' one gallery with no mark in the map the plugin
+  // loaded, which is what this section is about. The route matters — whether a
+  // gallery is manga is answered from the store first (see isMarkedNow), so the
+  // page has to be one the store does not know, or these values would be
+  // contradicting it rather than testing it.
+  nav("/galleries/8");
 
   // Cards: gallery 8 carries a language and is not in the map the plugin loaded.
   assert.strictEqual(

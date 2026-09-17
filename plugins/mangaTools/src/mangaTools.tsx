@@ -1100,6 +1100,31 @@ function editFormFor(galleryId: string): typeof editForm {
 }
 
 /**
+ * Whether this gallery is manga, as far as anything on screen is concerned.
+ *
+ * The store first, and the values Stash handed the page only as the fallback for
+ * the moment before the first refresh has answered.
+ *
+ * The store is the one to trust because this plugin's own writes keep it in step
+ * (see `mark` and `write`) *and* it is refreshed from the server — while the
+ * values Stash holds come out of Apollo's cache, which marking deliberately does
+ * not touch, so they can be a mark behind. Everything that asks the question —
+ * the toolbar switch, the details panel, the edit block — asks it here.
+ *
+ * The edit form is not consulted, which is worth spelling out: the form holds a
+ * mark only when this plugin put one there, and it does that together with the
+ * write, so the two agree by construction. A form the reader edited cannot hold
+ * one at all — the mark has no control in that form.
+ */
+function isMarkedNow(
+  galleryId: string | null | undefined,
+  values?: CustomFieldsMap
+): boolean {
+  const stored = galleryId ? store.get(String(galleryId)) : undefined;
+  return stored ? NS.isManga(stored) : NS.isManga(values);
+}
+
+/**
  * Whether Stash's edit form has changes that have not been saved.
  *
  * Read out of the DOM because that is the only place it shows. The panel's own
@@ -1203,9 +1228,7 @@ function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
   // values Stash handed in are the last to know. Those are the last resort, for
   // the moment before either has anything to say.
   const form = editFormFor(props.galleryId);
-  const marked = NS.isManga(
-    form ? form.values : (store.get(props.galleryId) ?? props.values)
-  );
+  const marked = isMarkedNow(props.galleryId, props.values);
 
   /**
    * Takes the mark off, and this plugin's fields with it.
@@ -1220,6 +1243,13 @@ function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
    * default: the alternative silently keeps data the reader cannot see.)
    */
   const write = (fields: Record<string, unknown>) => {
+    // Taking the mark off takes this plugin's fields with it, so the gallery
+    // stops being one of its own: out of the store now, not after the round trip.
+    // Everything drawn from it — the badge, the details panel, the switch — goes
+    // with it.
+    store.delete(props.galleryId);
+    emit();
+
     setBusy(true);
     update[0]({
       variables: { input: { id: props.galleryId, custom_fields: fields } },
@@ -1227,9 +1257,9 @@ function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
       () => {
         setBusy(false);
         setConfirming(false);
-        // This one goes through Stash's own mutation, so its cache follows — but
-        // the store this plugin draws from does not, and an unmarked gallery left
-        // in it keeps its badge until the next page load.
+        // This one goes through Stash's own mutation, so its cache follows — and
+        // the store is put right by the refresh, which drops a gallery the server
+        // no longer answers with.
         refresh();
       },
       (e: unknown) => {
@@ -1264,20 +1294,29 @@ function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
    * mark off is not.
    */
   const mark = () => {
+    // The two copies are each built on their own: the form's map is the reader's,
+    // with whatever they have typed into it, and replacing it with the store's
+    // would throw that away — which is the failure this whole change is about.
     if (form) {
-      // The published object is this plugin's own copy, so it is kept in step by
-      // hand: the block that publishes it does so on *its* renders, and the switch
-      // is a different component that has to be right on the next one. `setField`
-      // builds a new map, so this replaces the copy rather than mutating the one
-      // Stash is holding.
-      const next = NS.setField(form.values, MANGA_FIELD_NAME, NS.MANGA_VALUE);
-      form.values = next;
-      form.onChange(next);
+      // The form gets the mark because the map its Save sends back is the *whole*
+      // of it (`custom_fields: { full: … }`): a form that did not know about the
+      // mark would drop it on the next save.
+      form.onChange(NS.setField(form.values, MANGA_FIELD_NAME, NS.MANGA_VALUE));
     }
 
-    // The switch draws from that copy or from the store, and neither has moved
-    // yet: the store waits for the server, which is a round trip away and may
-    // fail. So say the state changed, rather than waiting for the write to say it.
+    // Marked here and now, so the switch, the details panel and the edit block —
+    // all of which ask isMarkedNow — follow the click rather than waiting for a
+    // server round trip that may yet fail. The write below either confirms this or,
+    // on failure, is put right by the refresh that follows it.
+    store.set(
+      props.galleryId,
+      NS.setField(
+        store.get(props.galleryId) ?? props.values,
+        MANGA_FIELD_NAME,
+        NS.MANGA_VALUE
+      )
+    );
+
     emit();
 
     setBusy(true);
@@ -1286,13 +1325,14 @@ function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
     }).then(
       () => {
         setBusy(false);
-        // The store is what the switch reads when no form is open, so it has to
-        // be told the server has moved on.
         refresh();
       },
       (e: unknown) => {
         setBusy(false);
         console.error("[mangaTools] could not write the manga mark:", e);
+        // The server never heard about it, so what is on screen is wrong: ask the
+        // server what the truth is.
+        refresh();
       }
     );
   };
@@ -2650,6 +2690,11 @@ registerPatch("instead", "CustomFieldsInput", (...args: unknown[]) => {
   const Original = originalFrom(args);
   noteFired("CustomFieldsInput");
 
+  // Subscribed for the same reason as the details panel above: whether the edit
+  // block is drawn is asked from the store now, and a mark made from the toolbar
+  // changes that without touching anything Stash would re-render this for.
+  useGlobalVersion();
+
   // This component *is* the gallery's edit form's custom-fields section: it is
   // rendered for every gallery, whether or not this plugin has marked it, and it
   // is handed both the form's map and the setter for it. Published for the
@@ -2675,7 +2720,7 @@ registerPatch("instead", "CustomFieldsInput", (...args: unknown[]) => {
     <>
       {/* Only on a gallery that is manga. An unmarked gallery's edit form is
           Stash's own, unchanged — the plugin is not there at all. */}
-      {NS.isManga(props.values) ? (
+      {isMarkedNow(currentGalleryId(), props.values) ? (
         <MangaFieldBlock values={props.values} onChange={props.onChange} />
       ) : null}
       <Original {...props} />
@@ -2856,6 +2901,13 @@ registerPatch("instead", "CustomFields", (...args: unknown[]) => {
   const Original = originalFrom(args);
   noteFired("CustomFields");
 
+  // Subscribed, because what this renders depends on this plugin's own state:
+  // whether the gallery is marked, which is now answered from the store rather
+  // than from the values Stash passed in (see isMarkedNow). Without this, marking
+  // a gallery on this very page would not draw the panel — nothing here would
+  // re-render, since the write deliberately leaves Apollo's cache alone.
+  useGlobalVersion();
+
   const values = props.values;
   if (!values || typeof values !== "object") return <Original {...props} />;
 
@@ -2890,7 +2942,7 @@ registerPatch("instead", "CustomFields", (...args: unknown[]) => {
         Drawn for a manga gallery that carries a value; the panel itself drops
         out entirely when neither field is set.
       */}
-      {galleryId && NS.isManga(values) ? (
+      {galleryId && isMarkedNow(galleryId, values) ? (
         <GuardedBlock name="manga panel">
           <MangaDetailsPanel values={values} />
         </GuardedBlock>
