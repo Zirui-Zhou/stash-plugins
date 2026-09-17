@@ -1,0 +1,17 @@
+- id: "mangaReader"
+  name: "Manga Reader"
+  metadata:
+    description: "A two-page (spread) view for the image lightbox, for reading manga."
+  version: "0.2.1-e94da5b"
+  date: "2026-09-17 18:03:42"
+  path: "mangaReader.zip"
+  sha256: "3edceb9aa0fc077db4b1fe348aa0f7964f816a1ad6759ef9705c9ae87f93e39c"
+
+- id: "mangaTools"
+  name: "Manga Tools"
+  metadata:
+    description: "Adapts Stash galleries to manga/comic management."
+  version: "0.6.2-e94da5b"
+  date: "2026-09-17 18:03:42"
+  path: "mangaTools.zip"
+  sha256: "b5af10ba71be49d2de57a4a1ec997436bba9e9e4e359213c4dfaf91b02dea81b"
