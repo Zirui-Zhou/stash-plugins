@@ -14,7 +14,7 @@
   "mangaTools.settings.openDetailsBlock.heading": "简介的漫画信息默认展开",
   "mangaTools.settings.openDetailsBlock.description": "画廊简介页里的那一节。收起时，那一行标题就是「这里有一节」的说明。这只决定打开时的默认状态，不决定它能不能打开。",
   "mangaTools.settings.openEditBlock.heading": "编辑页的漫画信息默认展开",
-  "mangaTools.settings.openEditBlock.description": "画廊编辑表单里的那一块，语言和修正在那里设置。这只决定打开时的默认状态，不决定它能不能打开.",
+  "mangaTools.settings.openEditBlock.description": "画廊编辑表单里的那一块，语言、修正和翻译组在那里设置。这只决定打开时的默认状态，不决定它能不能打开.",
 
   "mangaTools.settings.hidePerformers.heading": "在漫画的编辑页隐藏「演员」",
   "mangaTools.settings.hidePerformers.description": "漫画一般没有演员，所以编辑页不显示这一栏。只是隐藏：画廊已有的演员仍然留在画廊上，保存时也不会被清掉。批量编辑对话框和简介页不受影响。",
@@ -26,7 +26,7 @@
   "mangaTools.filter.manga.marked": "已标记",
   "mangaTools.filter.manga.unmarked": "未标记",
 
-  "mangaTools.manga.confirm": "确定不再把这个画廊作为漫画管理吗？它的语言和修正的值会被删除。",
+  "mangaTools.manga.confirm": "确定不再把这个画廊作为漫画管理吗？它的语言、修正和翻译组的值会被删除。",
   "mangaTools.manga.confirmResetsForm": "编辑页有未保存的改动，取消标记会把该表单重置。",
   "mangaTools.manga.confirmCancel": "取消",
   "mangaTools.manga.confirmOk": "取消标记",
@@ -39,6 +39,9 @@
   "mangaTools.censorship.uncensored": "无修正",
   "mangaTools.censorship.unset": "未标注",
 
+  "mangaTools.translationGroup.heading": "翻译组",
+  "mangaTools.translationGroup.placeholder": "填写翻译组…",
+
   "mangaTools.bulk.remove": "移除",
-  "mangaTools.bulk.unmarkWarning": "取消标记会从选中的画廊中移除本插件的漫画、语言和修正字段。"
+  "mangaTools.bulk.unmarkWarning": "取消标记会从选中的画廊中移除本插件的漫画、语言、修正和翻译组字段。"
 }

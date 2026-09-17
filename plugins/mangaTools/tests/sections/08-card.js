@@ -442,6 +442,7 @@ module.exports = () => {
   );
 
   const CF = NS.CENSORSHIP_FIELD_NAME;
+  const TG = NS.TRANSLATION_GROUP_FIELD_NAME;
 
   assert.strictEqual(NS.pickField({ [CF]: "censored" }, CF), "censored");
   assert.strictEqual(
@@ -497,6 +498,20 @@ module.exports = () => {
     NS.MANGA_FIELD_NAME
   );
   assert.strictEqual(
+    NS.ownField("plugin.mangaTools.Manga"),
+    NS.MANGA_FIELD_NAME
+  );
+  assert.strictEqual(
+    NS.ownField(NS.TRANSLATION_GROUP_FIELD_NAME),
+    NS.TRANSLATION_GROUP_FIELD_NAME,
+    "the fourth field, which has no sidebar section and no bulk row"
+  );
+  assert.strictEqual(
+    NS.ownField("plugin.mangaTools.translationGroups"),
+    "",
+    "recognised means the name itself, not anything shaped like it"
+  );
+  assert.strictEqual(
     NS.ownField("plugin.mangaTools.languageNotes"),
     "",
     "a longer name that merely starts the same way is not ours"
@@ -506,6 +521,24 @@ module.exports = () => {
   assert.strictEqual(NS.ownField(undefined), "");
   assert.strictEqual(NS.isOwnField("  plugin.mangaTools.manga  "), true);
   assert.strictEqual(NS.isOwnField("plugin.mangaTools.mangaX"), false);
+
+  // The translation group's value, which is free text and so has the one rule
+  // the other fields do not need: it is trimmed on the way out, because the
+  // space somebody left on the end is not part of the group's name — and the
+  // input that wrote it has to keep showing it while it is being typed (see 9b).
+  assert.strictEqual(
+    NS.translationGroupOf({ [TG]: "  Lily Manga  " }),
+    "Lily Manga"
+  );
+  assert.strictEqual(
+    NS.translationGroupOf({ "plugin.mangaTools.TranslationGroup": "X" }),
+    "X",
+    "read through the same case-insensitive key lookup as the other fields"
+  );
+  assert.strictEqual(NS.translationGroupOf({ [TG]: "   " }), "");
+  assert.strictEqual(NS.translationGroupOf({ [TG]: "" }), "");
+  assert.strictEqual(NS.translationGroupOf({ other: "x" }), "");
+  assert.strictEqual(NS.translationGroupOf(null), "");
 
   // --- the card's popover row ---
   //
@@ -922,9 +955,15 @@ module.exports = () => {
       [NS.FIELD_NAME]: "ja",
       "plugin.mangaTools.Censorship": "uncensored",
       "plugin.mangaTools.Manga": "true",
+      "plugin.mangaTools.translationgroup": "Lily Manga",
       other: "x",
     }),
-    [NS.FIELD_NAME, "plugin.mangaTools.Censorship", "plugin.mangaTools.Manga"],
+    [
+      NS.FIELD_NAME,
+      "plugin.mangaTools.Censorship",
+      "plugin.mangaTools.Manga",
+      "plugin.mangaTools.translationgroup",
+    ],
     "confirming removes every field of this plugin's, by the spelling it has — " +
       "the API removes by exact key, so a drifted one would survive otherwise"
   );
@@ -942,6 +981,7 @@ module.exports = () => {
     [NS.FIELD_NAME]: "ja",
     "plugin.mangaTools.Censorship": "uncensored",
     "plugin.mangaTools.Manga": "true",
+    [TG]: "Lily Manga",
     other: "x",
   };
   assert.deepStrictEqual(
@@ -955,6 +995,7 @@ module.exports = () => {
       [NS.FIELD_NAME]: "ja",
       "plugin.mangaTools.Censorship": "uncensored",
       "plugin.mangaTools.Manga": "true",
+      [TG]: "Lily Manga",
       other: "x",
     },
     "and it is a copy: the map it was given is untouched"
@@ -1016,6 +1057,101 @@ module.exports = () => {
     "clearing removes the key rather than storing an empty value"
   );
 
+  // ── The translation group's row: free text, with the values in use suggested ──
+  const groupEdits = [];
+  const groupField = (values) =>
+    editField(values, (next) => groupEdits.push(next));
+  const groupInputOf = (block) =>
+    find(block.node, (n) => n.props?.id === "manga_tools_translation_group");
+  const suggestionsOf = (block) =>
+    find(block.node, (n) => n.type === "datalist");
+
+  const groupBlock = groupField({ [TG]: "Lily Manga", other: "x" });
+  const groupInput = groupInputOf(groupBlock);
+  assert.ok(groupInput, "the edit page offers a box for the translation group");
+  assert.strictEqual(groupInput.type, "input");
+  assert.strictEqual(
+    groupInput.props.type,
+    "text",
+    "a text box, not one of the selects: there is no vocabulary to choose from"
+  );
+  assert.strictEqual(
+    groupInput.props.value,
+    "Lily Manga",
+    "showing what the gallery carries"
+  );
+  assert.strictEqual(
+    groupInput.props.list,
+    "manga_tools_translation_group_values",
+    "and pointing at the suggestion list"
+  );
+  assert.strictEqual(
+    groupInput.props.placeholder,
+    "填写翻译组…",
+    "with this plugin's own words for the empty box"
+  );
+
+  // The suggestions are the groups already in use, out of this plugin's store —
+  // the same set of galleries as everything else here. The three in the fixtures
+  // are the test: gallery 4's carries the spaces it was typed with, and it is the
+  // same group as gallery 1's once trimmed, so a list that did not trim would
+  // offer two entries for one group — and one of them would not match what the
+  // details row shows.
+  const suggestions = suggestionsOf(groupBlock);
+  assert.ok(suggestions, "the suggestion list is drawn with the box");
+  assert.strictEqual(
+    suggestions.props.id,
+    "manga_tools_translation_group_values"
+  );
+  assert.deepStrictEqual(
+    suggestions.props.children.map((o) => o.props.value),
+    ["Aozora", "Lily Manga"],
+    "each group once, in name order"
+  );
+
+  // Committed as it is typed rather than on blur: what a Save reads is the map as
+  // it stood when the click was handled, and a blur that has not been through a
+  // render can lose the last thing typed.
+  groupInput.props.onChange({ currentTarget: { value: "Lily Mang" } });
+  assert.strictEqual(
+    groupEdits[0][TG],
+    "Lily Mang",
+    "every keystroke goes into the map Stash's form owns"
+  );
+  // A space has to be typable, so what is stored is what was typed…
+  groupInput.props.onChange({ currentTarget: { value: "Lily Manga " } });
+  assert.strictEqual(groupEdits[1][TG], "Lily Manga ");
+  // …but a box holding only spaces means nothing, and nothing removes the key
+  // rather than storing whitespace that reads as empty everywhere else.
+  groupInput.props.onChange({ currentTarget: { value: "   " } });
+  assert.deepStrictEqual(
+    groupEdits[2],
+    { [MANGA]: "true", other: "x" },
+    "a box holding only spaces clears the field"
+  );
+
+  // Blurring tidies what was left on the end — the same text minus the space
+  // nobody meant to leave. Shown on a render that carries one, because that is the
+  // only state it has anything to do in.
+  groupEdits.length = 0;
+  const padded = groupField({ [TG]: "Lily Manga  ", other: "x" });
+  groupInputOf(padded).props.onBlur();
+  assert.deepStrictEqual(
+    groupEdits[0],
+    { [MANGA]: "true", [TG]: "Lily Manga", other: "x" },
+    "blurring writes the trimmed value back"
+  );
+
+  // And a value that is already tidy is left alone: blur is not an excuse to
+  // rewrite the map (which would mark Stash's form dirty on its own).
+  groupEdits.length = 0;
+  groupInputOf(groupField({ [TG]: "Lily Manga" })).props.onBlur();
+  assert.deepStrictEqual(
+    groupEdits,
+    [],
+    "a tidy value means the blur handler writes nothing at all"
+  );
+
   // Stash draws no toolbar on an entity that is not a gallery.
   globalListeners["stash:location"]({
     detail: { data: { location: { pathname: "/scenes/1" } } },
@@ -1049,6 +1185,7 @@ module.exports = () => {
   const panelValues = {
     [NS.FIELD_NAME]: "zh-Hans",
     [NS.CENSORSHIP_FIELD_NAME]: "censored",
+    [TG]: "Lily Manga",
     alsoNotOurs: "x",
   };
   const customFieldsEl = (values) =>
@@ -1079,8 +1216,16 @@ module.exports = () => {
     "the language as its localised name, not the code"
   );
   assert.ok(hasText(panel, "有修正"), "and the censorship state");
+  assert.ok(
+    // Two assertions for the one row because the label and the value are drawn
+    // as separate children — the same shape Stash's own rows take (see the row
+    // above), and the reason the stricter reading is a pair.
+    hasText(panel, "翻译组:") && hasText(panel, "Lily Manga"),
+    "and the translation group, as written — it is free text, so there is " +
+      "nothing here to draw beside it and nothing to look up"
+  );
 
-  // A row with no value is simply absent, and with neither value there is no
+  // A row with no value is simply absent, and with none of the three there is no
   // panel at all — an unset value stays quiet, as the rest of the plugin keeps
   // it.
   // The icon lookup is by string at runtime, so a name the running Stash's
@@ -1118,7 +1263,7 @@ module.exports = () => {
   assert.strictEqual(
     renderChild(panelOf({ alsoNotOurs: "x" })),
     null,
-    "with neither value set there is no panel at all"
+    "with none of the three set there is no panel at all"
   );
 
   const languageOnly = renderChild(panelOf({ [NS.FIELD_NAME]: "zh-Hans" }));
@@ -1139,6 +1284,16 @@ module.exports = () => {
     "a mark on its own draws just the censorship row"
   );
   assert.ok(!hasText(censoredOnly, "简体中文"), "and not a language row");
+
+  // The group on its own is a panel too — the third field is enough to want one,
+  // which is the other half of the gate above.
+  const groupOnly = renderChild(panelOf({ [TG]: "Lily Manga" }));
+  assert.ok(
+    hasText(groupOnly, "翻译组:") && hasText(groupOnly, "Lily Manga"),
+    "a translation group on its own draws the panel and its row"
+  );
+  assert.ok(!hasText(groupOnly, "简体中文"), "and not the other two rows");
+  assert.ok(!hasText(groupOnly, "未标注"), "nor an empty censorship row");
 
   // The two settings decide the state each block opens in — and only that, which
   // is why a block already on screen keeps whatever the reader did to it.

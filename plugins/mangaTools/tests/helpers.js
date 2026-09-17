@@ -197,6 +197,10 @@ const GALLERY_FIELDS = {
     [MANGA]: "true",
     "plugin.mangaTools.language": "zh-Hans",
     "plugin.mangaTools.censorship": "censored",
+    // Two galleries share a group and a third has its own, so the edit field's
+    // suggestion list has a duplicate to collapse and an order to sort — with one
+    // value in the fixtures, neither could be told from an unsorted list.
+    "plugin.mangaTools.translationGroup": "Lily Manga",
   },
   // capitalised key, canonical value
   2: { [MANGA]: "true", "plugin.mangaTools.Language": "zh-Hant" },
@@ -204,11 +208,13 @@ const GALLERY_FIELDS = {
     [MANGA]: "true",
     "plugin.mangaTools.language": "klingon", // unknown value
     "plugin.mangaTools.Censorship": "uncensored", // capitalised key again
+    "plugin.mangaTools.translationGroup": "Aozora",
   },
   4: {
     [MANGA]: "true",
     other: "x", // not ours, must be left alone
     "plugin.mangaTools.censorship": "maybe", // neither value, so unmarked
+    "plugin.mangaTools.translationGroup": "  Lily Manga  ", // as typed, spaces and all
   },
   5: { [MANGA]: "true", "plugin.mangaTools.language": "ZH-HANS" },
   6: { [MANGA]: "true", "plugin.mangaTools.language": "zh-Hans" },

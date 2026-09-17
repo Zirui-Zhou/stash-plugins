@@ -14,7 +14,7 @@
   "mangaTools.settings.openDetailsBlock.heading": "Start the details block expanded",
   "mangaTools.settings.openDetailsBlock.description": "The Manga info section in a gallery's details tab. Collapsed, its heading is what says the section is there. This decides the state a block opens in, not whether it can be opened.",
   "mangaTools.settings.openEditBlock.heading": "Start the edit block expanded",
-  "mangaTools.settings.openEditBlock.description": "The Manga info block in a gallery's edit form, where its language and censorship are set. This decides the state a block opens in, not whether it can be opened.",
+  "mangaTools.settings.openEditBlock.description": "The Manga info block in a gallery's edit form, where its language, censorship and translation group are set. This decides the state a block opens in, not whether it can be opened.",
 
   "mangaTools.settings.hidePerformers.heading": "Hide the performers field on a manga gallery",
   "mangaTools.settings.hidePerformers.description": "A manga gallery rarely has performers, so its edit page leaves the field out. Only the field is hidden — whatever a gallery already has stays on the gallery and is kept when it is saved. The bulk edit dialog and the details tab are unaffected.",
@@ -26,7 +26,7 @@
   "mangaTools.filter.manga.marked": "Marked",
   "mangaTools.filter.manga.unmarked": "Unmarked",
 
-  "mangaTools.manga.confirm": "Are you sure you want to stop managing this gallery? Its language and censorship values will be removed.",
+  "mangaTools.manga.confirm": "Are you sure you want to stop managing this gallery? Its language, censorship and translation group values will be removed.",
   "mangaTools.manga.confirmResetsForm": "The edit form has unsaved changes, and taking the mark off will reset it.",
   "mangaTools.manga.confirmCancel": "Cancel",
   "mangaTools.manga.confirmOk": "Unmark",
@@ -39,6 +39,9 @@
   "mangaTools.censorship.uncensored": "Uncensored",
   "mangaTools.censorship.unset": "Not marked",
 
+  "mangaTools.translationGroup.heading": "Translation group",
+  "mangaTools.translationGroup.placeholder": "Set a translation group…",
+
   "mangaTools.bulk.remove": "Remove",
-  "mangaTools.bulk.unmarkWarning": "Unmarking removes this plugin's manga, language and censorship fields from the selected galleries."
+  "mangaTools.bulk.unmarkWarning": "Unmarking removes this plugin's manga, language, censorship and translation group fields from the selected galleries."
 }

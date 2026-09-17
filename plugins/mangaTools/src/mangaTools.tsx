@@ -86,6 +86,7 @@ const React = PluginApi.React;
 const FIELD_NAME = NS.FIELD_NAME;
 const CENSORSHIP_FIELD_NAME = NS.CENSORSHIP_FIELD_NAME;
 const MANGA_FIELD_NAME = NS.MANGA_FIELD_NAME;
+const TRANSLATION_GROUP_FIELD_NAME = NS.TRANSLATION_GROUP_FIELD_NAME;
 
 const PLUGIN_ID = "mangaTools";
 
@@ -1058,6 +1059,38 @@ function MangaIcon() {
 }
 
 /**
+ * The translation groups already in use, in the order the edit field offers them.
+ *
+ * Out of this plugin's own store, which is the same set of galleries everything
+ * else here is about: every marked gallery carries its whole custom_fields map,
+ * so the values in use are in memory already and no query is needed for them.
+ * Empty until the first answer, which is right — before that there is nothing to
+ * suggest, and the field is a plain text box regardless.
+ *
+ * Recomputed on every call rather than cached. The field that asks writes on every
+ * keystroke, so this does run once per character — but it walks the marked
+ * galleries and sorts the *distinct* names, which is tens of entries, and a walk
+ * of a few thousand maps is not worth an invariant that can go stale: the store is
+ * both replaced by a refresh and written into in place, and a cache keyed on
+ * either one would be quietly wrong about the other.
+ *
+ * Case is left alone. Two groups whose names differ only in case are two names as
+ * far as this is concerned, and folding them here would mean deciding which
+ * spelling to offer somebody who typed the other one.
+ */
+function knownTranslationGroups(): string[] {
+  if (!store) return [];
+
+  const seen: { [name: string]: true } = {};
+  store.forEach((fields) => {
+    const name = NS.translationGroupOf(fields);
+    if (name) seen[name] = true;
+  });
+
+  return Object.keys(seen).sort();
+}
+
+/**
  * Whether the store — a filled one — holds this gallery.
  *
  * Since the query asks for the mark, being in the map and being manga are the same
@@ -1723,6 +1756,61 @@ function MangaFieldBlock(props: {
     </div>
   );
 
+  // The translation group, as free text. A plain input rather than one of the
+  // selects above it: there is no vocabulary to choose from, and react-select —
+  // which is what Stash gives plugins — cannot be typed into, only searched. What
+  // the reader gets instead is the browser's own suggestion list, filled from the
+  // groups already in use (see knownTranslationGroups).
+  //
+  // Committed on every keystroke rather than on blur, which is the one place this
+  // differs from Stash's own custom-field input: what a Save reads is the values
+  // map as it stood when the click was handled, and a blur that has not been
+  // through a render yet can lose the last thing typed. Stash's own commit-on-blur
+  // takes that risk with the whole map behind it; here the map is the only copy.
+  //
+  // The stored value is what was typed, spaces and all, so that a space can be
+  // typed at all; whitespace-only counts as nothing and removes the key, and the
+  // read side trims (see NS.translationGroupOf). Blurring tidies what was left
+  // behind, which is the same text minus the space nobody meant to leave.
+  const group = NS.translationGroupOf(props.values);
+  const groupRaw = NS.pickField(props.values, TRANSLATION_GROUP_FIELD_NAME);
+
+  const groupField = (
+    <div className={cls.group} data-field="manga_tools_translation_group">
+      <label className={cls.label} htmlFor="manga_tools_translation_group">
+        {t(intl, "mangaTools.translationGroup.heading")}
+      </label>
+      <div className={cls.control}>
+        <input
+          className="form-control input-control"
+          type="text"
+          id="manga_tools_translation_group"
+          // The datalist below is the suggestion list. `list` is what ties the two
+          // together, and the id is spelled out rather than made unique per
+          // instance because there is only ever one edit form.
+          list="manga_tools_translation_group_values"
+          placeholder={t(intl, "mangaTools.translationGroup.placeholder")}
+          value={groupRaw}
+          onChange={(e) => {
+            const next = e.currentTarget.value;
+            write(TRANSLATION_GROUP_FIELD_NAME, next.trim() ? next : "");
+          }}
+          onBlur={() => {
+            if (groupRaw !== group) write(TRANSLATION_GROUP_FIELD_NAME, group);
+          }}
+        />
+        <datalist id="manga_tools_translation_group_values">
+          {/* A key is required, and the value is the only thing here — the
+              datalist's entries are its options' values, and their labels are
+              never shown. */}
+          {knownTranslationGroups().map((name) => (
+            <option key={name} value={name} />
+          ))}
+        </datalist>
+      </div>
+    </div>
+  );
+
   // The field row is not wrapped in the disclosure, it is *shown or not shown* by
   // it, and that is deliberate: wrapping it would put a box between the row and
   // the padded column its negative margins cancel against, which is the whole
@@ -1755,6 +1843,7 @@ function MangaFieldBlock(props: {
       </div>
       {open ? languageField : null}
       {open ? markField : null}
+      {open ? groupField : null}
     </div>,
     host
   );
@@ -2634,14 +2723,15 @@ function MangaDetailsPanel(props: { values: CustomFieldsMap }) {
 
   const language = NS.describe(pickLanguage(props.values), intl.locale);
   const mark = censorshipOf(props.values);
+  const group = NS.translationGroupOf(props.values);
   const Solid = PluginApi.libraries.FontAwesomeSolid || {};
   const Icon = PluginApi.components.Icon;
   const Button = PluginApi.libraries.Bootstrap?.Button;
   const Collapse = PluginApi.libraries.Bootstrap?.Collapse;
 
-  // Nothing set means nothing to say: with no language and no mark the whole
-  // panel is dropped, rather than left as an empty fold with only its heading.
-  if (!language && !mark) return null;
+  // Nothing set means nothing to say: with none of the three set the whole panel
+  // is dropped, rather than left as an empty fold with only its heading.
+  if (!language && !mark && !group) return null;
 
   // The same mount point the plain language row used: the end of .gallery-details,
   // which lands after "photographer" and before "details".
@@ -2675,6 +2765,15 @@ function MangaDetailsPanel(props: { values: CustomFieldsMap }) {
           <CensorshipIcon value={mark} />
           {mark ? " " : null}
           {NS.censorshipLabel(intl, mark)}
+        </h6>
+      ) : null}
+      {group ? (
+        // No icon and no flag: a group's name is its own, and there is nothing
+        // here to draw beside it. Drawn last, because it is the one row that is
+        // the same shape on every gallery rather than picked from a list.
+        <h6 className="manga-tools-detail">
+          {t(intl, "mangaTools.translationGroup.heading") + ": "}
+          {group}
         </h6>
       ) : null}
     </div>
@@ -3027,7 +3126,7 @@ registerPatch("instead", "CustomFields", (...args: unknown[]) => {
       {/*
         The panel, in the details tab, where the plain language row used to be.
         Drawn for a manga gallery that carries a value; the panel itself drops
-        out entirely when neither field is set.
+        out entirely when none of its three fields is set.
       */}
       {galleryId && isMarkedNow(galleryId, values) ? (
         <GuardedBlock name="manga panel">

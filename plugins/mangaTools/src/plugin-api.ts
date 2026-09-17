@@ -84,6 +84,10 @@ export interface MangaToolsNamespace {
   MANGA_VALUE: string;
   /** Whether a gallery's custom fields mark it as manga. */
   isManga(customFields: unknown): boolean;
+  /** The translation group field's name — free text. See fields.ts. */
+  TRANSLATION_GROUP_FIELD_NAME: string;
+  /** A gallery's translation group, trimmed, or "" when it has none. */
+  translationGroupOf(customFields: unknown): string;
   /**
    * Which of this plugin's fields a key names — the canonical name, or "" for a
    * key that is not ours. The one list every recogniser asks.

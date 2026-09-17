@@ -9,7 +9,8 @@ upgrades never produce merge conflicts.
 | Feature | What it adds |
 |---|---|
 | **Language** | A language attribute on galleries, surfaced as a flag badge, an edit-page dropdown, a bulk-edit row and a localised detail row |
-| **Censorship** | Whether a gallery is censored or not, surfaced as a mark on the gallery card and a cycling button in the detail page's toolbar |
+| **Censorship** | Whether a gallery is censored or not, surfaced as a mark on the gallery card and a row in the detail page's Manga info panel |
+| **Translation group** | Who translated the comic, as free text — a box in the edit page's Manga info block, and a row in the details one |
 | **Language filter** | A "language" section in the gallery list's sidebar that narrows the list to one language |
 | **Settings** | Which languages the dropdown offers, whether flags are drawn, and whether the cover badge is drawn |
 
@@ -299,15 +300,15 @@ other brown; that brown is deliberately not copied, since it is Stash's accent f
 | Where | Effect |
 |---|---|
 | Gallery list / card | The state's icon **at the end of the popover row** — the row that appears on hover with the image count, the tag count and the organized box. An unmarked gallery adds nothing there, since most galleries are unmarked |
-| Gallery detail page | A **button in the toolbar**, between Stash's organized button and the operation menu, cycling not marked → censored → uncensored. The tooltip names what the **next** click does, which is the whole of how a three-state button explains itself |
+| Gallery detail page | A **row in the Manga info panel**, with the state's icon and its name. Unset draws no row at all |
+| Gallery edit page | A two-option selector in the Manga info block. Unset is the selector's own clear button, which is what makes "not marked" a state you can return to without a third option to name it |
 
-**The toolbar button is drawn on every gallery detail page, marked or not.** It
-has to be: it is the only way to set a mark, so gating it on the field already
-existing would leave every gallery permanently unmarked — which is exactly the
-bug that shipped in 0.5.0 and was fixed in 0.5.1. An absent key *is* the "not
-marked" state, and the first click writes the canonical spelling. A gallery that
-has never been marked therefore looks untouched everywhere except that one
-dimmed question mark, which is the offer rather than a state.
+**The toolbar carries the manga switch, not this.** It used to cycle the three
+censorship states; the mark and the switch are asked of the same plugin state, so
+two controls in one toolbar meant two things to explain and no way to tell which
+was authoritative. What the toolbar keeps is the one control there is no other
+route to — marking a gallery as manga — and this plugin's fields are set on the
+edit page, where every other gallery attribute is set.
 
 **The card's mark is spliced into Stash's own row, and that row is a flex
 container** — rendering a second `.card-popovers` beside it would put the mark on
@@ -374,6 +375,60 @@ reason is the same one the writes are quiet for, seen from the other side.
 Clearing removes the key rather than writing an empty value, and removes it *by
 the spelling the gallery actually carries* — so a key that drifted in case is
 removed rather than left behind holding the old mark.
+
+### Translation group
+
+Who translated the comic: `plugin.mangaTools.translationGroup`, as free text.
+
+| Where | Effect |
+|---|---|
+| Gallery detail page | A row in the Manga info panel: the label and the name, and nothing else. Unset draws no row |
+| Gallery edit page | A text box in the Manga info block, with the groups already in use offered as suggestions |
+
+**Free text, and that is the whole of its design.** The other fields here pick
+from a vocabulary this plugin owns — a language is a code, a censorship is one of
+two words — so both can be validated, localised and drawn with an icon. A group's
+name is whatever it calls itself, and the only honest treatment of that is to
+keep what was typed. Nothing is normalised on the way in, and nothing is drawn
+from it.
+
+**React-select cannot be typed into.** Stash gives plugins `react-select`, whose
+select is a search box over a fixed list; the creatable variant is a separate
+entry point and is not offered. A select would therefore mean a group could only
+be picked once somebody else had already set it somewhere else. The field is a
+plain `<input>` with a `<datalist>`, so the browser supplies the suggestions and
+typing a new name costs nothing — and pressing Enter or clicking away does not
+throw the text away, which a "creatable" select would have done (you have to
+select the option you just typed before it counts).
+
+**The suggestions are the groups in use**, read out of this plugin's own store:
+every marked gallery's whole custom_fields map is already in memory, so the list
+costs no request and is the same set of galleries as everything else here. It is
+empty until the first fetch settles, which is right — before that there is
+nothing to suggest, and the box works either way.
+
+**The value is stored as typed, and read trimmed.** A space has to be typable, so
+the box writes exactly what is in it; what comes back out for display and for the
+suggestions is trimmed (`NS.translationGroupOf`), because a space on the end is
+not part of a group's name. Blurring writes the trimmed value back, which is a
+tidy-up rather than a change of meaning — and a value that is already tidy is
+left alone, so blurring never marks the form dirty on its own. A box holding
+nothing but spaces counts as nothing, and removes the key.
+
+Committed on every keystroke rather than on blur, unlike Stash's own
+custom-field input. What a Save reads is the values map as it stood when the
+click was handled, and a blur that has not been through a render yet can lose the
+last thing typed; with the map here being the only copy, that is not a risk worth
+taking for one fewer re-render.
+
+There is deliberately **no sidebar section and no bulk-edit row** for it. A
+sidebar section would have to be a free-text search rather than the checkbox list
+the other three are, and the bulk row would have to say what "set this group on
+every selected gallery" means when the values differ. Both are additions with
+their own design questions rather than a column in an existing table. It is
+recognised as one of this plugin's fields all the same — see `NS.ownField` — so it
+never shows up as a raw custom-field row in the edit form, and unmarking clears it
+along with the rest.
 
 ### Settings
 
@@ -443,7 +498,7 @@ never filtered, while only the option *list* is filtered.
 ```
 mangaTools/
 ├── src/
-│   ├── mangaTools.tsx        Badge, dropdown, bulk row, censorship, settings, patches
+│   ├── mangaTools.tsx        Badge, panels, dropdown, bulk row, toolbar switch, settings, patches
 │   ├── filter-model.ts       Criterion read/write for all three fields (pure, no DOM)
 │   ├── filter-ui.tsx         The rows and tag DOM both filter surfaces share
 │   ├── sidebar-filter.tsx    The three sidebar filter sections
@@ -635,10 +690,10 @@ Open the browser console (F12) first. The plugin logs three kinds of line, and
 
 | Log | Meaning |
 |---|---|
-| `[mangaTools] loaded custom fields for N gallery(ies)` | Fetching worked. **N is the number of galleries carrying either field** — if N is lower than expected, the problem is the data, not the plugin |
-| `[mangaTools] failed to fetch custom fields, marks will not show. Raw error: …` | One of the two queries failed; read the error that follows. Both go out together, so one failing costs both |
+| `[mangaTools] loaded N gallery(ies) marked as manga` | Fetching worked. **N is the number of galleries carrying the mark** — if N is lower than expected, the problem is the data, not the plugin |
+| `[mangaTools] failed to fetch custom fields, marks will not show. Raw error: …` | The gallery query failed; read the error that follows. What the store already holds is kept, so the last answer keeps working |
 | `[mangaTools] patch active: <component>` | That patch ran for the first time. Fires once per target |
-| `[mangaTools] bulk update: sending the language with the dialog's own update` | The Apollo link merged a bulk edit's language into the outgoing mutation |
+| `[mangaTools] bulk update: sending the manga fields with the dialog's own update` | The Apollo link merged a bulk edit's manga fields into the outgoing mutation |
 
 One more line reports a limitation rather than a fault — `Apply changed nothing in
 Stash's filter, so the language picked in the card was not applied` — and is
@@ -649,9 +704,8 @@ Reading them together:
 - **No logs at all** → the plugin did not load. Check that Manga Tools is
   enabled under Settings → Plugins, hit Reload Plugins, then **hard-refresh the
   browser (Ctrl+F5)**.
-- **"loaded N" with N=0** → the query worked but no gallery carries a
-  `plugin.mangaTools.language` custom field. Tag a few from the edit page
-  dropdown.
+- **"loaded N" with N=0** → the query worked but no gallery carries the
+  `plugin.mangaTools.manga` mark. Mark a few from a gallery's detail page.
 - **"loaded N" with N>0, but no "patch active: GalleryCard.Overlays"** → this page
   is not in grid view. Only Grid mode uses `GalleryCard`.
 - **A missing "patch active" line** → that component name does not exist in your
@@ -674,16 +728,17 @@ leaves a trace:
 Both are fixed, and the smoke test guards against them (it checks the query shape
 and the patch target list).
 
-**Each field name is one exact spelling: `plugin.mangaTools.language`,
-`plugin.mangaTools.censorship`.** The queries hard-code them, so a gallery whose
-key is spelled differently is not *found* by the query for that field — it gets
-no badge, no card mark, no detail row, and no place in the language list. Reads
-and writes are both tolerant of case — `NS.pickField` matches any variant, and
-`NS.setField` replaces every variant with the canonical spelling — so a key that
-drifted in case is still read, and is corrected the first time the plugin writes
-that gallery. Only the *query* is strict, because matching the variants there is
-impossible: GraphQL's `OR` is singular so it cannot be written as an array, and
-multiple criteria inside a `custom_fields` array are ANDed. Entering values
+**`plugin.mangaTools.manga` is the one name the query spells, and the only one it
+has to.** A gallery whose mark is keyed differently is not *found* by it, so the
+plugin does not see that gallery at all — no badge, no card mark, no detail row.
+The other three fields are never queried, only read and written, and for them a
+drifted key is no obstacle: reads and writes are both tolerant of case —
+`NS.pickField` matches any variant, and `NS.setField` replaces every variant with
+the canonical spelling — so such a key is still read, and is corrected the first
+time the plugin writes that gallery. The *query* is strict because matching the
+variants there is impossible: GraphQL's `OR` is singular so it cannot be written
+as an array, and multiple criteria inside a `custom_fields` array are ANDed.
+Entering values
 through the plugin's own controls never hits any of this, since they write the
 canonical spelling.
 

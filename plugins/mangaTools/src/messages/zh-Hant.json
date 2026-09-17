@@ -14,7 +14,7 @@
   "mangaTools.settings.openDetailsBlock.heading": "簡介的漫畫資訊預設展開",
   "mangaTools.settings.openDetailsBlock.description": "畫廊簡介頁裡的那一節。收起時，那一行標題就是「這裡有一節」的說明。這只決定打開時的預設狀態，不決定它能不能打開。",
   "mangaTools.settings.openEditBlock.heading": "編輯頁的漫畫資訊預設展開",
-  "mangaTools.settings.openEditBlock.description": "畫廊編輯表單裡的那一塊，語言和修正在那裡設定。這只決定打開時的預設狀態，不決定它能不能打開.",
+  "mangaTools.settings.openEditBlock.description": "畫廊編輯表單裡的那一塊，語言、修正和翻譯組在那裡設定。這只決定打開時的預設狀態，不決定它能不能打開.",
 
   "mangaTools.settings.hidePerformers.heading": "在漫畫的編輯頁隱藏「演員」",
   "mangaTools.settings.hidePerformers.description": "漫畫一般沒有演員，所以編輯頁不顯示這一欄。只是隱藏：畫廊已有的演員仍然留在畫廊上，儲存時也不會被清掉。批量編輯對話框和簡介頁不受影響。",
@@ -26,7 +26,7 @@
   "mangaTools.filter.manga.marked": "已標記",
   "mangaTools.filter.manga.unmarked": "未標記",
 
-  "mangaTools.manga.confirm": "確定不再把這個畫廊作為漫畫管理嗎？它的語言和修正的值會被刪除。",
+  "mangaTools.manga.confirm": "確定不再把這個畫廊作為漫畫管理嗎？它的語言、修正和翻譯組的值會被刪除。",
   "mangaTools.manga.confirmResetsForm": "編輯頁有未儲存的改動，取消標記會把該表單重置。",
   "mangaTools.manga.confirmCancel": "取消",
   "mangaTools.manga.confirmOk": "取消標記",
@@ -39,6 +39,9 @@
   "mangaTools.censorship.uncensored": "無修正",
   "mangaTools.censorship.unset": "未標註",
 
+  "mangaTools.translationGroup.heading": "翻譯組",
+  "mangaTools.translationGroup.placeholder": "填寫翻譯組…",
+
   "mangaTools.bulk.remove": "移除",
-  "mangaTools.bulk.unmarkWarning": "取消標記會從選中的畫廊中移除本外掛的漫畫、語言和修正欄位。"
+  "mangaTools.bulk.unmarkWarning": "取消標記會從選中的畫廊中移除本外掛的漫畫、語言、修正和翻譯組欄位。"
 }

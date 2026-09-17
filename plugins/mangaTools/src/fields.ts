@@ -8,8 +8,15 @@
  * WHY THE FIELD NAMES LIVE HERE AND NOT WITH THEIR VALUES. languages.ts holds
  * the language table, which is a table of codes and flags; the *name* of the
  * gallery field that holds one of those codes is a fact about galleries, not
- * about languages. It used to live there because there was only one field. Now
- * there are two, and a third would otherwise mean a third place to look.
+ * about languages. It used to live there because there was only one field; every
+ * one since would otherwise have meant another place to look.
+ *
+ * Four fields, and they are not four of the same thing: the language and the
+ * censorship are chosen from vocabularies this plugin owns (languages.ts,
+ * censorship.tsx), the mark is the presence of a key, and the translation group
+ * is free text. What they share is the one thing this file is about — the names,
+ * who owns them, and which keys count as ours. How each is read and displayed
+ * belongs to the surface that shows it.
  *
  * Names are prefixed, because a gallery's custom fields are a shared namespace:
  * `language` on its own is a name any other plugin, or the reader, might
@@ -58,6 +65,33 @@ NS.CENSORSHIP_FIELD_NAME = "plugin.mangaTools.censorship";
  */
 NS.MANGA_FIELD_NAME = "plugin.mangaTools.manga";
 
+/**
+ * The translation group: who translated this comic, as free text.
+ *
+ * The one field here whose value is not from a table. A language is a code and a
+ * censorship is one of two words, so both can be checked, listed and drawn with
+ * an icon; a group's name is whatever it calls itself, and the only honest
+ * treatment of that is to keep what was typed. Which also means there is nothing
+ * to normalise on the way in, and no badge or icon to draw from it — see the row
+ * in the details panel and the field in the edit block.
+ *
+ * `plugin.mangaTools.translationGroup` and not `translator`: the group is what a
+ * reader files a comic under, and the name leaves room for the person later.
+ */
+NS.TRANSLATION_GROUP_FIELD_NAME = "plugin.mangaTools.translationGroup";
+
+/**
+ * A gallery's translation group, or "" when it has none.
+ *
+ * Trimmed on the way out, not on the way in — the field is typed by hand, so a
+ * value with a space on the end is what somebody typed, and the input that wrote
+ * it has to be able to show that while it is being typed (see the edit block).
+ * Nobody reading it wants the space, though, so the trim happens here, once, for
+ * everything that displays or compares it.
+ */
+NS.translationGroupOf = (customFields: unknown): string =>
+  NS.pickField(customFields, NS.TRANSLATION_GROUP_FIELD_NAME).trim();
+
 /** The value written when a gallery is marked. Presence is what is read. */
 NS.MANGA_VALUE = "true";
 
@@ -79,12 +113,23 @@ NS.isManga = (customFields: unknown): boolean =>
  * because that list has to *agree*: when the third field was added, two of the
  * places that recognise keys were not updated, and the symptoms were a raw
  * `plugin.mangaTools.manga` row in the edit form and a value the plugin could not
- * see. A field added to the three names below is a field every one of those
- * places knows about, because the list they ask is this one.
+ * see. A field added to the names below is a field every one of those places
+ * knows about, because the list they ask is this one.
  *
  * The canonical name comes back rather than the key, so a caller can compare
  * against the name it already has instead of inventing a second vocabulary for
- * the same three things.
+ * the same set of things.
+ *
+ * Everything that recognises a key of ours goes through here, which is what makes
+ * adding a field a one-line change — and it is also why the fourth one cost no
+ * edits anywhere else: the raw row it would have left in the edit form, the
+ * unmark that clears it and the form's copy that has to agree are all written
+ * against this list rather than against names.
+ *
+ * It is *only* the names: the bulk dialog's rows, the sidebar's sections and the
+ * panels are each written for the fields they show, on purpose. The translation
+ * group has no sidebar section and no bulk row, and this makes it recognised
+ * without making it appear.
  */
 NS.ownField = (key: unknown): string => {
   const k = String(key ?? "")
@@ -92,7 +137,12 @@ NS.ownField = (key: unknown): string => {
     .toLowerCase();
   if (k === "") return "";
 
-  const names = [NS.FIELD_NAME, NS.CENSORSHIP_FIELD_NAME, NS.MANGA_FIELD_NAME];
+  const names = [
+    NS.FIELD_NAME,
+    NS.CENSORSHIP_FIELD_NAME,
+    NS.MANGA_FIELD_NAME,
+    NS.TRANSLATION_GROUP_FIELD_NAME,
+  ];
   for (let i = 0; i < names.length; i++) {
     if (names[i].toLowerCase() === k) return names[i];
   }
