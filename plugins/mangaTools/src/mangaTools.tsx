@@ -722,7 +722,7 @@ function start(): void {
 /**
  * Refetches the gallery map, waiting for any fetch that is already in flight.
  *
- * Used after a bulk write. Both halves matter:
+ * Used after a write, and by the translation group's menu. Both halves matter:
  *   - calling refresh() directly would usually be **skipped**, because refresh()
  *     shares one in-flight request — so the badges would keep the old flag until
  *     the next poll or navigation.
@@ -741,6 +741,26 @@ function refreshAfterWrite(): void {
   } else {
     refresh();
   }
+}
+
+/**
+ * Refetches the store for the translation group's menu, because it is about to be
+ * read.
+ *
+ * The one thing a list of this Stash's groups has to be is *current*, and the
+ * moment it changes is the moment somebody saves a gallery that used a new name:
+ * the store is otherwise refetched on a minute's timer, so without this the menu
+ * goes on offering to create the very name the gallery in front of it carries —
+ * and offering a group that only this gallery ever used, now that it no longer
+ * does.
+ *
+ * Once per opening of the menu, which is the same query the plugin already runs
+ * on a timer and after every write. Nothing waits on it: the menu opens with what
+ * is in hand and is redrawn when the answer lands. Two openings in the same moment
+ * share the one request, since refresh() coalesces onto a fetch in flight.
+ */
+function refreshForSuggestions(): void {
+  refreshAfterWrite();
 }
 
 // ─────────────────────── UI locale and flags ───────────────────────
@@ -1810,23 +1830,27 @@ function MangaFieldBlock(props: {
   // away: the value is already saved, and the "create" entry is a way of saying
   // "this text, yes" rather than the only way of keeping it.
   //
-  // The three places react-select's model has to be told what to do:
+  // Two of react-select's behaviours have to be worked with rather than around,
+  // and both are visible in its source (Select.js, "renderPlaceholderOrValue" and
+  // "setValue"):
   //
+  //   - The value area draws **nothing** while the input has text in it, because
+  //     the input is then assumed to be showing that text; and choosing an option
+  //     hides the input (`opacity: 0`) for a single select. So `inputValue` is left
+  //     to react-select: it holds what is being typed, the box shows that while
+  //     typing and the chosen name as plain text afterwards, and the field ends up
+  //     behaving exactly like the two above it. Controlling `inputValue` to the
+  //     value instead blanks the box — text hidden and no label drawn.
   //   - `onInputChange` fires for reasons other than typing — selecting, closing
   //     the menu — and its text is then the option's label or nothing at all.
   //     Taking it would put the search text back over the value just chosen, or
   //     clear the field as the menu closed. Only "input-change" is written.
-  //   - The box is *told* what it is showing (`inputValue`), because the value
-  //     changes underneath react-select on every keystroke; left to itself it would
-  //     be showing text the map no longer holds.
-  //   - `onBlur` tidies the whitespace the reader left, which is the one thing
-  //     typing cannot fix by itself. Nothing else needs committing — see above.
   const groupRaw = NS.pickField(props.values, TRANSLATION_GROUP_FIELD_NAME);
   const groupName = NS.translationGroupOf(props.values);
 
   const known = knownTranslationGroups();
-  // Offered only when the text is not already a group: otherwise the menu would
-  // spell the same name twice, in whatever case it was typed.
+  // Offered only when the text is not a group this Stash knows: otherwise the menu
+  // would spell the same name twice, in whatever case it was typed.
   const namesANewGroup =
     !!groupName && !known.some((name) => sameGroup(name, groupName));
 
@@ -1866,27 +1890,18 @@ function MangaFieldBlock(props: {
           value={groupRaw ? { value: groupRaw, label: groupName } : null}
           options={groupOptions}
           formatOptionLabel={formatGroupOption}
-          // What the box is showing, which is the value itself: react-select would
-          // otherwise hold the option it last matched, and the text under the
-          // cursor would not be the field's value. It is what makes the field
-          // typeable at all.
-          inputValue={groupRaw}
-          // …and because the box holds the value, react-select would filter the
-          // menu by it: opening a gallery's group would offer that group and
-          // nothing else, which is the one thing the menu is not for. Nothing has
-          // been typed in that state, so the whole list is what was asked for;
-          // once the box holds something that is not a group, the text is what the
-          // reader typed and narrowing the list is the useful thing again.
-          //
-          // (react-select's own filter is "the label contains the input", which is
-          // what the else branch is — written out rather than imported, since only
-          // the default is wanted and the export is not in the injected surface.)
-          filterOption={(option: MangaToolsGroupOption, input: string) => {
-            const showingTheValue =
-              !!groupRaw && input === groupRaw && known.indexOf(groupRaw) >= 0;
-            if (showingTheValue) return true;
-            return option.label.toLowerCase().indexOf(input.toLowerCase()) >= 0;
-          }}
+          // react-select draws a vertical rule between the clear button and the
+          // arrow, and none of Stash's own dropdowns have it — its Select.tsx sets
+          // this in its default props and strips it too. Follow suit, so this field
+          // has the same furniture as the two above it.
+          components={{ IndicatorSeparator: () => null }}
+          // What is in the menu is the groups that exist *now*, and a save is the
+          // moment that changes — the value just written becomes one of them, and
+          // a name that was only ever used by this gallery stops being one. This
+          // plugin's store is otherwise only refetched on a timer (a minute), so
+          // without this the menu goes on offering to create the name the gallery
+          // already carries.
+          onMenuOpen={() => refreshForSuggestions()}
           onInputChange={(text: string, meta: { action?: string }) => {
             if (meta?.action !== "input-change") return;
             // A box holding only spaces means nothing, and nothing removes the
@@ -1895,22 +1910,10 @@ function MangaFieldBlock(props: {
             write(TRANSLATION_GROUP_FIELD_NAME, text.trim() ? text : "");
           }}
           onChange={(opt: MangaToolsGroupOption | null) => {
-            // A group picked from the list is written in *its* spelling, so
-            // choosing "Lily Manga" is how a name typed in another case is put
-            // right; the create entry carries the text back unchanged.
+            // A group picked from the list is written in *its* spelling, which is
+            // how a name typed in another case is put right; the create entry
+            // carries the text back unchanged.
             write(TRANSLATION_GROUP_FIELD_NAME, opt ? opt.value : "");
-          }}
-          // Leaving the box settles what typing cannot: the whitespace nobody
-          // meant to leave, and a name that is an existing group in another case.
-          // The value is already saved by the time this runs, so it is a tidy-up
-          // and never a rescue, and the write happens only when the settled form
-          // differs from what is there — so blurring a tidy value leaves the map
-          // (and the form's dirty flag) alone.
-          onBlur={() => {
-            if (!groupName) return;
-            const settled = known.find((name) => sameGroup(name, groupName));
-            const next = settled ?? groupName;
-            if (next !== groupRaw) write(TRANSLATION_GROUP_FIELD_NAME, next);
           }}
         />
       </div>

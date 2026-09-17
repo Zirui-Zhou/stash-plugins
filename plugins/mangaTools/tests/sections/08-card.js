@@ -1100,10 +1100,29 @@ module.exports = () => {
     { value: "Lily Manga", label: "Lily Manga" },
     "showing what the gallery carries"
   );
+  // The separator is off, as it is on the two fields above: react-select draws a
+  // vertical rule between the clear button and the arrow, and none of Stash's own
+  // dropdowns have one.
+  assert.strictEqual(groupSelect.props.components.IndicatorSeparator({}), null);
+  // `inputValue` is deliberately *not* passed. react-select draws nothing in the
+  // value area while its input has text, on the assumption that the input is
+  // showing it — and choosing an option hides that input. Controlling the two of
+  // them to the same string therefore blanks the box: no label, and no visible
+  // text either.
   assert.strictEqual(
-    groupSelect.props.inputValue,
-    "Lily Manga",
-    "and the box itself holding it, since that is the text it is showing"
+    "inputValue" in groupSelect.props,
+    false,
+    "the box is left to react-select, or it draws neither the value nor the text"
+  );
+
+  // Opening the menu asks for a fresh answer, so that the name just saved is in
+  // the list rather than offered as a new one. What that costs is a query, and
+  // counting queries is section 09's business — see 14d, which drives this prop
+  // there, where a fetch in flight is already part of the furniture.
+  assert.strictEqual(
+    typeof groupSelect.props.onMenuOpen,
+    "function",
+    "opening the menu is what asks for the fresh list"
   );
 
   // The menu is the groups already in use, out of this plugin's store — the same
@@ -1146,27 +1165,14 @@ module.exports = () => {
     "Lily Mang"
   );
 
-  // The box holds the value, so react-select would filter the menu by it — and a
-  // gallery's own group would then be the only thing on offer, which is the one
-  // thing the menu is not for. Nothing has been typed in that state, so the whole
-  // list is what opening the field asked for.
-  const groupFilter = groupSelect.props.filterOption;
-  const offered = (name, input) =>
-    groupFilter({ value: name, label: name }, input);
+  // No `filterOption` of our own: the menu is narrowed by what is typed into it,
+  // which react-select does with its own input value. Nothing is passed, so
+  // opening the field on a group already set offers the whole list — the state
+  // input is empty until somebody types.
   assert.strictEqual(
-    offered("Aozora", "Lily Manga"),
-    true,
-    "opening the field on a group already set offers the others with it"
-  );
-  assert.strictEqual(
-    offered("Lily Manga", "lil"),
-    true,
-    "and typing then narrows the list, as a search box should"
-  );
-  assert.strictEqual(
-    offered("Aozora", "lil"),
+    "filterOption" in groupSelect.props,
     false,
-    "to what actually matches — case-insensitively, so it need not be typed exactly"
+    "the menu's filtering is react-select's own"
   );
 
   // Nothing typed: nothing to offer, so the menu is the groups alone.
@@ -1218,35 +1224,17 @@ module.exports = () => {
   groupSelect.props.onInputChange("   ", { action: "input-change" });
   assert.deepStrictEqual(groupEdits[0], { [MANGA]: "true", other: "x" });
 
-  // Leaving the box tidies what typing cannot: the space nobody meant to leave,
-  // and a name that is an existing group in another case. A value that is already
-  // tidy is left alone, so blurring never marks the form dirty on its own.
-  groupEdits.length = 0;
-  const padded = groupSelectOf(
-    groupField({ [TG]: "Lily Manga  ", other: "x" })
-  );
-  padded.props.onBlur();
-  assert.deepStrictEqual(
-    groupEdits[0],
-    { [MANGA]: "true", [TG]: "Lily Manga", other: "x" },
-    "blurring writes the trimmed value back"
-  );
-
-  const misCased = groupSelectOf(groupField({ [TG]: "lily manga" }));
-  misCased.props.onBlur();
+  // Nothing else is written on the way out. The value is saved as it is typed, so
+  // there is nothing for a blur to rescue — and nothing that could be quietly
+  // rewritten from a render that the selection has already made obsolete.
   assert.strictEqual(
-    groupEdits[1][TG],
-    "Lily Manga",
-    "and folds a name onto the group that is already there, rather than " +
-      "starting a second one that differs only in case"
+    "onBlur" in groupSelect.props,
+    false,
+    "leaving the box writes nothing: what was typed is already the value"
   );
 
-  groupEdits.length = 0;
-  groupSelectOf(groupField({ [TG]: "Lily Manga" })).props.onBlur();
-  assert.deepStrictEqual(groupEdits, [], "a tidy value is left alone");
-
-  // The field is the value *and* what the box shows, so a gallery the plugin has
-  // never seen the group of still reads back correctly.
+  // A value somebody set by hand — spaces and all — is passed on as it is, with
+  // the trimmed form as the label the box and the menu show.
   const handSet = groupSelectOf(groupField({ [TG]: "  独自组  " }));
   assert.strictEqual(
     handSet.props.value.value,
@@ -1256,7 +1244,7 @@ module.exports = () => {
   assert.deepStrictEqual(
     handSet.props.value.label,
     "独自组",
-    "while the label — what the box and the menu show — is the trimmed name"
+    "while the label is the trimmed name"
   );
 
   // Stash draws no toolbar on an entity that is not a gallery.

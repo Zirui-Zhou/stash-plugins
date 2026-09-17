@@ -404,22 +404,30 @@ as the plain text box did, and the menu is rebuilt from the map rather than from
 any state of react-select's. The "create" entry is then a way of saying *this
 text, yes* rather than the only way of keeping it.
 
-Three things follow from that, all of them in the field's props rather than in
-comments here:
+Two of react-select's behaviours are worked with rather than around, and both are
+worth knowing because getting either wrong is invisible in the tests:
 
 - **Only a keystroke is a change.** `onInputChange` also fires when an option is
   selected, when the menu closes, and on blur — with the option's label or with
   nothing at all. Taking that text would put a search word back over the value
   just chosen, or clear the field as the menu shut. Only the `input-change` action
   is written.
-- **The box is told what it holds.** `inputValue` is the value, because the value
-  changes underneath react-select on every keystroke and it would otherwise be
-  showing the option it last matched instead of the text under the cursor.
-- **Blurring settles what typing cannot**: the whitespace nobody meant to leave,
-  and a name that is an existing group in another case — so "lily manga" folds
-  onto "Lily Manga" instead of starting a second group beside it. The write
-  happens only when the settled name differs from what is stored, so blurring a
-  tidy value leaves the map and the form's dirty flag alone.
+- **`inputValue` is left to react-select**, which is the opposite of what it looks
+  like it should be. In its source (`Select.js`, `renderPlaceholderOrValue`), the
+  value area draws *nothing* while the input has text in it — on the assumption
+  that the input is showing that text — and choosing an option hides the input
+  (`opacity: 0`) for a single select. Controlling `inputValue` to the value
+  therefore blanks the box: the input that would show it is hidden, and the label
+  that would is suppressed. Left alone, react-select holds what is being typed,
+  shows that while typing and the chosen name as plain text afterwards, and the
+  field behaves exactly like the two above it.
+
+There is no blur handler, and that is deliberate: the value is already saved by
+the time the box is left, so a blur could only ever rewrite it — and the blur that
+follows choosing an option arrives with the *previous* render's props, which is
+how a tidy-up there would put the group just replaced back. What was typed is what
+is stored, spaces and all; a box holding nothing but spaces counts as nothing and
+removes the key, and the trimmed form is what everything reads (`NS.translationGroupOf`).
 
 **The menu is the groups in use**, read out of this plugin's own store: every
 marked gallery's whole custom_fields map is already in memory, so the list costs
@@ -428,10 +436,14 @@ until the first fetch settles, which is right — before that there is nothing t
 offer, and a name can still be typed. A new name is offered only when it is not
 already one of them in some other case, so the menu never spells one group twice.
 
-**The value is stored as typed and read trimmed** (`NS.translationGroupOf`): a
-space has to be typable, so what is written is what is in the box, and the space
-on the end is not part of a name. A box holding nothing but spaces counts as
-nothing and removes the key.
+**Opening the menu refetches that store**, because the one thing a list of this
+Stash's groups has to be is current, and it changes at the moment somebody saves a
+gallery that used a new name. The store is otherwise on a minute's timer, so
+without this the menu goes on offering to create the very name the gallery in
+front of it carries — and offering a group that only that gallery ever used, now
+that it no longer does. Nothing waits on the answer: the menu opens with what is
+in hand and is redrawn when the fetch lands.
+
 
 There is deliberately **no sidebar section and no bulk-edit row** for it. A
 sidebar section would have to be a free-text search rather than the checkbox list

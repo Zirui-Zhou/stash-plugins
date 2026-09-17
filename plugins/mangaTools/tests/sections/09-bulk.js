@@ -597,6 +597,43 @@ module.exports = () => {
             "a write that could not be sent must be reported as one"
           );
         });
+
+        // 14d. And the one refresh that is not a write's: opening the translation
+        // group's menu asks for a fresh list, so that the name just saved is in it
+        // rather than offered as a new one. Here rather than in section 08 because
+        // what it costs is a query, and a query's timing is this section's subject.
+        setTimeout(() => {
+          runSection("14d opening the group menu refetches", () => {
+            // The edit field is drawn on a gallery's page, and the section before
+            // this one left the route on the list.
+            globalListeners["stash:location"]({
+              detail: { data: { location: { pathname: "/galleries/1" } } },
+            });
+
+            // Taken after the navigation, which is itself a refresh.
+            const beforeOpen = state.galleryQueryCount;
+            const { editField } = require("../renders.js");
+            const block = editField({
+              [NS.TRANSLATION_GROUP_FIELD_NAME]: "Lily",
+            });
+            const groupSelect = find(
+              block.node,
+              (n) => n.props?.inputId === "manga_tools_translation_group"
+            );
+            assert.ok(groupSelect, "the field should be on the edit page");
+            groupSelect.props.onMenuOpen();
+
+            setTimeout(() => {
+              runSection("14d …and it asked", () => {
+                assert.strictEqual(
+                  state.galleryQueryCount - beforeOpen,
+                  1,
+                  "opening the menu should refetch the groups it is offering"
+                );
+              });
+            }, 0);
+          });
+        }, 0);
       }, 0);
     }, 0);
   }, 0);
