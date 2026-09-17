@@ -480,7 +480,18 @@ function buildPlugin(dirName, sha, suffix, outDir) {
   const packageDir = compilePlugin(dir, baseId, files, assets);
   const packagedFiles = fs
     .readdirSync(packageDir)
-    .filter((f) => !f.startsWith("."))
+    // A plugin written in something other than TypeScript is packaged as the
+    // directory it sits in, and that directory also holds things that are not
+    // the plugin: its tests (see DEVELOPING.md), the bytecode running them
+    // leaves behind, and the report zipInfo writes beside its own script. A
+    // TypeScript plugin's package is its build output, which has none of them.
+    .filter(
+      (f) =>
+        !f.startsWith(".") &&
+        f !== "tests" &&
+        f !== "__pycache__" &&
+        f !== "zipInfo-report.json"
+    )
     .sort();
 
   assertReferencedFilesExist(id, ymlText, packageDir);

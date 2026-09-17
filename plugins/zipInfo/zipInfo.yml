@@ -1,0 +1,32 @@
+# Gallery ZIP Info — reports how the images in each gallery's archive are stored.
+#
+# A gallery backed by a ZIP archive is read by Stash one image at a time, and its
+# own documentation recommends building the archive with no compression
+# (`zip -0`, "store"): a deflated entry has to be decompressed on every read,
+# which is where the multi-second stalls on a large gallery come from. Nothing in
+# Stash reports which of the two an archive uses, so this plugin does — and it is
+# the difference between guessing and knowing which of your galleries to rebuild.
+#
+# Python rather than a bundled binary: Stash's image already ships python3 (it is
+# what runs python scrapers), so a script needs no compilation, works on any
+# architecture the image runs on, and — as written — no package beyond the
+# standard library.
+#
+# The conversion itself is deliberately not here. Rewriting an archive is a
+# destructive operation on a user's source files, and the report is what tells you
+# whether it is worth having; see the README.
+name: Gallery ZIP Info
+description: Reports whether each gallery's ZIP archive stores or deflates its images, worst first.
+url: https://github.com/Zirui-Zhou/stash-plugins/tree/main/plugins/zipInfo
+version: 0.1.0
+# `{pluginDir}` is substituted by Stash, and a python command is left as written
+# rather than having the plugin directory prepended to it (see pkg/plugin/config.go).
+exec:
+  - python
+  - "{pluginDir}/zipInfo.py"
+interface: raw
+tasks:
+  - name: Report ZIP compression
+    description: Reads every gallery archive's table of contents and reports stored / deflated / mixed, worst first. Writes zipInfo-report.json beside the script.
+    defaultArgs:
+      mode: report

@@ -5,6 +5,12 @@ dist/
 # Bundled plugin output — esbuild writes it, tools/build.mjs packages it.
 plugins/*/build/
 
+# What running a Python plugin leaves behind: the bytecode its own tests import
+# it through, and the report it writes beside its script (see zipInfo's README,
+# which says where that lands and how to move it).
+__pycache__/
+plugins/zipInfo/zipInfo-report.json
+
 node_modules/
 .DS_Store
 Thumbs.db
