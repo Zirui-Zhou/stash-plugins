@@ -9,7 +9,7 @@ name: Manga Tools
 description: Adapts Stash galleries to manga/comic management.
 # Shown as the link button beside the plugin in Settings → Plugins.
 url: https://github.com/Zirui-Zhou/stash-plugins/tree/main/plugins/mangaTools
-version: 0.6.0
+version: 0.6.1
 ui:
   javascript:
     - mangaTools.js
@@ -62,7 +62,7 @@ settings:
     type: BOOLEAN
   openEditBlock:
     displayName: Start the edit block expanded
-    description: The Manga info block in a gallery's edit form, holding the language and censorship selectors and the translation group box. Only affects the state a block opens in.
+    description: The Manga info block in a gallery's edit form, holding the language, censorship and translation group fields. Only affects the state a block opens in.
     type: BOOLEAN
   hidePerformers:
     displayName: Hide the performers field on a manga gallery

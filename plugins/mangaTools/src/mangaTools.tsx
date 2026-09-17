@@ -1540,6 +1540,47 @@ function formatLanguageOption(option: MangaToolsOption) {
 }
 
 /**
+ * One entry in the translation group's menu.
+ *
+ * Not a MangaToolsOption: that type carries a flag, which is a fact about a
+ * language this plugin knows the flag for, and a group has no such table behind
+ * it. `createLabel` says instead that this entry is the text somebody is typing,
+ * offered so that choosing it is how a new group gets set.
+ */
+type MangaToolsGroupOption = {
+  value: string;
+  label: string;
+  /** The wording for the create entry, already localised — see below. */
+  createLabel?: string;
+};
+
+/** Whether two group names are the same one, which is a question about case only */
+function sameGroup(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/**
+ * Renders a group option: the name, or — in the menu only — the offer to create it.
+ *
+ * The "value" context is the box itself, and there the text is simply the name: an
+ * offer to create what is already selected would read as a question. In the menu
+ * it is prefixed, so the entry nobody has used before is told apart from the
+ * groups that exist.
+ *
+ * The wording is carried on the option rather than looked up here because this is
+ * called by react-select while it renders, and a component's worth of hooks cannot
+ * be used in something invoked per option. The option is built in MangaFieldBlock,
+ * which has the reader's `intl` in hand.
+ */
+function formatGroupOption(
+  option: MangaToolsGroupOption,
+  meta?: { context?: string }
+) {
+  if (!option.createLabel || meta?.context !== "menu") return option.label;
+  return <span className="manga-tools-option">{option.createLabel}</span>;
+}
+
+/**
  * Copies the class names for each layer off the studio field's DOM.
  *
  * Column widths are deliberately not hard-coded: renderField's defaults differ
@@ -1756,24 +1797,59 @@ function MangaFieldBlock(props: {
     </div>
   );
 
-  // The translation group, as free text. A plain input rather than one of the
-  // selects above it: there is no vocabulary to choose from, and react-select —
-  // which is what Stash gives plugins — cannot be typed into, only searched. What
-  // the reader gets instead is the browser's own suggestion list, filled from the
-  // groups already in use (see knownTranslationGroups).
+  // The translation group, wearing the same Select as the two fields above it —
+  // which is a costume, because react-select cannot be typed into. What makes it
+  // work is that **the text in the box is the field's value**: every keystroke is
+  // written to the map as it is typed, exactly as the plain text box did, and the
+  // menu is then built from the value rather than from any state of react-select's.
   //
-  // Committed on every keystroke rather than on blur, which is the one place this
-  // differs from Stash's own custom-field input: what a Save reads is the values
-  // map as it stood when the click was handled, and a blur that has not been
-  // through a render yet can lose the last thing typed. Stash's own commit-on-blur
-  // takes that risk with the whole map behind it; here the map is the only copy.
+  // That is what keeps it honest. react-select is a control for choosing from a
+  // list, and the usual way to make it accept new text is to keep the search text
+  // in state, offer it as an extra option, and hope the reader selects it — where
+  // typing and then leaving throws the text away. Here there is nothing to throw
+  // away: the value is already saved, and the "create" entry is a way of saying
+  // "this text, yes" rather than the only way of keeping it.
   //
-  // The stored value is what was typed, spaces and all, so that a space can be
-  // typed at all; whitespace-only counts as nothing and removes the key, and the
-  // read side trims (see NS.translationGroupOf). Blurring tidies what was left
-  // behind, which is the same text minus the space nobody meant to leave.
-  const group = NS.translationGroupOf(props.values);
+  // The three places react-select's model has to be told what to do:
+  //
+  //   - `onInputChange` fires for reasons other than typing — selecting, closing
+  //     the menu — and its text is then the option's label or nothing at all.
+  //     Taking it would put the search text back over the value just chosen, or
+  //     clear the field as the menu closed. Only "input-change" is written.
+  //   - The box is *told* what it is showing (`inputValue`), because the value
+  //     changes underneath react-select on every keystroke; left to itself it would
+  //     be showing text the map no longer holds.
+  //   - `onBlur` tidies the whitespace the reader left, which is the one thing
+  //     typing cannot fix by itself. Nothing else needs committing — see above.
   const groupRaw = NS.pickField(props.values, TRANSLATION_GROUP_FIELD_NAME);
+  const groupName = NS.translationGroupOf(props.values);
+
+  const known = knownTranslationGroups();
+  // Offered only when the text is not already a group: otherwise the menu would
+  // spell the same name twice, in whatever case it was typed.
+  const namesANewGroup =
+    !!groupName && !known.some((name) => sameGroup(name, groupName));
+
+  const groupOptions: MangaToolsGroupOption[] = [
+    ...(namesANewGroup
+      ? [
+          {
+            value: groupName,
+            label: groupName,
+            // Composed here rather than in formatGroupOption, which runs inside
+            // react-select's render and cannot use a hook. Quoted, because the
+            // name is a name and reading "Create Lily Manga" makes the offer look
+            // like the answer.
+            createLabel:
+              t(intl, "mangaTools.translationGroup.create") +
+              ' "' +
+              groupName +
+              '"',
+          },
+        ]
+      : []),
+    ...known.map((name) => ({ value: name, label: name })),
+  ];
 
   const groupField = (
     <div className={cls.group} data-field="manga_tools_translation_group">
@@ -1781,32 +1857,62 @@ function MangaFieldBlock(props: {
         {t(intl, "mangaTools.translationGroup.heading")}
       </label>
       <div className={cls.control}>
-        <input
-          className="form-control input-control"
-          type="text"
-          id="manga_tools_translation_group"
-          // The datalist below is the suggestion list. `list` is what ties the two
-          // together, and the id is spelled out rather than made unique per
-          // instance because there is only ever one edit form.
-          list="manga_tools_translation_group_values"
+        <Select
+          className="manga-tools-select"
+          classNamePrefix="react-select"
+          inputId="manga_tools_translation_group"
+          isClearable
           placeholder={t(intl, "mangaTools.translationGroup.placeholder")}
-          value={groupRaw}
-          onChange={(e) => {
-            const next = e.currentTarget.value;
-            write(TRANSLATION_GROUP_FIELD_NAME, next.trim() ? next : "");
+          value={groupRaw ? { value: groupRaw, label: groupName } : null}
+          options={groupOptions}
+          formatOptionLabel={formatGroupOption}
+          // What the box is showing, which is the value itself: react-select would
+          // otherwise hold the option it last matched, and the text under the
+          // cursor would not be the field's value. It is what makes the field
+          // typeable at all.
+          inputValue={groupRaw}
+          // …and because the box holds the value, react-select would filter the
+          // menu by it: opening a gallery's group would offer that group and
+          // nothing else, which is the one thing the menu is not for. Nothing has
+          // been typed in that state, so the whole list is what was asked for;
+          // once the box holds something that is not a group, the text is what the
+          // reader typed and narrowing the list is the useful thing again.
+          //
+          // (react-select's own filter is "the label contains the input", which is
+          // what the else branch is — written out rather than imported, since only
+          // the default is wanted and the export is not in the injected surface.)
+          filterOption={(option: MangaToolsGroupOption, input: string) => {
+            const showingTheValue =
+              !!groupRaw && input === groupRaw && known.indexOf(groupRaw) >= 0;
+            if (showingTheValue) return true;
+            return option.label.toLowerCase().indexOf(input.toLowerCase()) >= 0;
           }}
+          onInputChange={(text: string, meta: { action?: string }) => {
+            if (meta?.action !== "input-change") return;
+            // A box holding only spaces means nothing, and nothing removes the
+            // key rather than storing whitespace that reads as empty everywhere
+            // else.
+            write(TRANSLATION_GROUP_FIELD_NAME, text.trim() ? text : "");
+          }}
+          onChange={(opt: MangaToolsGroupOption | null) => {
+            // A group picked from the list is written in *its* spelling, so
+            // choosing "Lily Manga" is how a name typed in another case is put
+            // right; the create entry carries the text back unchanged.
+            write(TRANSLATION_GROUP_FIELD_NAME, opt ? opt.value : "");
+          }}
+          // Leaving the box settles what typing cannot: the whitespace nobody
+          // meant to leave, and a name that is an existing group in another case.
+          // The value is already saved by the time this runs, so it is a tidy-up
+          // and never a rescue, and the write happens only when the settled form
+          // differs from what is there — so blurring a tidy value leaves the map
+          // (and the form's dirty flag) alone.
           onBlur={() => {
-            if (groupRaw !== group) write(TRANSLATION_GROUP_FIELD_NAME, group);
+            if (!groupName) return;
+            const settled = known.find((name) => sameGroup(name, groupName));
+            const next = settled ?? groupName;
+            if (next !== groupRaw) write(TRANSLATION_GROUP_FIELD_NAME, next);
           }}
         />
-        <datalist id="manga_tools_translation_group_values">
-          {/* A key is required, and the value is the only thing here — the
-              datalist's entries are its options' values, and their labels are
-              never shown. */}
-          {knownTranslationGroups().map((name) => (
-            <option key={name} value={name} />
-          ))}
-        </datalist>
       </div>
     </div>
   );

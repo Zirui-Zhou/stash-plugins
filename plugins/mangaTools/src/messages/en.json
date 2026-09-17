@@ -40,6 +40,7 @@
   "mangaTools.censorship.unset": "Not marked",
 
   "mangaTools.translationGroup.heading": "Translation group",
+  "mangaTools.translationGroup.create": "Create",
   "mangaTools.translationGroup.placeholder": "Set a translation group…",
 
   "mangaTools.bulk.remove": "Remove",

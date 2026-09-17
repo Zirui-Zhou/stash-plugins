@@ -383,7 +383,7 @@ Who translated the comic: `plugin.mangaTools.translationGroup`, as free text.
 | Where | Effect |
 |---|---|
 | Gallery detail page | A row in the Manga info panel: the label and the name, and nothing else. Unset draws no row |
-| Gallery edit page | A text box in the Manga info block, with the groups already in use offered as suggestions |
+| Gallery edit page | A box in the Manga info block, drawn as the same select the language and censorship fields are, with the groups already in use in its menu and a typed name offered as a new one |
 
 **Free text, and that is the whole of its design.** The other fields here pick
 from a vocabulary this plugin owns — a language is a code, a censorship is one of
@@ -392,34 +392,46 @@ name is whatever it calls itself, and the only honest treatment of that is to
 keep what was typed. Nothing is normalised on the way in, and nothing is drawn
 from it.
 
-**React-select cannot be typed into.** Stash gives plugins `react-select`, whose
-select is a search box over a fixed list; the creatable variant is a separate
-entry point and is not offered. A select would therefore mean a group could only
-be picked once somebody else had already set it somewhere else. The field is a
-plain `<input>` with a `<datalist>`, so the browser supplies the suggestions and
-typing a new name costs nothing — and pressing Enter or clicking away does not
-throw the text away, which a "creatable" select would have done (you have to
-select the option you just typed before it counts).
+**It is a select wearing a costume, and the costume works because the text in the
+box is the field's value.** Stash gives plugins `react-select`, whose select can
+only be searched — the creatable variant is a separate entry point
+(`react-select/creatable`) and is not injected. The usual way around that is to
+keep the search text in state, offer it as one more option, and hope the reader
+selects it; where typing and then clicking away throws the text away, which is
+exactly the "creatable select loses what you typed" trap. Here there is nothing
+to lose: every keystroke is written to Stash's values map as it is typed, exactly
+as the plain text box did, and the menu is rebuilt from the map rather than from
+any state of react-select's. The "create" entry is then a way of saying *this
+text, yes* rather than the only way of keeping it.
 
-**The suggestions are the groups in use**, read out of this plugin's own store:
-every marked gallery's whole custom_fields map is already in memory, so the list
-costs no request and is the same set of galleries as everything else here. It is
-empty until the first fetch settles, which is right — before that there is
-nothing to suggest, and the box works either way.
+Three things follow from that, all of them in the field's props rather than in
+comments here:
 
-**The value is stored as typed, and read trimmed.** A space has to be typable, so
-the box writes exactly what is in it; what comes back out for display and for the
-suggestions is trimmed (`NS.translationGroupOf`), because a space on the end is
-not part of a group's name. Blurring writes the trimmed value back, which is a
-tidy-up rather than a change of meaning — and a value that is already tidy is
-left alone, so blurring never marks the form dirty on its own. A box holding
-nothing but spaces counts as nothing, and removes the key.
+- **Only a keystroke is a change.** `onInputChange` also fires when an option is
+  selected, when the menu closes, and on blur — with the option's label or with
+  nothing at all. Taking that text would put a search word back over the value
+  just chosen, or clear the field as the menu shut. Only the `input-change` action
+  is written.
+- **The box is told what it holds.** `inputValue` is the value, because the value
+  changes underneath react-select on every keystroke and it would otherwise be
+  showing the option it last matched instead of the text under the cursor.
+- **Blurring settles what typing cannot**: the whitespace nobody meant to leave,
+  and a name that is an existing group in another case — so "lily manga" folds
+  onto "Lily Manga" instead of starting a second group beside it. The write
+  happens only when the settled name differs from what is stored, so blurring a
+  tidy value leaves the map and the form's dirty flag alone.
 
-Committed on every keystroke rather than on blur, unlike Stash's own
-custom-field input. What a Save reads is the values map as it stood when the
-click was handled, and a blur that has not been through a render yet can lose the
-last thing typed; with the map here being the only copy, that is not a risk worth
-taking for one fewer re-render.
+**The menu is the groups in use**, read out of this plugin's own store: every
+marked gallery's whole custom_fields map is already in memory, so the list costs
+no request and is the same set of galleries as everything else here. It is empty
+until the first fetch settles, which is right — before that there is nothing to
+offer, and a name can still be typed. A new name is offered only when it is not
+already one of them in some other case, so the menu never spells one group twice.
+
+**The value is stored as typed and read trimmed** (`NS.translationGroupOf`): a
+space has to be typable, so what is written is what is in the box, and the space
+on the end is not part of a name. A box holding nothing but spaces counts as
+nothing and removes the key.
 
 There is deliberately **no sidebar section and no bulk-edit row** for it. A
 sidebar section would have to be a free-text search rather than the checkbox list

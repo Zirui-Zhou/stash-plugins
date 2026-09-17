@@ -40,6 +40,7 @@
   "mangaTools.censorship.unset": "未标注",
 
   "mangaTools.translationGroup.heading": "翻译组",
+  "mangaTools.translationGroup.create": "创建",
   "mangaTools.translationGroup.placeholder": "填写翻译组…",
 
   "mangaTools.bulk.remove": "移除",

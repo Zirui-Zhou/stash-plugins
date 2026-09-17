@@ -1057,99 +1057,206 @@ module.exports = () => {
     "clearing removes the key rather than storing an empty value"
   );
 
-  // ── The translation group's row: free text, with the values in use suggested ──
+  // ── The translation group's row: free text, in a select's clothing ──
+  //
+  // What makes that possible is that the text in the box *is* the field's value:
+  // each keystroke is written to Stash's map, and the menu is built from the map
+  // rather than from any state of react-select's. So the flow these assertions
+  // drive is the real one — type, re-render, read the menu.
   const groupEdits = [];
   const groupField = (values) =>
     editField(values, (next) => groupEdits.push(next));
-  const groupInputOf = (block) =>
-    find(block.node, (n) => n.props?.id === "manga_tools_translation_group");
-  const suggestionsOf = (block) =>
-    find(block.node, (n) => n.type === "datalist");
+  const groupSelectOf = (block) =>
+    find(
+      block.node,
+      (n) => n.props?.inputId === "manga_tools_translation_group"
+    );
+  const optionValues = (block) =>
+    groupSelectOf(block).props.options.map((o) => o.value);
 
   const groupBlock = groupField({ [TG]: "Lily Manga", other: "x" });
-  const groupInput = groupInputOf(groupBlock);
-  assert.ok(groupInput, "the edit page offers a box for the translation group");
-  assert.strictEqual(groupInput.type, "input");
-  assert.strictEqual(
-    groupInput.props.type,
-    "text",
-    "a text box, not one of the selects: there is no vocabulary to choose from"
+  const groupSelect = groupSelectOf(groupBlock);
+  assert.ok(
+    groupSelect,
+    "the edit page offers a field for the translation group"
   );
   assert.strictEqual(
-    groupInput.props.value,
-    "Lily Manga",
+    groupSelect.props.classNamePrefix,
+    "react-select",
+    "the same control the language and censorship fields are drawn with"
+  );
+  assert.strictEqual(
+    groupSelect.props.isClearable,
+    true,
+    "with the same clear button — which is how the field is unset"
+  );
+  assert.strictEqual(
+    groupSelect.props.placeholder,
+    "填写翻译组…",
+    "and this plugin's own words for the empty box"
+  );
+  assert.deepStrictEqual(
+    groupSelect.props.value,
+    { value: "Lily Manga", label: "Lily Manga" },
     "showing what the gallery carries"
   );
   assert.strictEqual(
-    groupInput.props.list,
-    "manga_tools_translation_group_values",
-    "and pointing at the suggestion list"
-  );
-  assert.strictEqual(
-    groupInput.props.placeholder,
-    "填写翻译组…",
-    "with this plugin's own words for the empty box"
+    groupSelect.props.inputValue,
+    "Lily Manga",
+    "and the box itself holding it, since that is the text it is showing"
   );
 
-  // The suggestions are the groups already in use, out of this plugin's store —
-  // the same set of galleries as everything else here. The three in the fixtures
-  // are the test: gallery 4's carries the spaces it was typed with, and it is the
-  // same group as gallery 1's once trimmed, so a list that did not trim would
-  // offer two entries for one group — and one of them would not match what the
-  // details row shows.
-  const suggestions = suggestionsOf(groupBlock);
-  assert.ok(suggestions, "the suggestion list is drawn with the box");
-  assert.strictEqual(
-    suggestions.props.id,
-    "manga_tools_translation_group_values"
-  );
+  // The menu is the groups already in use, out of this plugin's store — the same
+  // set of galleries as everything else here. Gallery 4's carries the spaces it
+  // was typed with and is the same group as gallery 1's once trimmed, so a list
+  // that did not trim would offer one group twice, and one entry would not match
+  // the row the details panel draws.
   assert.deepStrictEqual(
-    suggestions.props.children.map((o) => o.props.value),
+    optionValues(groupBlock),
     ["Aozora", "Lily Manga"],
-    "each group once, in name order"
+    "each group once, in name order — and no create entry for a name already in use"
   );
 
-  // Committed as it is typed rather than on blur: what a Save reads is the map as
-  // it stood when the click was handled, and a blur that has not been through a
-  // render can lose the last thing typed.
-  groupInput.props.onChange({ currentTarget: { value: "Lily Mang" } });
+  // Typing: the keystroke goes into the map, and the next render's menu reads it.
+  // A plain text box in a select's clothing, which is the point.
+  groupSelect.props.onInputChange("Lily Mang", { action: "input-change" });
   assert.strictEqual(
     groupEdits[0][TG],
     "Lily Mang",
     "every keystroke goes into the map Stash's form owns"
   );
-  // A space has to be typable, so what is stored is what was typed…
-  groupInput.props.onChange({ currentTarget: { value: "Lily Manga " } });
-  assert.strictEqual(groupEdits[1][TG], "Lily Manga ");
-  // …but a box holding only spaces means nothing, and nothing removes the key
-  // rather than storing whitespace that reads as empty everywhere else.
-  groupInput.props.onChange({ currentTarget: { value: "   " } });
+  const whileTyping = groupField(groupEdits[0]);
+  assert.deepStrictEqual(
+    optionValues(whileTyping),
+    ["Lily Mang", "Aozora", "Lily Manga"],
+    "and the menu then offers it, first and labelled as the offer it is"
+  );
+  assert.strictEqual(
+    groupSelectOf(whileTyping).props.options[0].createLabel,
+    '创建 "Lily Mang"',
+    "worded in the reader's language, and quoted — the name is the thing being named"
+  );
+  // The offer is drawn only in the menu: the box shows the name, because an offer
+  // to create what is already selected would read as a question.
+  const createOption = groupSelectOf(whileTyping).props.options[0];
+  assert.strictEqual(
+    groupSelectOf(whileTyping).props.formatOptionLabel(createOption, {
+      context: "value",
+    }),
+    "Lily Mang"
+  );
+
+  // The box holds the value, so react-select would filter the menu by it — and a
+  // gallery's own group would then be the only thing on offer, which is the one
+  // thing the menu is not for. Nothing has been typed in that state, so the whole
+  // list is what opening the field asked for.
+  const groupFilter = groupSelect.props.filterOption;
+  const offered = (name, input) =>
+    groupFilter({ value: name, label: name }, input);
+  assert.strictEqual(
+    offered("Aozora", "Lily Manga"),
+    true,
+    "opening the field on a group already set offers the others with it"
+  );
+  assert.strictEqual(
+    offered("Lily Manga", "lil"),
+    true,
+    "and typing then narrows the list, as a search box should"
+  );
+  assert.strictEqual(
+    offered("Aozora", "lil"),
+    false,
+    "to what actually matches — case-insensitively, so it need not be typed exactly"
+  );
+
+  // Nothing typed: nothing to offer, so the menu is the groups alone.
+  assert.deepStrictEqual(optionValues(groupField({ [MANGA]: "true" })), [
+    "Aozora",
+    "Lily Manga",
+  ]);
+  // A name that differs from one in use only in case is not a new group.
+  assert.deepStrictEqual(
+    optionValues(groupField({ [TG]: "lily manga" })),
+    ["Aozora", "Lily Manga"],
+    "typing an existing group in another case offers it, not a second one"
+  );
+
+  // react-select calls onInputChange for reasons other than typing, and its text
+  // is then the option it just selected or nothing at all — taking it would wipe
+  // the value or put a search word back over it. Only "input-change" is written.
+  groupEdits.length = 0;
+  groupSelect.props.onInputChange("Lily Manga", { action: "set-value" });
+  groupSelect.props.onInputChange("", { action: "menu-close" });
+  groupSelect.props.onInputChange("", { action: "blur" });
+  assert.deepStrictEqual(
+    groupEdits,
+    [],
+    "only a keystroke is a change: selecting and closing the menu write nothing"
+  );
+
+  // Choosing an option writes it in that option's spelling, which is how a name
+  // typed in the wrong case gets put right; the create entry carries the text
+  // back unchanged.
+  groupSelect.props.onChange({ value: "Lily Manga", label: "Lily Manga" });
+  assert.strictEqual(groupEdits[0][TG], "Lily Manga");
+  groupSelect.props.onChange(createOption);
+  assert.strictEqual(
+    groupEdits[1][TG],
+    "Lily Mang",
+    "…and the create entry is the text as it stands"
+  );
+  groupSelect.props.onChange(null);
   assert.deepStrictEqual(
     groupEdits[2],
     { [MANGA]: "true", other: "x" },
-    "a box holding only spaces clears the field"
+    "clearing removes the key rather than storing an empty value"
   );
 
-  // Blurring tidies what was left on the end — the same text minus the space
-  // nobody meant to leave. Shown on a render that carries one, because that is the
-  // only state it has anything to do in.
+  // A box holding only spaces means nothing, so it removes the key rather than
+  // storing whitespace that reads as empty everywhere else.
   groupEdits.length = 0;
-  const padded = groupField({ [TG]: "Lily Manga  ", other: "x" });
-  groupInputOf(padded).props.onBlur();
+  groupSelect.props.onInputChange("   ", { action: "input-change" });
+  assert.deepStrictEqual(groupEdits[0], { [MANGA]: "true", other: "x" });
+
+  // Leaving the box tidies what typing cannot: the space nobody meant to leave,
+  // and a name that is an existing group in another case. A value that is already
+  // tidy is left alone, so blurring never marks the form dirty on its own.
+  groupEdits.length = 0;
+  const padded = groupSelectOf(
+    groupField({ [TG]: "Lily Manga  ", other: "x" })
+  );
+  padded.props.onBlur();
   assert.deepStrictEqual(
     groupEdits[0],
     { [MANGA]: "true", [TG]: "Lily Manga", other: "x" },
     "blurring writes the trimmed value back"
   );
 
-  // And a value that is already tidy is left alone: blur is not an excuse to
-  // rewrite the map (which would mark Stash's form dirty on its own).
+  const misCased = groupSelectOf(groupField({ [TG]: "lily manga" }));
+  misCased.props.onBlur();
+  assert.strictEqual(
+    groupEdits[1][TG],
+    "Lily Manga",
+    "and folds a name onto the group that is already there, rather than " +
+      "starting a second one that differs only in case"
+  );
+
   groupEdits.length = 0;
-  groupInputOf(groupField({ [TG]: "Lily Manga" })).props.onBlur();
+  groupSelectOf(groupField({ [TG]: "Lily Manga" })).props.onBlur();
+  assert.deepStrictEqual(groupEdits, [], "a tidy value is left alone");
+
+  // The field is the value *and* what the box shows, so a gallery the plugin has
+  // never seen the group of still reads back correctly.
+  const handSet = groupSelectOf(groupField({ [TG]: "  独自组  " }));
+  assert.strictEqual(
+    handSet.props.value.value,
+    "  独自组  ",
+    "a value somebody set by hand is left exactly as it is"
+  );
   assert.deepStrictEqual(
-    groupEdits,
-    [],
-    "a tidy value means the blur handler writes nothing at all"
+    handSet.props.value.label,
+    "独自组",
+    "while the label — what the box and the menu show — is the trimmed name"
   );
 
   // Stash draws no toolbar on an entity that is not a gallery.
