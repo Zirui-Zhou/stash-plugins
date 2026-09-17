@@ -32,11 +32,9 @@ conventions to follow when adding one. For installing them, see
 
    **A plugin with no UI needs none of that.** Leave out `src/` and
    `tsconfig.json`, write the plugin in whatever language it needs, and the build
-   packages the plugin's directory as it stands — nothing is bundled. `zipInfo`
-   is the example: a Python script Stash runs as a task, which needs a `name`,
-   `version`, `exec` and `interface`, and no `ui:` section at all. Python is not
-   a dependency this repository adds: Stash's own image ships it, and that is what
-   the plugin runs under.
+   packages the plugin's directory as it stands — nothing is bundled, and a
+   `tests/` directory in it is left out of the package. No plugin here does this
+   at the moment; the support is there because the build had it anyway.
 
 2. `myPlugin.yml` **must** have top-level `name` and `version`, and its
    `ui.javascript` names the **bundled** file (same base name again, so
@@ -76,13 +74,6 @@ collide over a name like `smoke.js`. `npm test` names each spec explicitly.
 When a second plugin's tests want the same stubs — the fake `PluginApi`, React,
 DOM and Apollo client in mangaTools' spec are all generic — lift them into a
 shared file both can import. Don't move the specs back to the root to share them.
-
-A plugin written in another language keeps its tests in the same place, named the
-way that language expects: `plugins/zipInfo/tests/test_zipinfo.py`.
-`tools/run-python-tests.mjs` runs those — `npm test` includes it, and it says so
-and carries on where python is not installed, since nothing else here needs it.
-The build leaves `tests/` out of the package, and out of a Python package's own
-directory along with it.
 
 One spec file is a fine place to start, but a suite grows. mangaTools' is the
 worked example of what that looks like: `tests/smoke.js` keeps the name `npm test`

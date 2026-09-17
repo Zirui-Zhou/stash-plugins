@@ -10,7 +10,7 @@
     "lint": "biome lint --error-on-warnings",
     "format": "biome format --write",
     "format:check": "biome format",
-    "test": "npm run lint && npm run format:check && npm run typecheck && npm run build && node tools/check-package-variant.mjs && node plugins/mangaTools/tests/smoke.js && node tools/run-python-tests.mjs"
+    "test": "npm run lint && npm run format:check && npm run typecheck && npm run build && node tools/check-package-variant.mjs && node plugins/mangaTools/tests/smoke.js"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.0",
