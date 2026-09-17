@@ -27,6 +27,7 @@
   "mangaTools.filter.manga.unmarked": "Unmarked",
 
   "mangaTools.manga.confirm": "Are you sure you want to stop managing this gallery? Its language and censorship values will be removed.",
+  "mangaTools.manga.confirmResetsForm": "The edit form has unsaved changes, and taking the mark off will reset it.",
   "mangaTools.manga.confirmCancel": "Cancel",
   "mangaTools.manga.confirmOk": "Unmark",
 

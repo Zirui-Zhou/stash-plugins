@@ -417,9 +417,17 @@ function refresh(): Promise<unknown> {
     return Promise.resolve();
   }
 
+  // no-cache rather than network-only, for the reason the settings query gives
+  // (see refreshSettings): the answer would be written into Apollo's normalised
+  // cache, and these are *Gallery* objects — so every refresh would push this
+  // plugin's custom_fields into each marked gallery already in the cache. Stash's
+  // edit form reinitialises itself whenever the gallery it was built from changes
+  // (enableReinitialize in GalleryEditPanel), so that write lands as "the reader's
+  // unsaved typing is thrown away". The store here is this plugin's own, and
+  // nothing else reads that copy.
   inFlight = Promise.all(
     queries.map((query) =>
-      client.query({ query: query, fetchPolicy: "network-only" })
+      client.query({ query: query, fetchPolicy: "no-cache" })
     )
   )
     .then((results) => {
@@ -1033,7 +1041,12 @@ function storedIsManga(galleryId: string): boolean {
  * a two-step click would need a third, which is exactly the kind of state naming
  * this plugin went to some trouble to avoid.
  */
-function ConfirmUnmark(props: { onCancel: () => void; onConfirm: () => void }) {
+function ConfirmUnmark(props: {
+  onCancel: () => void;
+  onConfirm: () => void;
+  /** Whether the edit form is holding unsaved changes the write will reset */
+  resetsForm: boolean;
+}) {
   const intl = PluginApi.libraries.Intl.useIntl();
   const Bootstrap = PluginApi.libraries.Bootstrap;
   const Modal = Bootstrap?.Modal;
@@ -1042,7 +1055,16 @@ function ConfirmUnmark(props: { onCancel: () => void; onConfirm: () => void }) {
 
   return (
     <Modal show size="sm" onHide={props.onCancel}>
-      <Modal.Body>{t(intl, "mangaTools.manga.confirm")}</Modal.Body>
+      <Modal.Body>
+        <div>{t(intl, "mangaTools.manga.confirm")}</div>
+        {/* Taking the mark off removes the language and the censorship with it,
+            which the details panel draws — so the cache has to follow, and Stash's
+            edit form reinitialises itself when it does. Marking is the other way
+            round and is written quietly, so this only ever applies here. */}
+        {props.resetsForm ? (
+          <div>{t(intl, "mangaTools.manga.confirmResetsForm")}</div>
+        ) : null}
+      </Modal.Body>
       <Modal.Footer>
         <Button variant="secondary" onClick={props.onCancel}>
           {t(intl, "mangaTools.manga.confirmCancel")}
@@ -1053,6 +1075,78 @@ function ConfirmUnmark(props: { onCancel: () => void; onConfirm: () => void }) {
       </Modal.Footer>
     </Modal>
   );
+}
+
+/**
+ * The edit form's custom-fields map and its setter, while the edit tab is open.
+ *
+ * Published by MangaFieldBlock, which is rendered inside that form and so has
+ * both. Marking from the toolbar writes through this as well as to the server
+ * (see `mark`), so the form's own copy of the map carries the mark and a later
+ * Save — which sends the whole map back (`custom_fields: { full: … }`) — cannot
+ * drop it. Cleared when the block unmounts: a setter left behind would write into
+ * a form that is no longer there.
+ */
+let editForm: {
+  /** The gallery the form is for — the form on screen is always the route's */
+  galleryId: string;
+  values: CustomFieldsMap;
+  onChange: (values: CustomFieldsMap) => void;
+} | null = null;
+
+/** The published form, if it is the one for this gallery */
+function editFormFor(galleryId: string): typeof editForm {
+  return editForm && editForm.galleryId === galleryId ? editForm : null;
+}
+
+/**
+ * Whether Stash's edit form has changes that have not been saved.
+ *
+ * Read out of the DOM because that is the only place it shows. The panel's own
+ * Save button is disabled while there is nothing to save — GalleryEditPanel
+ * renders it with `disabled={!formik.dirty || …}` — and the panel exists only
+ * while its tab is open, so no button means nothing to lose.
+ */
+function editFormIsDirty(): boolean {
+  const save = document.querySelector(".edit-buttons-container .edit-button");
+  return !!save && (save as HTMLButtonElement).disabled !== true;
+}
+
+/**
+ * The mutation that marks a gallery.
+ *
+ * Its selection set is `id` and nothing else, which is the whole point: Apollo
+ * writes what the mutation returns into the cache, so asking for no gallery
+ * fields leaves the cached gallery exactly as it was — same object, same
+ * custom_fields — and an edit form built from it does not reinitialise (see
+ * refresh() for the same argument about the store's query).
+ *
+ * Stash's own `useGalleryUpdate` cannot be used here: its document asks for the
+ * gallery, which is what we must not have.
+ */
+const MARK_UPDATE = `mutation MangaToolsMark($input: GalleryUpdateInput!) {
+  galleryUpdate(input: $input) {
+    id
+  }
+}`;
+
+/** Writes the mark, and leaves the page's cached gallery alone. See MARK_UPDATE. */
+function writeMarkQuietly(
+  galleryId: string,
+  fields: Record<string, unknown>
+): Promise<unknown> {
+  let client: MangaToolsApolloClient;
+  try {
+    client = PluginApi.utils.StashService.getClient();
+  } catch (e) {
+    console.error("[mangaTools] failed to get the Apollo client:", e);
+    return Promise.resolve();
+  }
+
+  return client.mutate({
+    mutation: MARK_UPDATE,
+    variables: { input: { id: galleryId, custom_fields: fields } },
+  });
 }
 
 function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
@@ -1071,7 +1165,16 @@ function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
   const host = ensureToolbarHost();
   if (!host) return null;
 
-  const marked = NS.isManga(props.values);
+  // Three sources, in the order that keeps the switch honest. The edit form
+  // first, because while it is open the reader may have marked the gallery
+  // without saving it yet. Then this plugin's store, which the mark's own write
+  // refreshes — the write is deliberately invisible to the Apollo cache, so the
+  // values Stash handed in are the last to know. Those are the last resort, for
+  // the moment before either has anything to say.
+  const form = editFormFor(props.galleryId);
+  const marked = NS.isManga(
+    form ? form.values : (store.get(props.galleryId) ?? props.values)
+  );
 
   /**
    * Takes the mark off, and this plugin's fields with it.
@@ -1093,6 +1196,10 @@ function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
       () => {
         setBusy(false);
         setConfirming(false);
+        // This one goes through Stash's own mutation, so its cache follows — but
+        // the store this plugin draws from does not, and an unmarked gallery left
+        // in it keeps its badge until the next page load.
+        refresh();
       },
       (e: unknown) => {
         setBusy(false);
@@ -1104,16 +1211,55 @@ function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
 
   const onToggle = () => {
     if (!marked) {
-      write({ partial: { [MANGA_FIELD_NAME]: NS.MANGA_VALUE } });
+      mark();
       return;
     }
 
     setConfirming(true);
   };
 
+  /**
+   * Marks the gallery: on the server, and in the edit form if it is open.
+   *
+   * Both, because each covers something the other cannot. The server write is
+   * what the plugin's own store reads, so the switch, the card badges and the
+   * bulk rows all follow. The form write is what keeps the form's copy of the
+   * map — the one its Save sends back in full — from being a version without the
+   * mark, which is what would silently drop it (see editForm).
+   *
+   * Nothing here reinitialises that form: the write is the quiet one, and the
+   * form is told directly rather than through the cache. That is the whole reason
+   * marking is safe to do with unsaved typing sitting in it, where taking the
+   * mark off is not.
+   */
+  const mark = () => {
+    if (form) {
+      form.onChange(NS.setField(form.values, MANGA_FIELD_NAME, NS.MANGA_VALUE));
+    }
+
+    setBusy(true);
+    writeMarkQuietly(props.galleryId, {
+      partial: { [MANGA_FIELD_NAME]: NS.MANGA_VALUE },
+    }).then(
+      () => {
+        setBusy(false);
+        // The store is what the switch itself reads, so it has to be told the
+        // server has moved on.
+        refresh();
+      },
+      (e: unknown) => {
+        setBusy(false);
+        console.error("[mangaTools] could not write the manga mark:", e);
+      }
+    );
+  };
+
   const onConfirmUnmark = () => {
     write({ remove: NS.fieldsToClear(props.values) });
   };
+
+  /** Whether the question above is being asked over unsaved changes as well */
+  const unmarkWouldResetForm = editFormIsDirty();
 
   return PluginApi.ReactDOM.createPortal(
     <>
@@ -1137,6 +1283,7 @@ function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
         <ConfirmUnmark
           onCancel={() => setConfirming(false)}
           onConfirm={onConfirmUnmark}
+          resetsForm={unmarkWouldResetForm}
         />
       ) : null}
     </>,
@@ -2459,6 +2606,27 @@ registerPatch("instead", "CustomFieldsInput", (...args: unknown[]) => {
   };
   const Original = originalFrom(args);
   noteFired("CustomFieldsInput");
+
+  // This component *is* the gallery's edit form's custom-fields section: it is
+  // rendered for every gallery, whether or not this plugin has marked it, and it
+  // is handed both the form's map and the setter for it. Published for the
+  // toolbar switch, which marks through the form as well as through the server —
+  // publishing it from the edit block instead would cover only galleries that are
+  // already manga, and marking a gallery that is not is exactly the case this is
+  // for. Cleared when the form goes, so nothing writes into one that is not there.
+  React.useEffect(() => {
+    const galleryId = currentGalleryId();
+    if (props.onChange && galleryId) {
+      editForm = {
+        galleryId,
+        values: props.values ?? {},
+        onChange: props.onChange,
+      };
+    }
+    return () => {
+      editForm = null;
+    };
+  });
 
   return (
     <>

@@ -314,6 +314,16 @@ export interface MangaToolsApolloClient {
     fetchPolicy?: string;
   }): Promise<{ data?: { [key: string]: unknown } }>;
 
+  /**
+   * A mutation, which Apollo also writes into its cache — whatever the mutation
+   * asks for. That is why the plugin's own mutations ask for as little as they
+   * can: see MARK_UPDATE in mangaTools.tsx.
+   */
+  mutate(options: {
+    mutation: unknown;
+    variables?: Record<string, unknown>;
+  }): Promise<{ data?: { [key: string]: unknown } }>;
+
   /** The current link chain — read before replacing it (see setLink below) */
   link?: unknown;
   /** Apollo's own API for replacing the link chain after the client exists */

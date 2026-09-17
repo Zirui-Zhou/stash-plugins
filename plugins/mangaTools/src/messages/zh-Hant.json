@@ -27,6 +27,7 @@
   "mangaTools.filter.manga.unmarked": "未標記",
 
   "mangaTools.manga.confirm": "確定不再把這個畫廊作為漫畫管理嗎？它的語言和修正的值會被刪除。",
+  "mangaTools.manga.confirmResetsForm": "編輯頁有未儲存的改動，取消標記會把該表單重置。",
   "mangaTools.manga.confirmCancel": "取消",
   "mangaTools.manga.confirmOk": "取消標記",
 

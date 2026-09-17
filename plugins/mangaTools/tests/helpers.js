@@ -161,6 +161,12 @@ function makeFilterModel(criteria = []) {
 /** Criteria handed to makeQueryParameters by the most recent call */
 const encodedCriteria = [];
 
+/** Every mutation the plugin sent through the client, whole — see fakeClient.mutate */
+const mutationWrites = [];
+
+/** Every query the plugin sent, with the fetch policy it asked for */
+const queryOptions = [];
+
 /** A custom-fields criterion holding the given conditions */
 const customFieldsCriterion = (conditions) => ({
   criterionOption: { type: "custom_fields" },
@@ -228,7 +234,20 @@ const fakeClient = {
     this.link = link;
     state.installedLink = link;
   },
-  query: ({ query }) => {
+  // The plugin's own mutation, which the mark writes through. Recorded whole —
+  // document and variables — because the document is the point: what a mutation
+  // *asks for* is what Apollo writes into its cache, and the mark has to ask for
+  // nothing (`{ id }`) to leave the page's gallery alone.
+  mutate: ({ mutation, variables }) => {
+    mutationWrites.push({ mutation: String(mutation), variables });
+    return state.galleryWriteResult
+      ? Promise.reject(state.galleryWriteResult)
+      : Promise.resolve({
+          data: { galleryUpdate: { id: variables?.input?.id } },
+        });
+  },
+  query: ({ query, fetchPolicy }) => {
+    queryOptions.push({ query: String(query), fetchPolicy });
     // The plugin fires three queries: one gallery map per custom field
     // (findGalleries) and the settings (configuration { plugins }). Branch on
     // the query text — the field name is the only thing that tells the two
@@ -961,8 +980,10 @@ module.exports = {
   makeEl,
   makeFilterModel,
   mangaConditionsOf,
+  mutationWrites,
   observed,
   original,
+  queryOptions,
   patched,
   patchedAfter,
   patchedBefore,

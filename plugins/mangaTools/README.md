@@ -323,6 +323,23 @@ inserted after the one holding `.organized-button`, anchored on that button
 rather than on a position, because the group's other span is the operation menu
 and its contents vary. See `ensureToolbarHost`.
 
+**Writing the mark is deliberately quieter than anything else this plugin
+writes.** Stash's edit page is a tab on the same page as that toolbar, and its
+form reinitialises itself whenever the gallery behind it changes
+(`enableReinitialize` in `GalleryEditPanel`), which throws away whatever is typed
+in it and not saved. `custom_fields` is one of that form's own fields, so the
+obvious write does exactly that. Marking therefore goes through this plugin's own
+mutation, whose selection set asks for nothing back — Apollo writes only what a
+mutation asks for, so the cached gallery keeps what it had — and it pushes the
+mark into the form's copy of the map at the same time, so that the map a Save
+sends back (the whole of it: `custom_fields: { full: … }`) carries the mark too.
+The store's own query is `no-cache` for the same reason.
+
+Taking the mark *off* cannot be quiet, and is not: it removes the language and
+the censorship the details panel draws, so the cache has to follow, and the edit
+form resets along with it. That is what its confirmation says when the form is
+holding unsaved changes.
+
 **Both look their mount point up during render, which on a page's first pass is
 too early** — React has not committed the page yet, so the lookup finds the
 previous page's markup, which on a load is nothing. `useAfterMount` asks for one
@@ -650,6 +667,12 @@ canonical spelling.
 
 ## Known limitations
 
+- **Marking a gallery from the toolbar leaves its edit form looking dirty.**
+  Marking writes the mark into that form's own copy of the custom fields as well
+  as to the server (see "Writing the mark" above), so formik sees a difference
+  from the snapshot it mounted with and reports unsaved changes — until a Save,
+  after which it is clean again. That is the price of not resetting the form: the
+  alternative is the form being reinitialised on top of whatever was typed in it.
 - **The bulk edit row hooks the Apollo link chain** (see "Bulk edit" above) — the
   only place the plugin goes beyond the patch API. It is the only way to put a
   field into that dialog, since the dialog is not patchable and keeps its pending

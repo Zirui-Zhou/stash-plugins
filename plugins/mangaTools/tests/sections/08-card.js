@@ -11,6 +11,7 @@ const assert = require("node:assert");
 const {
   MANGA,
   NS,
+  queryOptions,
   PluginApi,
   React,
   asManga,
@@ -18,10 +19,10 @@ const {
   callAfter,
   documentRoot,
   find,
-  galleryWrites,
   globalListeners,
   hasText,
   makeEl,
+  mutationWrites,
   state,
 } = require("../helpers.js");
 const { detail, editField } = require("../renders.js");
@@ -693,9 +694,11 @@ module.exports = () => {
 
   /** The toolbar's mark, out of the same patch the panel comes from */
   const toolbarMark = (fields) => {
-    // Not asManga: this section is about the switch's two states, so the mark is
-    // whatever the caller says. The switch is drawn either way — it is the only
-    // way to set the mark, so it cannot itself be gated on it.
+    // `fields` is what Stash handed the page. The switch is drawn either way — it
+    // is the only way to set the mark, so it cannot itself be gated on it — while
+    // what it *says* comes from the edit form if one is open and from this
+    // plugin's store otherwise. Only then from the values passed in: the mark's
+    // own write is deliberately invisible to Apollo's cache, so those lag.
     const rendered = call("CustomFields", { values: fields });
     const el = rendered.props.children[2];
     return { rendered, el, drawn: el.type(el.props) };
@@ -727,37 +730,12 @@ module.exports = () => {
   );
 
   // What it draws: the switch, and — only while the question below is open — the
-  // dialog that asks it.
+  // dialog that asks it. Gallery 3 is in the store the map query fills, so it is
+  // marked as far as the switch is concerned, whatever `values` holds.
   const drawn = first.drawn.node;
   assert.strictEqual(drawn.type, React.Fragment);
-  const toggle = drawn.props.children[0];
-  assert.strictEqual(toggle.type, "button", "a button, like organized");
-  assert.strictEqual(
-    toggle.props.className,
-    "minimal manga-tools-manga-toggle btn btn-secondary",
-    "unmarked, and with no state class to say otherwise"
-  );
-  assert.strictEqual(toggle.props.title, "标记为漫画");
-  assert.strictEqual(toggle.props["aria-pressed"], false);
-  assert.strictEqual(
-    drawn.props.children[1],
-    null,
-    "and nothing else, until the reader asks to stop managing the gallery"
-  );
-
-  // The switch's icon is a masked span, not an svg: the artwork is a file, and a
-  // file cannot see `currentColor` — the mask reads its shape and CSS supplies
-  // the colour, which is what makes two states out of one image.
-  const icon = toggle.props.children.type(toggle.props.children.props);
-  assert.strictEqual(icon.type, "span");
-  assert.strictEqual(icon.props.className, "manga-tools-manga-icon");
-
-  // Marked: the switch says so.
-  const markedToolbar = toolbarMark({
-    ...detailValues("censored"),
-    [NS.MANGA_FIELD_NAME]: "true",
-  }).drawn.node;
-  const toggleOn = markedToolbar.props.children[0];
+  const toggleOn = drawn.props.children[0];
+  assert.strictEqual(toggleOn.type, "button", "a button, like organized");
   assert.strictEqual(
     toggleOn.props.className,
     "minimal manga-tools-manga-toggle btn btn-secondary is-manga",
@@ -766,29 +744,112 @@ module.exports = () => {
   assert.strictEqual(toggleOn.props.title, "漫画");
   assert.strictEqual(toggleOn.props["aria-pressed"], true);
 
-  // Clicking writes through Stash's own gallery update. Marking is one click.
-  const writesBefore = galleryWrites.length;
+  // The switch's icon is a masked span, not an svg: the artwork is a file, and a
+  // file cannot see `currentColor` — the mask reads its shape and CSS supplies
+  // the colour, which is what makes two states out of one image.
+  const icon = toggleOn.props.children.type(toggleOn.props.children.props);
+  assert.strictEqual(icon.type, "span");
+  assert.strictEqual(icon.props.className, "manga-tools-manga-icon");
+
+  // A gallery the store has never heard of: the switch falls back to the values
+  // Stash handed in, which say nothing about the mark.
+  nav("/galleries/8");
+  const unmarkedToolbar = toolbarMark(detailValues("censored")).drawn.node;
+  const toggle = unmarkedToolbar.props.children[0];
+  assert.strictEqual(
+    toggle.props.className,
+    "minimal manga-tools-manga-toggle btn btn-secondary",
+    "unmarked, and with no state class to say otherwise"
+  );
+  assert.strictEqual(toggle.props.title, "标记为漫画");
+  assert.strictEqual(toggle.props["aria-pressed"], false);
+  assert.strictEqual(
+    unmarkedToolbar.props.children[1],
+    null,
+    "and nothing else, until the reader asks to stop managing the gallery"
+  );
+
+  // Marking is one click, and it goes through this plugin's own mutation rather
+  // than Stash's. Stash's document asks for the gallery back, and what a mutation
+  // asks for is what Apollo writes into its cache — which reinitialises a Stash
+  // edit form open on the same page, on top of whatever is typed in it. So this
+  // one asks for nothing.
+  const writesBefore = mutationWrites.length;
   toggle.props.onClick();
   assert.deepStrictEqual(
-    galleryWrites[writesBefore],
+    mutationWrites[writesBefore].variables,
     {
       input: {
-        id: "3",
+        id: "8",
         custom_fields: { partial: { [NS.MANGA_FIELD_NAME]: "true" } },
       },
     },
     "marking writes the canonical name"
+  );
+  assert.ok(
+    /galleryUpdate\(input: \$input\)\s*\{\s*id\s*\}/.test(
+      mutationWrites[writesBefore].mutation
+    ),
+    "…asking for nothing but the id, so nothing else the page shows is disturbed"
+  );
+  assert.strictEqual(
+    /custom_fields/.test(mutationWrites[writesBefore].mutation),
+    false,
+    "the mark is in the input, not in what the mutation asks back for"
+  );
+
+  // Marking with an edit form open writes into the form as well, so the copy its
+  // Save sends back — the whole map, `custom_fields: { full: … }` — is not a
+  // version without the mark. The form is published by the custom-fields section
+  // of the edit page, which is rendered for every gallery, marked or not, so this
+  // is a gallery that has not been marked yet.
+  const pushes = [];
+  call("CustomFieldsInput", {
+    values: { [NS.FIELD_NAME]: "ja" },
+    onChange: (next) => pushes.push(next),
+  });
+
+  // The form has the last word on the mark, over whatever Stash handed the page:
+  // it is the copy a Save would send.
+  const overValues = toolbarMark(asManga(detailValues("censored"))).drawn.node
+    .props.children[0];
+  assert.strictEqual(
+    overValues.props["aria-pressed"],
+    false,
+    "an open edit form has the last word on the mark"
+  );
+
+  toolbarMark(
+    detailValues("censored")
+  ).drawn.node.props.children[0].props.onClick();
+  assert.deepStrictEqual(
+    pushes[0],
+    { [NS.FIELD_NAME]: "ja", [NS.MANGA_FIELD_NAME]: "true" },
+    "the form's own map gets the mark too"
+  );
+
+  // …and the store's query is no-cache for the same reason MARK_UPDATE asks for
+  // nothing: these are Gallery objects, and a copy landing in Apollo's cache is
+  // what resets an open edit form.
+  const mapQueries = queryOptions.filter((q) => /findGalleries/.test(q.query));
+  assert.ok(mapQueries.length > 0, "the map query should have been sent");
+  assert.deepStrictEqual(
+    [...new Set(mapQueries.map((q) => q.fetchPolicy))],
+    ["no-cache"],
+    "the store's query must not write what it reads into Apollo's cache"
   );
 
   // Unmarking asks first, because it takes this plugin's fields with it. The
   // dialog itself cannot be driven from here — the test React's state setter is
   // inert, so a click can open nothing — but what matters is assertable without
   // it: the click writes nothing, and the list of what confirming would remove is
-  // its own function.
-  const writesAfterMarking = galleryWrites.length;
+  // its own function. (The same is true of the line that dialog adds when the
+  // edit form is dirty; it is drawn in the dialog, not before it.)
+  nav("/galleries/3");
+  const writesAfterMarking = mutationWrites.length;
   toggleOn.props.onClick();
   assert.strictEqual(
-    galleryWrites.length,
+    mutationWrites.length,
     writesAfterMarking,
     "the click must not write: it asks a question, and this one takes data with it"
   );
@@ -812,11 +873,12 @@ module.exports = () => {
   assert.deepStrictEqual(NS.fieldsToClear(null), [NS.MANGA_FIELD_NAME]);
 
   // A rejected write leaves the switch as it was, so the click can be repeated.
+  // On a gallery the store does not know, which is the one a click marks.
+  nav("/galleries/8");
   state.galleryWriteResult = new Error("nope");
-  toolbarMark({
-    ...detailValues("censored"),
-    [NS.MANGA_FIELD_NAME]: "true",
-  }).drawn.node.props.children[0].props.onClick();
+  toolbarMark(
+    detailValues("censored")
+  ).drawn.node.props.children[0].props.onClick();
   state.galleryWriteResult = null;
 
   // The write path is the edit form, through Stash's own values map — which is
