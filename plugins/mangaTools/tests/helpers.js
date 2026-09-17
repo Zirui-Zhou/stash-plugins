@@ -496,7 +496,13 @@ const PluginApi = {
   },
   // Names rather than components, so the tests can find an icon by its rendered
   // type and read the definition it was given.
-  components: { Icon: "Icon" },
+  // Stash registers every patchable component here as its module loads; the
+  // plugin looks one of them up to check the sidebar's patch container exists.
+  components: {
+    Icon: "Icon",
+    "FilteredGalleryList.SidebarSections":
+      "FilteredGalleryList.SidebarSections",
+  },
   libraries: {
     Apollo: {
       gql: (s) => {

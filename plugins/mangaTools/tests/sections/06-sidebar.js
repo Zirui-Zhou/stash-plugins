@@ -9,16 +9,15 @@ const path = require("node:path");
 const {
   NS,
   PLUGIN,
-  call,
+  PluginApi,
+  callAfter,
   censorshipConditionsOf,
   conditionsOf,
   customFieldsCriterion,
-  documentRoot,
   fakeHistory,
   find,
   hasText,
   historyReplaces,
-  makeEl,
   makeFilterModel,
   mangaConditionsOf,
   state,
@@ -27,39 +26,67 @@ const {
 
 module.exports = () => {
   // ── 10d. The sidebar section itself ────────────────────────────────
-  // Stand in for the gallery list's sidebar, in the shape the real one has: the
-  // saved-filters section, then Stash's own pinned-criteria sections, then the
-  // footer that shows the result count.
-  const sidebar = makeEl("div");
-  sidebar.className = "sidebar";
-  documentRoot.appendChild(sidebar);
+  // The sections are mounted through Stash's own sidebar patch container, so
+  // there is no DOM here at all: publish the filter the way the list does (from
+  // FilteredGalleryList's output, before the sidebar is rendered), then take the
+  // container's children apart.
+  // A Stash that has no such container — it arrived in v0.31 — would lose the
+  // three sections without a word: the patch registers, and never fires. That is
+  // the one failure this design can have that nothing else would report, so the
+  // plugin says so once, and this is the check that it does. First, before any
+  // other render of the list, because it only ever says it once.
+  const containerName = "FilteredGalleryList.SidebarSections";
+  const registered = PluginApi.components[containerName];
+  const complaints = [];
+  const realError = console.error;
+  delete PluginApi.components[containerName];
+  try {
+    console.error = (message) => complaints.push(String(message));
+    callAfter("FilteredGalleryList", {}, { type: "div", props: {} });
+  } finally {
+    console.error = realError;
+    PluginApi.components[containerName] = registered;
+  }
+  assert.ok(
+    complaints.some(
+      (m) => m.indexOf("no FilteredGalleryList.SidebarSections") !== -1
+    ),
+    "a Stash without the sidebar container must be told about, not silently " +
+      "swallowed into an empty sidebar"
+  );
 
-  const savedFiltersSection = makeEl("div");
-  savedFiltersSection.className = "sidebar-section sidebar-saved-filters";
-  sidebar.appendChild(savedFiltersSection);
+  const publishFilter = (filter) => {
+    callAfter(
+      "FilteredGalleryList",
+      {},
+      {
+        type: "SidebarContent",
+        props: { filter },
+      }
+    );
+  };
 
-  const pinnedStudioSection = makeEl("div");
-  pinnedStudioSection.className = "sidebar-section sidebar-list-filter";
-  sidebar.appendChild(pinnedStudioSection);
-
-  const sidebarFooter = makeEl("div");
-  sidebarFooter.className = "sidebar-footer";
-  sidebar.appendChild(sidebarFooter);
-
-  /** Renders one sidebar section and follows the portal and shared shell it makes */
-  const renderSidebarSection = (childIndex, conditions) => {
-    const el = call("GalleryList", {
-      filter: makeFilterModel(
+  /** The container's output for one filter: our three sections, then Stash's own */
+  const renderSidebarContainer = (conditions) => {
+    publishFilter(
+      makeFilterModel(
         conditions === undefined ? [] : [customFieldsCriterion(conditions)]
-      ),
-      selectedIds: new Set(),
-    }).props.children[childIndex];
-    // el.type(el.props) renders the section, which returns the portal. The portal's
-    // node is the <SidebarSection> element; its output is the actual <div>, so one
-    // more call reaches the markup the assertions navigate.
-    const portal = el.type(el.props);
-    const shell = portal.node;
-    return Object.assign({}, portal, { node: shell.type(shell.props), shell });
+      )
+    );
+    return callAfter(
+      "FilteredGalleryList.SidebarSections",
+      { children: [] },
+      { type: "ORIGINAL", props: { children: [] } }
+    );
+  };
+
+  /** One of the three sections, rendered the way the container renders it */
+  const renderSidebarSection = (childIndex, conditions) => {
+    const el = renderSidebarContainer(conditions).props.children[childIndex];
+    // One call renders the section, which returns the shared shell element; the
+    // second reaches the markup the assertions navigate.
+    const shell = el.type(el.props);
+    return Object.assign({}, el, { node: shell.type(shell.props), shell });
   };
 
   const renderLanguageFilter = (conditions) =>
@@ -69,25 +96,79 @@ module.exports = () => {
   const renderMangaFilter = (conditions) => renderSidebarSection(2, conditions);
 
   let section = renderLanguageFilter();
+
+  // Where the sections land: ours first, Stash's own after. That is the position
+  // they have always had — after the sidebar's saved-filters header, before its
+  // studio filter — and it is now a property of the tree rather than of a DOM
+  // anchor, which is the whole point of mounting them this way.
+  const stashSide = { type: "SidebarStudiosFilter", props: {} };
+  const original = { type: "ORIGINAL", props: { children: [stashSide] } };
+  publishFilter(makeFilterModel());
+  const container = callAfter(
+    "FilteredGalleryList.SidebarSections",
+    { children: [] },
+    original
+  );
   assert.strictEqual(
-    section.__portal,
-    true,
-    "the section should render through a portal"
+    container.props.children.length,
+    4,
+    "three plugin sections and Stash's own output"
+  );
+  assert.deepStrictEqual(
+    container.props.children.slice(0, 3).map((c) => typeof c.type),
+    ["function", "function", "function"],
+    "the three sections come first"
+  );
+  assert.strictEqual(
+    container.props.children[3],
+    original,
+    "…and Stash's own filter sections after them"
   );
 
-  const filterHostEl = sidebar.children[1];
-  assert.strictEqual(filterHostEl.className, "manga-tools-field-host");
-  assert.strictEqual(
-    filterHostEl.previousElementSibling,
-    savedFiltersSection,
-    "the section should come after the saved filters"
+  // The filter they are built from is the one published from FilteredGalleryList's
+  // output — the sidebar's container is handed nothing else.
+  const published = makeFilterModel([
+    customFieldsCriterion([conditionsOf("EQUALS", ["ja"])]),
+  ]);
+  publishFilter(published);
+  const wired = callAfter(
+    "FilteredGalleryList.SidebarSections",
+    { children: [] },
+    original
   );
   assert.strictEqual(
-    filterHostEl.nextElementSibling,
-    pinnedStudioSection,
-    "and before Stash's own pinned sections"
+    wired.props.children[0].props.filter,
+    published,
+    "each section is handed the filter the list published, not one of its own"
   );
-  assert.strictEqual(section.host, filterHostEl);
+
+  // The publication itself reads the model out of the rendered tree, wherever it
+  // sits in it — the elements Stash hands the model to are not at a fixed depth.
+  const deep = makeFilterModel([
+    customFieldsCriterion([conditionsOf("IS_NULL")]),
+  ]);
+  callAfter(
+    "FilteredGalleryList",
+    {},
+    {
+      type: "div",
+      props: {
+        children: [
+          {
+            type: "SidebarPane",
+            props: { children: [{ type: "div", props: {} }] },
+          },
+          { type: "SidebarContent", props: { filter: deep } },
+        ],
+      },
+    }
+  );
+  assert.strictEqual(
+    callAfter("FilteredGalleryList.SidebarSections", { children: [] }, original)
+      .props.children[0].props.filter,
+    deep,
+    "the model is found wherever the tree holds it"
+  );
 
   // Markup copied from Stash's own sidebar section (CollapseButton/SidebarSection),
   // so it reads as one of them rather than as something bolted on.

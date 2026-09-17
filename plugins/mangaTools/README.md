@@ -690,11 +690,11 @@ canonical spelling.
   that the plugin finds/creates and repositions while rendering; a React
   re-render that displaces it gets corrected automatically. The anchors are
   `.gallery-details` (detail page), `.form-group[data-field="studio_id"]` (edit
-  page — confirmed to exist on v0.31.1), `[data-field="studio"]` (bulk dialog) and
-  `.sidebar-saved-filters` (filter sidebar). The filter dialog adds two more,
-  anchored differently: the card's list goes inside Stash's own `.criterion-editor`
-  box, which exists only while the card is open, and a tag drawn for the card joins
-  Stash's tag row, or a row the plugin makes when Stash has none.
+  page — confirmed to exist on v0.31.1) and `[data-field="studio"]` (bulk dialog).
+  The filter dialog adds two more, anchored differently: the card's list goes
+  inside Stash's own `.criterion-editor` box, which exists only while the card is
+  open, and a tag drawn for the card joins Stash's tag row, or a row the plugin
+  makes when Stash has none.
 
   The censorship mark adds one more of each kind: a span next to the gallery
   card's `.card-popovers` row, named by the gallery id so the right card's row is
@@ -709,22 +709,25 @@ canonical spelling.
   would be missing for a frame and everything below it would jump. Layout effects
   run after React writes the DOM but before paint, which is the only window where
   the correction is invisible.
-- **The sidebar filter could not be moved off its anchor.** Stash registers
+- **The sidebar filter is mounted where Stash mounts its own.** It used to be
+  portalled into a `<div>` found by the selector `.sidebar-saved-filters`, with a
+  second render pass to get it placed. Stash registers
   `FilteredGalleryList.SidebarSections` — a patchable wrapper around its own
-  sidebar filter sections — which looks like the natural place to render this
-  one, with no anchor and no second pass. It does not work: that wrapper is handed
-  only `children`, the filter model lives inside `FilteredGalleryList` above it,
-  and nothing patchable up there holds one either. Publishing the model from
-  `GalleryList` was tried and renders nothing at all, because `GalleryList` is the
-  list of cards and renders *after* the sidebar. The anchor stands.
-- **The sidebar section appears a moment after the page, and the cause is not
-  known.** Two explanations have been ruled out by reading Stash: plugin scripts
-  run before the app's first render (`PluginsLoader` waits on `useScript`, which
-  waits for the `load` event), and the mount-point corrections already run in
-  layout effects, i.e. before the browser paints. The delay is brief and the
-  section arrives in the right place, so it is left as it is rather than chased
-  with more machinery — if you do go after it, start by confirming which version
-  Stash is actually running, since a cached earlier build would look identical.
+  sidebar filter sections — and the three sections are pushed in front of Stash's
+  own there: no anchor, no DOM, no second pass. The filter model has to come from
+  somewhere, because that wrapper is handed only `children`: it is published from
+  `FilteredGalleryList`'s own output (an `after` patch runs once its body has
+  produced the tree, and before React descends into it), which the sections read
+  on the same pass. Publishing it from `GalleryList` instead does not work: that
+  is the list of cards, rendered *after* the sidebar, so the sections would read
+  nothing on the first pass. The patch container arrived in Stash v0.31 — the
+  plugin logs an error at the first list render when it is missing, rather than
+  leaving an empty sidebar behind.
+- **The sidebar section appears a moment after the page** — the delay that used
+  to be visible with no explanation. It was the mechanism above: the sections were
+  rendered by the cards' patch and portalled into a node created after the sidebar
+  had already been committed, so they could not be there for the first paint. They
+  are now children of the sidebar's own tree and render with it.
 - **Excluding a language also matches galleries with no language set**, because
   that is what Stash's `NOT_EQUALS` means. On a library where most galleries are
   untagged, "not Japanese" therefore returns nearly everything; `(None)` asks for
@@ -879,7 +882,7 @@ is a clear order to try:
    the only option when the control has to *precede* the original, as
    `GalleryList`'s two mounts do.
 3. **A DOM mount point and a portal** — nothing on that part of the page is
-   patchable at all. That is true of the four anchored rows, of the gallery
+   patchable at all. That is true of the three anchored rows, of the gallery
    detail toolbar and of the card's popover row, and it is why each of them
    carries a comment saying which component *would* have been the natural place
    and why it cannot be.

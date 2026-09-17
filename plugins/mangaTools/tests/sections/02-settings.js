@@ -42,6 +42,8 @@ module.exports = () => {
     "GalleryCard.Overlays",
     "GalleryCard.Popovers",
     "RatingSystem",
+    "FilteredGalleryList",
+    "FilteredGalleryList.SidebarSections",
   ];
   for (const t of requiredAfterPatches) {
     assert.ok(patchedAfter[t], `missing after patch: ${t}`);
@@ -50,14 +52,15 @@ module.exports = () => {
   // GalleryList carries two patches, which is allowed: Stash runs the
   // before-functions first and passes their result on to any instead-functions
   // (see patch.tsx). It is observed for the selection the bulk dialog needs, and
-  // wrapped so the sidebar language filter has somewhere to mount.
+  // wrapped so the filter dialog's card has somewhere to render.
   assert.ok(patchedBefore.GalleryList, "missing patch: GalleryList (before)");
   assert.ok(patched.GalleryList, "missing patch: GalleryList (instead)");
 
   // The wrapper has to hand the list through untouched — the plugin adds siblings,
-  // it does not replace anything. Five now: three sidebar sections (language,
-  // censorship, manga), the list the filter dialog draws inside its own card, and
-  // the original list at the end.
+  // it does not replace anything. Two now: the list the filter dialog draws
+  // inside its own card, and the original list at the end. The three sidebar
+  // sections are mounted elsewhere — through Stash's sidebar patch container, a
+  // page of their own in the sidebar's tests.
   const listModel = makeFilterModel();
   const listEl = call("GalleryList", {
     filter: listModel,
@@ -68,32 +71,11 @@ module.exports = () => {
     React.Fragment,
     "GalleryList should be wrapped, not replaced"
   );
-  const [
-    sidebarFilter,
-    censorshipFilter,
-    mangaFilter,
-    dialogFilter,
-    listOriginal,
-  ] = listEl.props.children;
-  assert.strictEqual(
-    typeof sidebarFilter.type,
-    "function",
-    "the language section as a sibling"
-  );
-  assert.strictEqual(
-    typeof censorshipFilter.type,
-    "function",
-    "the censorship section as another"
-  );
-  assert.strictEqual(
-    typeof mangaFilter.type,
-    "function",
-    "and the manga section as a third"
-  );
+  const [dialogFilter, listOriginal] = listEl.props.children;
   assert.strictEqual(
     typeof dialogFilter.type,
     "function",
-    "and the dialog's list as a fourth"
+    "the dialog's card as a sibling"
   );
   assert.strictEqual(
     listOriginal.type,

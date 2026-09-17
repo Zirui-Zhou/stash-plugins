@@ -88,12 +88,6 @@ function isTouchDevice(): boolean {
   return window.matchMedia("(pointer: coarse)").matches;
 }
 
-/** Class name of a section's mount point */
-const FILTER_HOST_CLASS = "manga-tools-field-host";
-
-/** The mount point, held at module scope so re-renders reuse the same node */
-let filterHost: HTMLElement | null = null;
-
 /** The same mark, per field: one attribute each, so a re-worded tag stays recognisable. */
 const CENSORSHIP_TAG_MARK = "data-manga-tools-censorship";
 const MANGA_TAG_MARK = "data-manga-tools-manga";
@@ -199,53 +193,38 @@ function relabelMangaTags(labels: string[]): void {
 }
 
 /**
- * Finds (creating if needed) the mount point for the filter sections,
- * positioned as the first of the sidebar's filter sections.
+ * The filter the three sections are built from, or null until the list has
+ * rendered.
  *
- * Anchored on `.sidebar-saved-filters`, which Stash renders whether or not the
- * user has any saved filters and which sits directly above the pinned-criteria
- * sections — the position its own studio section occupies. One class rather
- * than two: it appears exactly once, and a single class is what this plugin's
- * other anchors use.
+ * They need Stash's filter model — to read the current selection and to write
+ * the URL — and the only place it exists is inside `FilteredGalleryList`, which
+ * creates it and hands it to the elements that use it. The sidebar's patch
+ * container is handed nothing but its children, so the entry file publishes the
+ * model here from `FilteredGalleryList`'s own output: that component is rendered
+ * *before* the sidebar, so the sections read the model on the same pass and
+ * there is nothing to correct afterwards.
  *
- * Mirrors ensureHostAfter in mangaTools.tsx rather than sharing it: the two live
- * in different modules, and extracting the helper would mean moving code out of
- * the entry file in the same change that adds a feature. Worth doing when a
- * third caller appears.
+ * Module state, like the tag marks above — but the alternative is the DOM: a
+ * mount point looked up by class, a portal into it, and an extra render pass to
+ * get it placed, which is what this replaced.
  */
-function ensureFilterHost(): HTMLElement | null {
-  const anchor = document.querySelector(".sidebar-saved-filters");
-  if (!anchor?.parentNode) {
-    filterHost = null;
-    return null;
-  }
+let sidebarFilter: MangaToolsFilterModel | null = null;
 
-  if (!filterHost) {
-    filterHost = document.createElement("div");
-    filterHost.className = FILTER_HOST_CLASS;
-  }
+/** Set by the entry file, once per render of the gallery list. See above. */
+export function publishSidebarFilter(
+  filter: MangaToolsFilterModel | null
+): void {
+  sidebarFilter = filter;
+}
 
-  // A React re-render may displace it; keep it directly after the anchor.
-  if (
-    filterHost.parentNode !== anchor.parentNode ||
-    anchor.nextElementSibling !== filterHost
-  ) {
-    anchor.parentNode.insertBefore(filterHost, anchor.nextElementSibling);
-  }
-
-  return filterHost;
+/** The filter the sections are built from, or null before the list has rendered */
+export function currentSidebarFilter(): MangaToolsFilterModel | null {
+  return sidebarFilter;
 }
 
 /**
- * The pieces every filter section shares: the intl and history hooks, the
- * open/closed state read from (and written back to) the history entry's state,
- * the portal host, and the bump used to re-find that host after a re-render.
- *
- * A React re-render can drop the mount point, and the first render never finds
- * it: the section is a sibling rendered before the list that owns the sidebar,
- * so the anchor's element does not exist yet. The layout effect in each section
- * compares `ensureFilterHost()` against the host captured here and bumps when
- * they differ, which flushes one extra pass once the anchor exists.
+ * The pieces every filter section shares: the intl and history hooks, and the
+ * open/closed state read from (and written back to) the history entry's state.
  */
 function useSidebarSection(stateKey: string) {
   const intl = PluginApi.libraries.Intl.useIntl();
@@ -258,9 +237,6 @@ function useSidebarSection(stateKey: string) {
   });
   const open = openState[0];
   const setOpen = openState[1];
-
-  const bump = React.useState(0)[1];
-  const host = ensureFilterHost();
 
   /**
    * Opens or closes the section, and records the choice where Stash records its
@@ -284,7 +260,7 @@ function useSidebarSection(stateKey: string) {
     );
   }
 
-  return { intl, history, open, toggleOpen, host, bump };
+  return { intl, history, open, toggleOpen };
 }
 
 /**
@@ -370,11 +346,13 @@ function censorshipOptions(intl: MangaToolsIntl): MangaToolsOption[] {
 }
 
 /**
- * The gallery list's language filter, rendered through a portal into the
- * sidebar.
+ * The gallery list's language filter, one of the sections Stash's sidebar
+ * renders through its own patch container.
  *
- * Reads the current selection from the filter model it is handed, and reports
- * changes by rewriting the URL — see applyLanguage for why that is the route in.
+ * Reads the current selection from the filter model it is handed — published by
+ * the entry file from `FilteredGalleryList`'s output, since the container is
+ * handed nothing but children — and reports changes by rewriting the URL, which
+ * is the route in (see applyLanguage).
  *
  * It also repairs the two things about the filter that belong to Stash and that
  * this plugin has to make say what they mean: the criterion's identity and its
@@ -383,7 +361,7 @@ function censorshipOptions(intl: MangaToolsIntl): MangaToolsOption[] {
 export function SidebarLanguageFilter(props: {
   filter: MangaToolsFilterModel;
 }) {
-  const { intl, history, open, toggleOpen, host, bump } =
+  const { intl, history, open, toggleOpen } =
     useSidebarSection(SECTION_STATE_KEY);
 
   const queryState = React.useState("");
@@ -409,13 +387,7 @@ export function SidebarLanguageFilter(props: {
   React.useLayoutEffect(() => {
     adoptLanguageCriterion(props.filter);
     if (tagLabelsFor) relabelTags(tagLabelsFor);
-
-    if (ensureFilterHost() !== host) {
-      bump((v) => v + 1);
-    }
   });
-
-  if (!host) return null;
 
   const Solid = PluginApi.libraries.FontAwesomeSolid || {};
   const Icon = PluginApi.components.Icon;
@@ -535,7 +507,7 @@ export function SidebarLanguageFilter(props: {
     />
   ));
 
-  return PluginApi.ReactDOM.createPortal(
+  return (
     <SidebarSection
       heading={fieldLabel(intl)}
       open={open}
@@ -632,8 +604,7 @@ export function SidebarLanguageFilter(props: {
           />
         ))}
       </ul>
-    </SidebarSection>,
-    host
+    </SidebarSection>
   );
 }
 
@@ -648,7 +619,7 @@ export function SidebarLanguageFilter(props: {
 export function SidebarCensorshipFilter(props: {
   filter: MangaToolsFilterModel;
 }) {
-  const { intl, history, open, toggleOpen, host, bump } = useSidebarSection(
+  const { intl, history, open, toggleOpen } = useSidebarSection(
     CENSORSHIP_SECTION_STATE_KEY
   );
 
@@ -662,13 +633,7 @@ export function SidebarCensorshipFilter(props: {
 
   React.useLayoutEffect(() => {
     if (tagLabelsFor) relabelCensorshipTags(tagLabelsFor);
-
-    if (ensureFilterHost() !== host) {
-      bump((v) => v + 1);
-    }
   });
-
-  if (!host) return null;
 
   const Solid = PluginApi.libraries.FontAwesomeSolid || {};
   const Icon = PluginApi.components.Icon;
@@ -760,7 +725,7 @@ export function SidebarCensorshipFilter(props: {
     />
   ));
 
-  return PluginApi.ReactDOM.createPortal(
+  return (
     <SidebarSection
       heading={censorshipHeading(intl)}
       open={open}
@@ -817,8 +782,7 @@ export function SidebarCensorshipFilter(props: {
           />
         ))}
       </ul>
-    </SidebarSection>,
-    host
+    </SidebarSection>
   );
 }
 
@@ -831,7 +795,7 @@ export function SidebarCensorshipFilter(props: {
  * and "unmarked" is IS_NULL.
  */
 export function SidebarMangaFilter(props: { filter: MangaToolsFilterModel }) {
-  const { intl, history, open, toggleOpen, host, bump } = useSidebarSection(
+  const { intl, history, open, toggleOpen } = useSidebarSection(
     MANGA_SECTION_STATE_KEY
   );
 
@@ -841,13 +805,7 @@ export function SidebarMangaFilter(props: { filter: MangaToolsFilterModel }) {
 
   React.useLayoutEffect(() => {
     if (tagLabelsFor) relabelMangaTags(tagLabelsFor);
-
-    if (ensureFilterHost() !== host) {
-      bump((v) => v + 1);
-    }
   });
-
-  if (!host) return null;
 
   // Stash's own two words for a boolean criterion, so this reads exactly like its
   // own "organized" section — 是/否 in Chinese, 有効/無効 in Japanese. English has
@@ -880,7 +838,7 @@ export function SidebarMangaFilter(props: { filter: MangaToolsFilterModel }) {
     />
   ));
 
-  return PluginApi.ReactDOM.createPortal(
+  return (
     <SidebarSection
       heading={t(intl, "mangaTools.manga.isManga")}
       open={open}
@@ -904,8 +862,7 @@ export function SidebarMangaFilter(props: { filter: MangaToolsFilterModel }) {
           />
         ))}
       </ul>
-    </SidebarSection>,
-    host
+    </SidebarSection>
   );
 }
 

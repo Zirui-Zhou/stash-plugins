@@ -148,12 +148,15 @@ module.exports = () => {
   // beyond the handful querySelector understands, so the card's box is never
   // found, and the stub's state setters are inert, so nothing re-renders anyway.
   const renderDialogCard = (conditions) => {
+    // The card is rendered from GalleryList, whose patch wraps the list with it;
+    // the sidebar's three sections are mounted through Stash's sidebar container
+    // instead (see the sidebar's own tests).
     const el = call("GalleryList", {
       filter: makeFilterModel(
         conditions ? [customFieldsCriterion(conditions)] : []
       ),
       selectedIds: new Set(),
-    }).props.children[3];
+    }).props.children[0];
     return el.type(el.props);
   };
   renderDialogCard([

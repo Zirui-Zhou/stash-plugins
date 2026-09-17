@@ -60,6 +60,8 @@ import {
   SidebarCensorshipFilter,
   SidebarLanguageFilter,
   SidebarMangaFilter,
+  currentSidebarFilter,
+  publishSidebarFilter,
 } from "./sidebar-filter";
 import type { ReactNode } from "react";
 import type { MangaToolsFilterModel } from "./plugin-api";
@@ -138,8 +140,46 @@ function resultFrom(args: unknown[]): ReactNode {
 }
 
 /**
- * Registers a patch, and keeps one failing to register from taking the rest of
- * the plugin with it.
+ * The filter model out of a rendered element tree, or null if it is not there.
+ *
+ * Whatever Stash hands the model to carries it as a `filter` prop, and a list
+ * page has exactly one model, so the first one found is it. The shape is checked
+ * rather than trusted: `filter` is a common enough prop name that a tree could
+ * hold something else by it, and handing that to the sidebar's sections would
+ * fail in a way that says nothing about the cause.
+ */
+function findFilter(node: ReactNode): MangaToolsFilterModel | null {
+  if (node === null || typeof node !== "object") return null;
+
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = findFilter(child);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const props = (node as { props?: { children?: ReactNode; filter?: unknown } })
+    .props;
+  if (!props) return null;
+  if (Array.isArray(props.filter)) return null;
+  const filter = props.filter as MangaToolsFilterModel | undefined;
+  if (filter && Array.isArray(filter.criteria)) return filter;
+
+  return findFilter(props.children);
+}
+
+/** Whether this Stash has the sidebar patch container the sections mount through */
+function hasSidebarSectionsContainer(): boolean {
+  const components = PluginApi.components as { [name: string]: unknown };
+  return !!components && !!components["FilteredGalleryList.SidebarSections"];
+}
+
+/** Whether the missing-sidebar-container error has been logged already */
+let warnedMissingSidebarContainer = false;
+
+/** Registers a patch, and keeps one failing to register from taking the rest of
+ *  the plugin with it.
  *
  * A patch whose *target does not exist* is not what this guards: Stash only
  * pushes the callback onto a list, so a name it has never heard of registers
@@ -2684,25 +2724,76 @@ registerPatch("before", "GalleryList", (...args: unknown[]) => {
   return args;
 });
 
-// 7. The gallery list's language filter, mounted from GalleryList for the same
-//    reason the bulk row is mounted from RatingSystem: nothing in the filter
-//    path itself is patchable (see sidebar-filter.tsx), so a component that
-//    renders on this page is used as a mount point. The section positions itself
-//    by a DOM anchor inside the sidebar and reads the filter it is handed.
+// 7. The gallery list's filter sections. Stash wraps its own sidebar filter
+//    sections in a patch container, `FilteredGalleryList.SidebarSections`, and
+//    that is where these go: pushed in front of Stash's own, they land where
+//    they have always been — after the sidebar's saved-filters header, before
+//    its studio filter. Nothing is inserted into the DOM for this, and nothing
+//    has to be found again after a re-render.
 //
-//    `GalleryList` is the list of cards, not the component that owns the sidebar
-//    — which is why the section is placed by a DOM anchor rather than rendered
-//    where it belongs. Stash's sidebar *could* host it: it registers
-//    `FilteredGalleryList.SidebarSections` as a patchable wrapper around its own
-//    filter sections. But the filter model lives inside `FilteredGalleryList`,
-//    which does not pass it to that wrapper, and nothing patchable above the
-//    wrapper holds it either. Publishing it from here was tried and does not
-//    work: this component renders *after* the sidebar, so the section would read
-//    an empty context and render nothing at all.
+//    Two things make it work, and both are why this is not done from the list
+//    below. The container is handed nothing but its children, so the filter
+//    model has to come from somewhere else: it is published from
+//    `FilteredGalleryList`'s own output (see the patch above), which React
+//    renders before the sidebar and so before this container — the sections read
+//    it on the same pass. Publishing from `GalleryList` instead, whose props do
+//    carry the model, does not work: that is the list of cards, rendered *after*
+//    the sidebar, so the sections would read nothing on the first pass and only
+//    appear a render later.
+registerPatch("after", "FilteredGalleryList.SidebarSections", (...args) => {
+  const result = resultFrom(args);
+  noteFired("FilteredGalleryList.SidebarSections");
+
+  const filter = currentSidebarFilter();
+  if (!filter) return result;
+
+  return (
+    <>
+      <SidebarLanguageFilter filter={filter} />
+      <SidebarCensorshipFilter filter={filter} />
+      <SidebarMangaFilter filter={filter} />
+      {result}
+    </>
+  );
+});
+
+// 7b. Publishes the filter the sidebar's sections are built from.
 //
-//    `instead` here rather than `before`: this one has to render. The two
-//    coexist — Stash runs before-functions first and passes their result on, so
-//    the selection above is still captured.
+//    `FilteredGalleryList` creates the model (`useFilteredItemList`) and passes
+//    it down to everything that uses it; nothing above it has it, and the
+//    sidebar's container is handed only children. An `after` patch sees the
+//    component's output — the element tree, with the model on the props of the
+//    elements that were given it — while still running *before* React descends
+//    into that tree, which is exactly the window the sidebar needs.
+//
+//    The walk is recursive rather than a path through `SidebarPane`/`Sidebar`/
+//    `SidebarContent`: that tree is Stash's, and one of those being renamed or
+//    wrapped would silently leave the sections unbuilt.
+registerPatch("after", "FilteredGalleryList", (...args) => {
+  const result = resultFrom(args);
+  noteFired("FilteredGalleryList");
+
+  // The container the sections are mounted through, checked here rather than at
+  // load: components are registered as their module loads, and this one may not
+  // exist yet when the plugin does. Rendering the list is the proof that its
+  // module is loaded, and a Stash without it — it arrived in v0.31 — would
+  // otherwise lose the three sections without a word.
+  if (!warnedMissingSidebarContainer && !hasSidebarSectionsContainer()) {
+    warnedMissingSidebarContainer = true;
+    console.error(
+      "[mangaTools] this Stash has no FilteredGalleryList.SidebarSections, so " +
+        "the language, censorship and manga filter sections are unavailable. " +
+        "Stash v0.31 added the patch container they are mounted through."
+    );
+  }
+
+  publishSidebarFilter(findFilter(result));
+  return result;
+});
+
+// 8. The filter dialog's card. Rendered from `GalleryList` because that is the
+//    component with the model in hand on this page; the card portals itself into
+//    the dialog through the DOM, since a dialog is not part of the list's tree.
 registerPatch("instead", "GalleryList", (...args: unknown[]) => {
   const props = args[0] as { filter?: MangaToolsFilterModel };
   const Original = originalFrom(args);
@@ -2715,9 +2806,6 @@ registerPatch("instead", "GalleryList", (...args: unknown[]) => {
 
   return (
     <>
-      <SidebarLanguageFilter filter={props.filter as MangaToolsFilterModel} />
-      <SidebarCensorshipFilter filter={props.filter as MangaToolsFilterModel} />
-      <SidebarMangaFilter filter={props.filter as MangaToolsFilterModel} />
       <DialogLanguageFilter filter={props.filter as MangaToolsFilterModel} />
       <Original {...props} />
     </>
