@@ -919,21 +919,19 @@ function MangaPopoverMark(props: { galleryId: string }) {
 const TOOLBAR_HOST_CLASS = "manga-tools-toolbar-host";
 
 /**
- * Whether this Stash has the mutation the switch writes through.
+ * Whether this Stash has the client the switch writes through.
  *
- * Asked once, at load, because `useGalleryUpdate` is a hook and hooks cannot be
- * called conditionally — so the decision has to be made before the component that
- * calls it is rendered. Stash injects StashService itself (it is a namespace
- * import of `src/core/StashService`), so a version without this function is the
+ * Both of the switch’s writes go through this plugin’s own mutation, so the
+ * client is all it needs. Stash injects StashService itself (it is a namespace
+ * import of `src/core/StashService`), so a version without `getClient` is the
  * only way the lookup fails, and on such a version the toolbar gets nothing
  * rather than a switch that cannot work.
  */
-const CAN_WRITE =
-  typeof PluginApi.utils.StashService.useGalleryUpdate === "function";
+const CAN_WRITE = typeof PluginApi.utils.StashService.getClient === "function";
 
 if (!CAN_WRITE) {
   console.error(
-    "[mangaTools] this Stash has no useGalleryUpdate, so the toolbar switch " +
+    "[mangaTools] this Stash has no Apollo client, so the toolbar switch " +
       "cannot be shown. The rest of the plugin is unaffected."
   );
 }
@@ -1150,7 +1148,7 @@ function editFormIsDirty(): boolean {
  * gallery, which is what we must not have.
  */
 const MARK_QUERY_TEXT = [
-  "mutation MangaToolsMark($input: GalleryUpdateInput!) {",
+  "mutation MangaToolsSetFields($input: GalleryUpdateInput!) {",
   "  galleryUpdate(input: $input) {",
   "    id",
   "  }",
@@ -1183,8 +1181,8 @@ function getMarkUpdate(): unknown {
   return markUpdate;
 }
 
-/** Writes the mark, and leaves the page's cached gallery alone. See MARK_UPDATE. */
-function writeMarkQuietly(
+/** Writes fields, and leaves the page's cached gallery alone. See MARK_QUERY_TEXT. */
+function writeQuietly(
   galleryId: string,
   fields: Record<string, unknown>
 ): Promise<unknown> {
@@ -1210,7 +1208,6 @@ function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
   useAfterMount();
 
   const intl = PluginApi.libraries.Intl.useIntl();
-  const update = PluginApi.utils.StashService.useGalleryUpdate();
   const busyState = React.useState(false);
   const busy = busyState[0];
   const setBusy = busyState[1];
@@ -1246,17 +1243,17 @@ function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
     // Taking the mark off takes this plugin's fields with it, so the gallery
     // stops being one of its own: out of the store now, not after the round trip.
     // Everything drawn from it — the badge, the details panel, the switch — goes
-    // with it.
+    // with it. The panels are gated on the store rather than on Stash's values
+    // (see isMarkedNow), which is what makes it safe to write this quietly: the
+    // cache goes on holding fields that nothing on screen asks it for.
     store.delete(props.galleryId);
 
     if (form) {
       // The form's copy loses them too, and this is not symmetry for its own sake:
       // the map a Save sends back is the *whole* of the custom fields, so a form
-      // still holding the mark puts it back the next time it is saved. The cache
-      // cannot be relied on to correct the form instead — Stash's own
-      // galleryUpdate response need not carry `custom_fields` at all, and when it
-      // does not, nothing reinitialises the form and the stale copy is what gets
-      // written.
+      // still holding the mark puts it back the next time it is saved — and the
+      // cache cannot be relied on to correct it, because this write does not
+      // touch the cache at all.
       let next = form.values;
       NS.fieldsToClear(form.values).forEach((name) => {
         next = NS.setField(next, name, "");
@@ -1267,14 +1264,15 @@ function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
     emit();
 
     setBusy(true);
-    update[0]({
-      variables: { input: { id: props.galleryId, custom_fields: fields } },
-    }).then(
+    // Quiet, like the mark: through this plugin's own mutation rather than
+    // Stash's, because changing the gallery's custom_fields in the cache is
+    // exactly what reinitialises the edit form and throws away whatever the
+    // reader has typed but not saved.
+    writeQuietly(props.galleryId, fields).then(
       () => {
         setBusy(false);
         setConfirming(false);
-        // This one goes through Stash's own mutation, so its cache follows — and
-        // the store is put right by the refresh, which drops a gallery the server
+        // The store is put right by the refresh, which drops a gallery the server
         // no longer answers with. Deferred, or a fetch built before the write
         // would land after it and put the gallery back.
         refreshAfterWrite();
@@ -1337,7 +1335,7 @@ function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
     emit();
 
     setBusy(true);
-    writeMarkQuietly(props.galleryId, {
+    writeQuietly(props.galleryId, {
       partial: { [MANGA_FIELD_NAME]: NS.MANGA_VALUE },
     }).then(
       () => {

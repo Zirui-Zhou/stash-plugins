@@ -60,7 +60,6 @@ let patchRegistrationFault = null;
 const patchRegistrationFaultError = new Error("no such patch method");
 const capturedQueries = [];
 const settingsEnabled = ""; // what the config endpoint reports for the setting
-const galleryWrites = []; // every galleryUpdate input the toolbar switch sent
 
 const React = {
   Fragment: Symbol("Fragment"),
@@ -597,18 +596,10 @@ const PluginApi = {
   },
   utils: {
     StashService: {
+      // The switch writes through its own mutation on this client (see
+      // MARK_QUERY_TEXT), not through Stash's useGalleryUpdate — so the client is
+      // all a stub here has to provide.
       getClient: () => fakeClient,
-      // Stash's own gallery-update mutation, which the toolbar switch writes
-      // through. Recorded so a test can assert the exact input — and answerable,
-      // so the failure path can be exercised too.
-      useGalleryUpdate: () => [
-        (opts) => {
-          galleryWrites.push(opts.variables);
-          return state.galleryWriteResult
-            ? Promise.reject(state.galleryWriteResult)
-            : Promise.resolve({});
-        },
-      ],
       useConfigurePlugin: () => [
         (opts) => {
           state.capturedConfigWrite = opts.variables;
@@ -981,7 +972,6 @@ module.exports = {
   encodedCriteria,
   fakeHistory,
   find,
-  galleryWrites,
   globalListeners,
   hasText,
   historyReplaces,

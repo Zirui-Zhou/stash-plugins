@@ -328,17 +328,21 @@ writes.** Stash's edit page is a tab on the same page as that toolbar, and its
 form reinitialises itself whenever the gallery behind it changes
 (`enableReinitialize` in `GalleryEditPanel`), which throws away whatever is typed
 in it and not saved. `custom_fields` is one of that form's own fields, so the
-obvious write does exactly that. Marking therefore goes through this plugin's own
-mutation, whose selection set asks for nothing back — Apollo writes only what a
-mutation asks for, so the cached gallery keeps what it had — and it pushes the
-mark into the form's copy of the map at the same time, so that the map a Save
-sends back (the whole of it: `custom_fields: { full: … }`) carries the mark too.
-The store's own query is `no-cache` for the same reason.
+obvious write does exactly that.
 
-Taking the mark *off* cannot be quiet, and is not: it removes the language and
-the censorship the details panel draws, so the cache has to follow, and the edit
-form resets along with it. That is what its confirmation says when the form is
-holding unsaved changes.
+Both directions therefore go through this plugin's own mutation, whose selection
+set asks for nothing back — Apollo writes only what a mutation asks for, so the
+cached gallery keeps what it had — and both push the change into the form's copy
+of the map at the same time, so that the map a Save sends back (the whole of it:
+`custom_fields: { full: … }`) carries the change too. The store's own query is
+`no-cache` for the same reason.
+
+That the unmark is written quietly as well is the part worth spelling out, since
+it is not obvious: what the panels draw is asked of this plugin's store rather
+than of Stash's values (see `isMarkedNow`), so the cache can go on holding fields
+that nothing on screen asks it for — and it must, because removing them there is
+what resets the edit form. Marking quietly and unmarking loudly is exactly the
+combination that lost a reader's typing on the way out.
 
 **Both look their mount point up during render, which on a page's first pass is
 too early** — React has not committed the page yet, so the lookup finds the
