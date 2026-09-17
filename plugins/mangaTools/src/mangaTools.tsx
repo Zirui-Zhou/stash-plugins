@@ -243,6 +243,17 @@ const listeners: Set<() => void> = new Set();
 let inFlight: Promise<unknown> | null = null;
 let started = false;
 let lastLoggedSize = -1;
+/**
+ * Whether the store has ever been filled from the server.
+ *
+ * A gallery *missing* from the store means the server does not consider it manga;
+ * an *empty* store means the question has not been answered yet. Everything that
+ * asks whether a gallery is manga has to tell those apart — see isMarkedNow — and
+ * this is the flag it does it with. Set only on a successful fetch, so a refresh
+ * that failed leaves the last answer standing rather than turning every gallery
+ * unmarked.
+ */
+let refreshed = false;
 
 /**
  * Current path. CustomFieldsInput is shared by every entity type, so this is
@@ -445,6 +456,7 @@ function refresh(): Promise<unknown> {
       });
 
       store = next;
+      refreshed = true;
       emit();
 
       // Only log when the count changes, so it does not spam every minute.
@@ -1100,14 +1112,19 @@ function editFormFor(galleryId: string): typeof editForm {
 /**
  * Whether this gallery is manga, as far as anything on screen is concerned.
  *
- * The store first, and the values Stash handed the page only as the fallback for
- * the moment before the first refresh has answered.
+ * Once the store has an answer it *is* the answer, and a gallery missing from it
+ * is one the server does not consider manga. That is not the same thing as the
+ * store having nothing to say yet, which is the only case the values Stash passed
+ * in are for — and telling the two apart is what `refreshed` is for. Reading a
+ * missing gallery as "no answer" was wrong in a way that showed: the values come
+ * out of Apollo's cache, which both of this plugin's writes leave alone on
+ * purpose, so on a gallery the cache still held as marked, taking the mark off
+ * left the switch saying it was still on.
  *
- * The store is the one to trust because this plugin's own writes keep it in step
- * (see `mark` and `write`) *and* it is refreshed from the server — while the
- * values Stash holds come out of Apollo's cache, which marking deliberately does
- * not touch, so they can be a mark behind. Everything that asks the question —
- * the toolbar switch, the details panel, the edit block — asks it here.
+ * The store is otherwise the one to trust because the plugin's own writes keep it
+ * in step (see `mark` and `write`) *and* it is refreshed from the server.
+ * Everything that asks the question — the toolbar switch, the details panel, the
+ * edit block — asks it here.
  *
  * The edit form is not consulted, which is worth spelling out: the form holds a
  * mark only when this plugin put one there, and it does that together with the
@@ -1118,8 +1135,11 @@ function isMarkedNow(
   galleryId: string | null | undefined,
   values?: CustomFieldsMap
 ): boolean {
-  const stored = galleryId ? store.get(String(galleryId)) : undefined;
-  return stored ? NS.isManga(stored) : NS.isManga(values);
+  // No id means this is not one gallery's page — the list's bulk dialog is the
+  // case that matters — so there is nothing to look up and the values are all
+  // there is to go on. Before the first answer, likewise.
+  if (!refreshed || !galleryId) return NS.isManga(values);
+  return NS.isManga(store.get(String(galleryId)));
 }
 
 /**

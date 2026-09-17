@@ -148,11 +148,13 @@ module.exports = () => {
     null,
     "no language dropdown on a performer page"
   );
-  nav("/galleries/12");
+  // Gallery 1, not 12: a gallery the store does not list is not one this plugin
+  // considers manga, and the row is only drawn for its own galleries.
+  nav("/galleries/1");
   assert.notStrictEqual(
     renderRow({ "plugin.mangaTools.language": "zh-Hans" }),
     null,
-    "the dropdown should appear on a gallery detail page"
+    "the dropdown should appear on a manga gallery's detail page"
   );
   nav("/galleries");
   assert.notStrictEqual(
@@ -751,14 +753,25 @@ module.exports = () => {
   assert.strictEqual(icon.type, "span");
   assert.strictEqual(icon.props.className, "manga-tools-manga-icon");
 
-  // A gallery the store has never heard of: the switch falls back to the values
-  // Stash handed in, which say nothing about the mark.
-  //
-  // The id is one no other section uses, and that is not decoration: marking a
-  // gallery marks it in the store for the rest of the run, because the write is
-  // real and so is the state it leaves behind. Section 14 picks its galleries out
-  // of that same store — gallery 8 is its "not manga" fixture — so a mark left on
-  // a shared id would quietly change what that section is testing.
+  // A gallery the store does not list is not manga, *however* the values Stash
+  // handed in read. Those come from Apollo's cache, which neither of this plugin's
+  // writes touches, so after taking a mark off they still say marked — and reading
+  // them as the answer left the switch showing a mark the server no longer had.
+  // This is that state, built directly: gallery 8 is the fixtures' one gallery
+  // with no mark in the map.
+  nav("/galleries/8");
+  assert.strictEqual(
+    toolbarMark(asManga(detailValues("censored"))).drawn.node.props.children[0]
+      .props["aria-pressed"],
+    false,
+    "once the store has answered, a gallery missing from it is not manga"
+  );
+
+  // And the ordinary unmarked case, on a gallery no other section uses — which is
+  // not decoration: marking a gallery marks it in the store for the rest of the
+  // run, because the write is real and so is the state it leaves behind. Section
+  // 14 picks its galleries out of that same store — gallery 8 is its "not manga"
+  // fixture — so a mark left on a shared id would change what that section tests.
   nav("/galleries/999");
   const unmarkedToolbar = toolbarMark(detailValues("censored")).drawn.node;
   const toggle = unmarkedToolbar.props.children[0];
