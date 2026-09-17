@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // esbuild does the emitting (see tools/build.mjs); tsc is the type-checker
+    // only. noEmit says so out loud, so a stray `tsc -p .` cannot litter src/
+    // with .js files that would then shadow the sources.
+    "noEmit": true
+  },
+  "include": ["src"]
+}

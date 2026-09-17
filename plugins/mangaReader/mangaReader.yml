@@ -1,0 +1,19 @@
+# Manga Reader — a two-page (spread) view for Stash's image lightbox.
+#
+# The plugin ID comes from this file's name (mangaReader), not from a config
+# field. ui.javascript names the bundled output of src/mangaReader.tsx, which
+# esbuild writes as one file (see tools/build.mjs) — so there is no load order to
+# get wrong, and this file is the only thing Stash reads to find it.
+#
+# A separate plugin from mangaTools on purpose. That one is about *managing* a
+# manga library (its custom fields, its filters, its panels); this one is about
+# reading one — and reading is where a bug is most annoying, so they do not share
+# a blast radius. The two share nothing at runtime.
+name: Manga Reader
+description: A two-page (spread) view for the image lightbox, for reading manga.
+# Shown as the link button beside the plugin in Settings → Plugins.
+url: https://github.com/Zirui-Zhou/stash-plugins/tree/main/plugins/mangaReader
+version: 0.1.0
+ui:
+  javascript:
+    - mangaReader.js
