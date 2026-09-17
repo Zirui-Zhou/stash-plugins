@@ -797,6 +797,14 @@ module.exports = () => {
     false,
     "the mark is in the input, not in what the mutation asks back for"
   );
+  // It has to be a document, not the text it was built from: Apollo rejects a
+  // string, and rejects it as a promise — so the write does nothing at all, and
+  // the only trace is a console line.
+  assert.notStrictEqual(
+    typeof mutationWrites[writesBefore].mutation,
+    "string",
+    "the mutation must go through gql — a bare string is a rejected promise"
+  );
 
   // Marking with an edit form open writes into the form as well, so the copy its
   // Save sends back — the whole map, `custom_fields: { full: … }` — is not a
@@ -826,6 +834,18 @@ module.exports = () => {
     pushes[0],
     { [NS.FIELD_NAME]: "ja", [NS.MANGA_FIELD_NAME]: "true" },
     "the form's own map gets the mark too"
+  );
+
+  // …and the switch says so at once rather than waiting for a server round trip
+  // that may yet fail: what it draws is the form's copy, which the click has
+  // already moved. The values Stash handed the page are untouched, which is what
+  // makes this a test of the click rather than of the write.
+  assert.strictEqual(
+    toolbarMark(detailValues("censored")).drawn.node.props.children[0].props[
+      "aria-pressed"
+    ],
+    true,
+    "the switch should show the mark as soon as it is clicked"
   );
 
   // …and the store's query is no-cache for the same reason MARK_UPDATE asks for

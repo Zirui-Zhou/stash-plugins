@@ -239,7 +239,10 @@ const fakeClient = {
   // *asks for* is what Apollo writes into its cache, and the mark has to ask for
   // nothing (`{ id }`) to leave the page's gallery alone.
   mutate: ({ mutation, variables }) => {
-    mutationWrites.push({ mutation: String(mutation), variables });
+    // The document is kept as it was handed over rather than as text: whether it
+    // went through `gql` is what one of the assertions is about. `String()` on it
+    // still answers with the query text, for the assertions about its shape.
+    mutationWrites.push({ mutation, variables });
     return state.galleryWriteResult
       ? Promise.reject(state.galleryWriteResult)
       : Promise.resolve({
@@ -524,9 +527,14 @@ const PluginApi = {
   },
   libraries: {
     Apollo: {
-      gql: (s) => {
-        capturedQueries.push(s);
-        return s;
+      gql: (text) => {
+        capturedQueries.push(text);
+        // A document, not the text it was built from. Apollo takes a DocumentNode,
+        // and a plugin that hands it a raw string gets a rejected promise with
+        // nothing useful in it — so wrapping here is what lets a test tell the two
+        // apart. `String()` still answers with the text, which is how the
+        // assertions about a query's shape read it.
+        return { __document: text, toString: () => text };
       },
       // Enough of ApolloLink to compose and invoke a chain: the instance keeps
       // its request function, and from() records the links it was given.

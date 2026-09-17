@@ -1124,17 +1124,48 @@ function editFormIsDirty(): boolean {
  * Stash's own `useGalleryUpdate` cannot be used here: its document asks for the
  * gallery, which is what we must not have.
  */
-const MARK_UPDATE = `mutation MangaToolsMark($input: GalleryUpdateInput!) {
-  galleryUpdate(input: $input) {
-    id
+const MARK_QUERY_TEXT = [
+  "mutation MangaToolsMark($input: GalleryUpdateInput!) {",
+  "  galleryUpdate(input: $input) {",
+  "    id",
+  "  }",
+  "}",
+].join("\n");
+
+/**
+ * The same, as a document — through `gql`, the way every other operation here is
+ * built.
+ *
+ * Handing Apollo the raw text does not work: what `client.mutate` expects is a
+ * `DocumentNode`, and a string that Apollo declines to parse comes back as a
+ * rejected promise with nothing useful in it. The tests cannot see the
+ * difference (their `gql` is a stub that answers with what it was given), which
+ * is how this got as far as a release: it was written as a template string and
+ * every assertion still passed.
+ */
+let markUpdate: unknown = null;
+function getMarkUpdate(): unknown {
+  if (markUpdate) return markUpdate;
+
+  const Apollo = PluginApi.libraries.Apollo;
+  const gql = Apollo?.gql || PluginApi.GQL?.gql;
+  if (!gql) {
+    console.error("[mangaTools] gql not available, cannot build the mutation");
+    return null;
   }
-}`;
+
+  markUpdate = gql(MARK_QUERY_TEXT);
+  return markUpdate;
+}
 
 /** Writes the mark, and leaves the page's cached gallery alone. See MARK_UPDATE. */
 function writeMarkQuietly(
   galleryId: string,
   fields: Record<string, unknown>
 ): Promise<unknown> {
+  const mutation = getMarkUpdate();
+  if (!mutation) return Promise.resolve();
+
   let client: MangaToolsApolloClient;
   try {
     client = PluginApi.utils.StashService.getClient();
@@ -1144,7 +1175,7 @@ function writeMarkQuietly(
   }
 
   return client.mutate({
-    mutation: MARK_UPDATE,
+    mutation,
     variables: { input: { id: galleryId, custom_fields: fields } },
   });
 }
@@ -1234,8 +1265,20 @@ function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
    */
   const mark = () => {
     if (form) {
-      form.onChange(NS.setField(form.values, MANGA_FIELD_NAME, NS.MANGA_VALUE));
+      // The published object is this plugin's own copy, so it is kept in step by
+      // hand: the block that publishes it does so on *its* renders, and the switch
+      // is a different component that has to be right on the next one. `setField`
+      // builds a new map, so this replaces the copy rather than mutating the one
+      // Stash is holding.
+      const next = NS.setField(form.values, MANGA_FIELD_NAME, NS.MANGA_VALUE);
+      form.values = next;
+      form.onChange(next);
     }
+
+    // The switch draws from that copy or from the store, and neither has moved
+    // yet: the store waits for the server, which is a round trip away and may
+    // fail. So say the state changed, rather than waiting for the write to say it.
+    emit();
 
     setBusy(true);
     writeMarkQuietly(props.galleryId, {
@@ -1243,8 +1286,8 @@ function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
     }).then(
       () => {
         setBusy(false);
-        // The store is what the switch itself reads, so it has to be told the
-        // server has moved on.
+        // The store is what the switch reads when no form is open, so it has to
+        // be told the server has moved on.
         refresh();
       },
       (e: unknown) => {
