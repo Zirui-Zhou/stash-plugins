@@ -3,57 +3,100 @@
 A two-page (**spread**) view for Stash's image lightbox, for reading manga the way
 it was printed: two pages side by side, the earlier one on the right.
 
-**Status: the pairing rules are in, the viewer is not.** The plugin installs, loads
-and does nothing visible yet — see [What is here](#what-is-here) and
-[What is next](#what-is-next). It is deliberately inert rather than half-wired:
-nothing on screen changes, so installing it cannot break a reading session.
+**Status: working, and off until you turn it on.** Open any gallery, open an image,
+open the lightbox's options menu — the one behind the gear icon in its header — and
+there is a **Double page** switch at the bottom with the rest of the options.
 
-## What is here
+## What it does
 
-`src/spreads.ts`: how a gallery's pages go together into screens. Pure functions,
-no DOM, no Stash API — and the only part of this plugin with real tests.
+While the switch is on, and while you are reading a **gallery**:
 
-| Rule | What it does |
+| | |
 |---|---|
-| **Cover alone** | The first page takes a screen of its own. A cover is not the left half of anything |
-| **Spreads alone** | A page wider than it is tall is one image spanning two pages, so it takes a screen of its own |
-| **Pairs** | Two ordinary pages share a screen, and the odd one out at the end stands alone |
-| **Offset** | Strands one more page after the cover, to put a wrongly-grouped gallery's pairs back |
+| **Two pages at once** | Laid out to fit the screen, in reading order, the earlier page on the right |
+| **Spreads** | A page wider than it is tall is taken for one image spanning two pages, and stands alone |
+| **The cover** | Stands alone. A cover is not the left half of anything |
+| **Arrows** | Left and right move a *screen*, not a page — so a pair advances together |
+| **`O`** | Shifts the pairing by one page, for a gallery whose pages are grouped wrongly |
+| **Everything else** | Untouched. The header counter, the chapters, the nav strip, Escape, fullscreen, the slideshow — all still Stash's, and all still work, because the lightbox is still what says which page you are on |
 
-A screen holds its pages **in reading order** — `pages[0]` is the earlier page,
-whatever side it is drawn on. The reader reverses them when it lays them out,
-which keeps the direction question out of the rules entirely.
+The switch is remembered per browser, like the lightbox options it sits beside.
+Off a gallery page — an image list, a scene's stills — the mode draws nothing, even
+switched on: pairing pages only means something inside a gallery.
 
-The offset exists because of one case nothing can settle from the data: **a page
-scanned on its side is as wide as a spread is.** When one is judged wrongly, every
-pair after it is off by a page, and shifting the pairing by one puts them all back.
+## The two things worth knowing
 
-## What is next
+**It is DOM surgery, not a React patch.** Stash's lightbox is
+`LightboxComponent`, a plain `React.FC` with no `PatchComponent` wrapper, so
+`PluginApi.patch` cannot reach it. What this plugin does instead is watch the
+document for a lightbox appearing, put a container of its own **beside** Stash's
+carousel — never in place of it, so React can re-render its own subtree without
+ours going with it — hide that carousel with a class, and drive the lightbox
+through its own interface: it reads where the lightbox is from its header, and
+moves it with its own arrow keys rather than keeping a second idea of the current
+page that could drift from the first.
 
-The viewer itself: taking over the lightbox's display area, and a switch in the
-lightbox's own options menu to turn the mode on.
-
-That half is **DOM surgery**, not a React patch, and it is worth saying why:
-Stash's lightbox is `LightboxComponent`, a plain `React.FC` with no
-`PatchComponent` wrapper, so `PluginApi.patch` cannot reach it. The approach —
-`MutationObserver` on `.Lightbox`, a container inserted *beside* Stash's carousel
-rather than replacing it, and driving the lightbox through its own interface (its
-arrow keys, its header indicator) — follows
+The approach follows
 [kokkengMangaViewer](https://github.com/kokkeng1/stash_plugin_custom/tree/main/plugins/kokkengMangaViewer),
 which does the same thing in the wild for a scrolling view.
+
+**Everything it depends on is in one file.** `src/stash-lightbox.ts` holds the
+class names, the header format and the image query — the whole of what this plugin
+assumes about Stash's markup. If a Stash release renames any of it, the reader stops
+drawing and says so in the console rather than drawing something wrong: a canvas
+that cannot tell where it is must not paint. The same goes for a gallery Stash
+cannot answer for, or one whose page count no longer matches what the lightbox is
+showing.
+
+## What is not here yet
+
+- **No zoom or pan in spread mode.** Stash's zoom acts on the carousel, which is
+  hidden while this plugin draws. Pages are fitted to the screen and that is all.
+- **The pairing switches are settings without a UI**: `coverAlone` and
+  `detectSpreads` are stored and honoured, but the only one the options menu offers
+  is the mode itself. `O` is the escape hatch for a page judged wrongly.
+- **The switch is worded in English the first time.** Its language comes from
+  Stash's own configuration, which is read with the gallery — so the wording is
+  right from the second time the menu is opened in a session.
+- **Reading progress** is not tracked. That needs a viewer of our own rather than a
+  takeover of Stash's.
 
 ## Why a separate plugin from mangaTools
 
 `mangaTools` is about *managing* a manga library: the custom fields, the filters,
 the panels. This is about *reading* one. They share a purpose and no code, and
 reading is where a mistake is most annoying — so they keep separate blast radii.
-Nothing here uses `mangaTools`' fields, and nothing there knows this plugin exists.
+Nothing here reads `mangaTools`' fields, and nothing there knows this plugin exists.
+
+## Files
+
+```
+mangaReader/
+├── src/
+│   ├── mangaReader.tsx     Entry: loads Stash's API and starts watching
+│   ├── spreads.ts          The pairing rules (pure, no DOM)
+│   ├── settings.ts         What is remembered, and how it is parsed
+│   ├── stash-lightbox.ts   Everything that assumes something about Stash's markup
+│   ├── takeover.ts         The reader itself: the observer, the drawing, the keys
+│   ├── i18n.ts             The plugin's own two strings
+│   └── plugin-api.ts       Types, and the namespace the tests reach
+├── tests/
+│   ├── smoke.js            The pairing rules and the reader, section by section
+│   └── dom.js              A fake DOM: only the parts this plugin touches
+├── mangaReader.css         Hiding the carousel, laying out the two pages
+└── mangaReader.yml         Plugin config (the file name is the plugin ID)
+```
 
 ## Verifying
 
 From the repository root:
 
 ```bash
-npm test            # lints, type-checks, bundles, packages, then runs every plugin's tests
+npm test            # lints, type-checks, bundles, packages, then runs both plugins' tests
 node plugins/mangaReader/tests/smoke.js   # just this one (build first: npm run build)
 ```
+
+What the tests cannot cover is whether Stash's markup is still what
+`stash-lightbox.ts` says it is. No test of ours can, which is why the reader is
+written to stop rather than guess — the failure mode is a switch that has to be
+pressed again, never a blank screen.

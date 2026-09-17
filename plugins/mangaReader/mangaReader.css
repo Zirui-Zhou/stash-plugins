@@ -1,0 +1,77 @@
+/*
+ * Manga Reader — the two pages, and hiding the one Stash would draw.
+ *
+ * The container is put inside `.Lightbox-display`, beside Stash's carousel rather
+ * than in place of it (see takeover.ts for why). So there are two things to do
+ * here: take the carousel out of sight, and lay the pages out.
+ */
+
+/*
+ * The carousel is hidden, not removed. It is what holds the lightbox's idea of
+ * which page it is on, and React goes on updating it — that is how the header, the
+ * keyboard and the nav strip all keep working while this plugin draws instead.
+ *
+ * `visibility` rather than `display`, deliberately: the carousel keeps its size,
+ * so nothing that measures it (react-slick measures its container on every
+ * change) is told the viewport has become zero-sized.
+ */
+.Lightbox.manga-reader-active .Lightbox-carousel {
+  visibility: hidden;
+}
+
+/*
+ * The two pages. Fills the display area, which takeover.ts makes a containing
+ * block for it.
+ */
+.manga-reader-spread {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+/*
+ * Reading order is what the DOM holds — the earlier page first — and a manga is
+ * read right to left, so the earlier page is the *right-hand* one. One rule, and
+ * the whole direction question is answered.
+ */
+.manga-reader-spread {
+  flex-direction: row-reverse;
+}
+
+/*
+ * One page, or half the width when there are two. `contain` is what keeps a page
+ * whole: a spread of two tall pages has to shrink to fit the height, not be
+ * cropped to fill the width.
+ */
+.manga-reader-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  max-width: 50%;
+  flex: 0 1 auto;
+}
+
+/* A single page takes the middle of the screen on its own */
+.manga-reader-spread.is-single .manga-reader-page {
+  max-width: 100%;
+}
+
+.manga-reader-page img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/*
+ * This plugin's switch, in the lightbox's options menu. Separated from the options
+ * above it by the same rule Stash uses between groups of its own.
+ */
+.manga-reader-options {
+  margin-top: 8px;
+  border-top: 1px solid var(--manga-reader-divider, #444);
+  padding-top: 8px;
+}

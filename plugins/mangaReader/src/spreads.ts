@@ -13,6 +13,7 @@
  * get wrong — and a western comic would be the same rules with the reversing done
  * the other way round.
  */
+import { NR } from "./plugin-api";
 
 /** One page, as far as pairing cares. Dimensions come from Stash's image rows. */
 export interface MangaReaderPage {
@@ -162,38 +163,8 @@ export function stepsToAdjacent(
   return target.start - pageIndex;
 }
 
-/**
- * The namespace this plugin publishes its pure logic on.
- *
- * The same arrangement mangaTools uses: a module attaching itself to the window so
- * the smoke tests can reach the functions without a bundler of their own. Nothing
- * at runtime reads this — the plugin ships as one file, and its imports are
- * inlined into it.
- */
-export interface MangaReaderNamespace {
-  isWideSpreadPage(page: MangaReaderPage): boolean;
-  layout(
-    pages: MangaReaderPage[],
-    options?: Partial<MangaReaderSpreadOptions>
-  ): MangaReaderScreen[];
-  screenAt(screens: MangaReaderScreen[], pageIndex: number): number;
-  stepsToAdjacent(
-    screens: MangaReaderScreen[],
-    pageIndex: number,
-    direction: 1 | -1
-  ): number;
-}
-
-declare global {
-  interface Window {
-    /** Published by spreads.ts, read by the smoke tests */
-    MangaReader?: MangaReaderNamespace;
-  }
-}
-
-window.MangaReader = window.MangaReader || ({} as MangaReaderNamespace);
-const NR = window.MangaReader;
-
+// Published for the smoke test, which reaches them through the window — see the
+// note on MangaReaderNamespace in plugin-api.ts.
 NR.isWideSpreadPage = isWideSpreadPage;
 NR.layout = layout;
 NR.screenAt = screenAt;

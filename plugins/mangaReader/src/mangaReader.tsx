@@ -1,18 +1,21 @@
 /**
  * Manga Reader — a two-page (spread) view for the image lightbox.
  *
- * WHAT THIS FILE WILL BE. Stash's lightbox is `LightboxComponent`, a plain
- * `React.FC` with no `PatchComponent` wrapper, so `PluginApi.patch` cannot reach
- * it: the viewer has to be extended by putting our own elements in the DOM beside
- * Stash's and driving the lightbox through its own interface (its arrow keys and
- * its header indicator). That work is not here yet — see the README.
+ * The entry point, and nothing else: the pairing rules are in spreads.ts, the
+ * settings in settings.ts, what this plugin knows about Stash's lightbox in
+ * stash-lightbox.ts, and the reader itself in takeover.ts.
  *
- * WHAT IT IS NOW: the pairing rules, imported so they are part of the bundle and
- * reachable from the tests. Nothing runs at load but a line saying so, which is
- * deliberate: the plugin is installable and inert rather than half-wired.
+ * Nothing here draws anything. `install` starts watching for a lightbox and adds
+ * this plugin's switch to its options menu; the pages only appear when a reader
+ * turns that switch on, which is off until they do (see DEFAULT_SETTINGS).
  */
 import "./spreads";
+import { requirePluginApi } from "./plugin-api";
+import { install } from "./takeover";
 
-console.info(
-  "[mangaReader] loaded — pairing rules only, no lightbox takeover yet"
-);
+// Throws if Stash has not injected its API, which is the one failure worth being
+// loud about: everything this plugin does goes through it, and a plugin that
+// quietly did nothing would look like a plugin that failed to load.
+requirePluginApi();
+
+install();
