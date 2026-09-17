@@ -5,6 +5,8 @@
 
 const assert = require("node:assert");
 const {
+  NS,
+  call,
   callAfter,
   documentRoot,
   find,
@@ -510,5 +512,36 @@ module.exports = () => {
       );
       console.log("✓ bulk edit refetch (deferred past the in-flight fetch)");
     });
+
+    // The toolbar's writes defer the same way, and this is the only place to
+    // check it: they cost two fetches of their own, so anything counting them has
+    // to have finished first.
+    //
+    // Why it matters, in the words of the function that does it: a fetch built
+    // before a write answers with the state before it, so letting that response
+    // land afterwards puts back what the write just changed — a mark the reader
+    // has just removed, or one they just made.
+    const beforeToolbar = state.galleryQueryCount;
+    for (const id of ["995", "996"]) {
+      globalListeners["stash:location"]({
+        detail: { data: { location: { pathname: `/galleries/${id}` } } },
+      });
+      const toolbar = call("CustomFields", {
+        values: { [NS.FIELD_NAME]: "ja", other: "x" },
+      }).props.children[2];
+      const drawn = toolbar.type(toolbar.props);
+      drawn.node.props.children[0].props.onClick();
+    }
+
+    setTimeout(() => {
+      runSection("14b a write's refresh waits its turn", () => {
+        assert.strictEqual(
+          state.galleryQueryCount - beforeToolbar,
+          2,
+          "each write should wait for the fetch in flight and then fetch again — " +
+            "one deduplicated fetch would be an answer from before the write"
+        );
+      });
+    }, 0);
   }, 0);
 };

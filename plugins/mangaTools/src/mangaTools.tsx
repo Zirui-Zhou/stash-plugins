@@ -1248,6 +1248,22 @@ function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
     // Everything drawn from it — the badge, the details panel, the switch — goes
     // with it.
     store.delete(props.galleryId);
+
+    if (form) {
+      // The form's copy loses them too, and this is not symmetry for its own sake:
+      // the map a Save sends back is the *whole* of the custom fields, so a form
+      // still holding the mark puts it back the next time it is saved. The cache
+      // cannot be relied on to correct the form instead — Stash's own
+      // galleryUpdate response need not carry `custom_fields` at all, and when it
+      // does not, nothing reinitialises the form and the stale copy is what gets
+      // written.
+      let next = form.values;
+      NS.fieldsToClear(form.values).forEach((name) => {
+        next = NS.setField(next, name, "");
+      });
+      form.onChange(next);
+    }
+
     emit();
 
     setBusy(true);
@@ -1259,8 +1275,9 @@ function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
         setConfirming(false);
         // This one goes through Stash's own mutation, so its cache follows — and
         // the store is put right by the refresh, which drops a gallery the server
-        // no longer answers with.
-        refresh();
+        // no longer answers with. Deferred, or a fetch built before the write
+        // would land after it and put the gallery back.
+        refreshAfterWrite();
       },
       (e: unknown) => {
         setBusy(false);
@@ -1325,14 +1342,16 @@ function GalleryToolbar(props: { galleryId: string; values: CustomFieldsMap }) {
     }).then(
       () => {
         setBusy(false);
-        refresh();
+        refreshAfterWrite();
       },
       (e: unknown) => {
         setBusy(false);
         console.error("[mangaTools] could not write the manga mark:", e);
         // The server never heard about it, so what is on screen is wrong: ask the
-        // server what the truth is.
-        refresh();
+        // server what the truth is. Deferred like the other one, for the same
+        // reason — a fetch started before this click would answer with the state
+        // before it.
+        refreshAfterWrite();
       }
     );
   };
