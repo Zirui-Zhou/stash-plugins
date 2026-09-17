@@ -323,6 +323,12 @@ inserted after the one holding `.organized-button`, anchored on that button
 rather than on a position, because the group's other span is the operation menu
 and its contents vary. See `ensureToolbarHost`.
 
+That anchor is not always there, and its absence is not the toolbar's: Stash
+renders a spinner in the button's place for as long as its own save runs, which
+is what a click on organized starts. So the lookup keeps the host it already has
+rather than standing down — otherwise the switch disappeared the moment the
+reader clicked organized, and stayed gone until the next refresh.
+
 **Writing the mark is deliberately quieter than anything else this plugin
 writes.** Stash's edit page is a tab on the same page as that toolbar, and its
 form reinitialises itself whenever the gallery behind it changes

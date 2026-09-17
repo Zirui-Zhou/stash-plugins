@@ -1002,6 +1002,15 @@ let toolbarHost: HTMLElement | null = null;
  */
 function ensureToolbarHost(): HTMLElement | null {
   const button = document.querySelector(".gallery-toolbar .organized-button");
+
+  // The button is not always there, and its absence is not the toolbar's: Stash
+  // renders a spinner in its place while its own save runs (OrganizedButton has a
+  // `loading` branch), which is exactly what clicking organized does. Treating
+  // that as "no toolbar" took this plugin's switch off the page — the reader saw
+  // it vanish under their own cursor and stay gone until the next refresh.
+  // Nothing about the button's absence says anything about the host.
+  if (!button) return toolbarHost;
+
   const anchor = (button?.parentNode || null) as HTMLElement | null;
   if (!anchor?.parentNode) {
     toolbarHost = null;

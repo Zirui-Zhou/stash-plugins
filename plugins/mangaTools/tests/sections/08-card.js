@@ -670,7 +670,7 @@ module.exports = () => {
   );
 
   // --- the detail page's toolbar ---
-  const { toolbarGroup } = galleryToolbarDom();
+  const { toolbarGroup, organizedSpan, organizedButton } = galleryToolbarDom();
 
   // Gallery 3 is the one the cycle below writes to: its fixture mark is
   // "uncensored", and the cycle ends on "censored", so the store assertion at
@@ -732,6 +732,44 @@ module.exports = () => {
   );
   assert.strictEqual(toggleOn.props.title, "漫画");
   assert.strictEqual(toggleOn.props["aria-pressed"], true);
+
+  // Clicking organized takes the anchor away for as long as its own save runs:
+  // Stash's OrganizedButton renders a spinner while it is `loading`, so the
+  // button — and with it the one thing this plugin finds the toolbar by — is
+  // absent from a page whose toolbar is sitting right there. A render in that
+  // window must not take the switch with it, or the reader watches it vanish
+  // under the cursor they just clicked with, and nothing brings it back until
+  // this plugin's own next refresh.
+  const switchHost = (fields) => {
+    const el = call("CustomFields", { values: fields }).props.children[2];
+    // Null twice over when the switch stands down: no element at all, or a
+    // component that drew nothing. Either way there is no portal, and no host.
+    const drawn = el ? el.type(el.props) : null;
+    return drawn ? drawn.host : null;
+  };
+  const hostBefore = switchHost(detailValues("censored"));
+  assert.strictEqual(
+    hostBefore,
+    first.drawn.host,
+    "a render that finds the anchor reuses the host rather than making another"
+  );
+
+  organizedSpan.detach(organizedButton); // the spinner, for as long as it lasts
+  assert.strictEqual(
+    switchHost(detailValues("censored")),
+    hostBefore,
+    "with no anchor to find, the switch keeps the host it already has"
+  );
+
+  // Put the button back where Stash puts it, and nothing has moved: the same
+  // host, in the same place, and no second one left behind by the render above.
+  organizedSpan.insertBefore(organizedButton, hostBefore);
+  assert.strictEqual(switchHost(detailValues("censored")), hostBefore);
+  assert.strictEqual(
+    toolbarGroup.children[1],
+    hostBefore,
+    "still directly after the span holding the button"
+  );
 
   // The switch's icon is a masked span, not an svg: the artwork is a file, and a
   // file cannot see `currentColor` — the mask reads its shape and CSS supplies
